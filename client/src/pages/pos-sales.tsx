@@ -714,16 +714,13 @@ export default function POSSales() {
                           </div>
                         </div>
 
-                        {/* One Line: Color Code, Color Name, Packing Size */}
-                        <div className="flex items-center gap-2 flex-wrap">
+                        {/* One Line: Color Code Badge, Color Name, Packing Size - Centered */}
+                        <div className="flex items-center justify-center gap-2 py-2">
                           <Badge variant="secondary" className="bg-blue-100 text-blue-700 font-semibold px-3 py-1 text-sm uppercase">
                             {color.colorCode}
                           </Badge>
-                          <div className="text-sm text-gray-700 font-medium uppercase truncate flex-1">
-                            {color.colorName}
-                          </div>
                           <div className="text-sm font-semibold text-gray-900 uppercase">
-                            {color.variant.packingSize}
+                            {color.colorName} - {color.variant.packingSize}
                           </div>
                         </div>
 
