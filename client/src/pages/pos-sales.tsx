@@ -695,56 +695,70 @@ export default function POSSales() {
                 <p className="text-gray-500">Try adjusting your search terms</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                 {filteredColors.map((color) => (
                   <Card 
                     key={color.id} 
-                    className="border border-gray-200 bg-white hover:border-blue-400 hover:shadow-sm transition-all cursor-pointer"
+                    className="group relative overflow-hidden border-2 border-gray-200 bg-white hover:border-blue-500 hover:shadow-lg transition-all duration-200 cursor-pointer"
                     onClick={() => openConfirmFor(color)}
                   >
-                    <CardContent className="p-4">
+                    <CardContent className="p-5">
                       <div className="flex flex-col gap-3">
-                        {/* Top: Company & Product */}
-                        <div>
-                          <div className="text-base font-semibold text-gray-900 truncate uppercase">
+                        {/* Top: Company & Product with gradient background */}
+                        <div className="bg-gradient-to-r from-gray-50 to-blue-50 -mx-5 -mt-5 px-5 py-3 mb-2">
+                          <div className="text-base font-bold text-gray-900 truncate uppercase tracking-wide">
                             {color.variant.product.company}
                           </div>
-                          <div className="text-sm text-gray-600 truncate uppercase">
+                          <div className="text-sm text-gray-700 truncate uppercase font-medium">
                             {color.variant.product.productName}
                           </div>
                         </div>
 
-                        {/* One Line: Color Code Badge, Color Name, Packing Size - Left Aligned */}
-                        <div className="flex items-center gap-2 py-2">
-                          <Badge variant="secondary" className="bg-blue-100 text-blue-700 font-semibold px-3 py-1 text-sm uppercase">
-                            {color.colorCode}
+                        {/* Color Code Badge - Prominent */}
+                        <div className="flex items-center justify-between">
+                          <Badge className="bg-blue-600 text-white font-bold px-4 py-2 text-base uppercase shadow-sm">
+                            [{color.colorCode}]
                           </Badge>
-                          <div className="text-sm font-semibold text-gray-900 uppercase">
-                            {color.colorName} - {color.variant.packingSize}
+                          <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                            {color.variant.packingSize}
                           </div>
                         </div>
 
-                        {/* Stock (Left) & Price (Right) Row */}
-                        <div className="flex items-center justify-between pt-2 border-t">
-                          <StockQuantity stock={color.stockQuantity} />
-                          <div className="text-xl font-bold text-blue-600">
-                            Rs. {Math.round(parseFloat(color.variant.rate))}
+                        {/* Color Name - Large & Clear */}
+                        <div className="text-lg font-bold text-gray-900 uppercase tracking-wide">
+                          {color.colorName}
+                        </div>
+
+                        {/* Stock & Price Row - Highlighted */}
+                        <div className="flex items-center justify-between py-3 px-3 bg-gray-50 rounded-lg border border-gray-200">
+                          <div className="flex flex-col gap-1">
+                            <span className="text-xs text-gray-500 font-medium uppercase">Stock</span>
+                            <StockQuantity stock={color.stockQuantity} />
+                          </div>
+                          <div className="flex flex-col gap-1 items-end">
+                            <span className="text-xs text-gray-500 font-medium uppercase">Price</span>
+                            <div className="text-2xl font-extrabold text-blue-600">
+                              Rs. {Math.round(parseFloat(color.variant.rate))}
+                            </div>
                           </div>
                         </div>
 
-                        {/* Bottom: Add to Cart Button */}
+                        {/* Bottom: Add to Cart Button - Enhanced */}
                         <Button
-                          className="w-full h-9 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium uppercase"
+                          className="w-full h-11 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white text-base font-bold uppercase shadow-md group-hover:shadow-lg transition-all"
                           onClick={(e) => {
                             e.stopPropagation();
                             addToCart(color);
                           }}
                         >
-                          <Plus className="h-4 w-4 mr-1" />
+                          <Plus className="h-5 w-5 mr-2" />
                           Add to Cart
                         </Button>
                       </div>
                     </CardContent>
+                    
+                    {/* Hover indicator */}
+                    <div className="absolute top-0 left-0 w-1 h-0 bg-blue-600 group-hover:h-full transition-all duration-200"></div>
                   </Card>
                 ))}
               </div>
