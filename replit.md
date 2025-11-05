@@ -14,12 +14,22 @@ PaintPulse is a professional Paint Store Point of Sale (POS) and Inventory Manag
   - Displays customer name, phone, total purchases, and transaction count
   - Sorted by total purchase amount in descending order
   - Clean table design with hover effects and responsive layout
-- **POS Thermal Receipt Improvements:**
+- **POS Thermal Receipt Improvements (HIGH QUALITY PRODUCTION-READY):**
+  - **Significantly improved print quality** with larger fonts (13px-20px vs 11-18px), bolder text (700-900 weight), and better spacing
+  - Enhanced header with 20px/900 weight business name for maximum visibility
   - Added proper spacing between QTY, PRICE, and AMOUNT columns to prevent mixing
-  - Reduced top margin for better paper usage
+  - Reduced top margin for better paper usage (10px padding instead of 8px)
   - Made header and footer fully configurable from Settings page
   - Settings include: Business Name, Address, Dealer Label, Dealer Brands, and Thank You Message
   - All settings saved to localStorage and applied to thermal receipts
+  - Added print CSS optimizations (@media print with color-adjust exact) for consistent output
+  - Pure black (#000) color throughout for maximum contrast on thermal printers
+  - Removed deprecated style tag to eliminate console warnings
+- **Store Settings Enhancements:**
+  - Store settings (Store Name, Address, Phone, Email) now persistent with localStorage
+  - Added "Use Store Settings" button to quickly copy store info to thermal receipt settings
+  - All settings load automatically on page refresh
+  - Store-wide settings can be updated and saved from Settings page
 - Migrated from GitHub import to Replit environment
 - Fixed database configuration (changed from PostgreSQL to SQLite to match original design)
 - Configured development workflow on port 5000
