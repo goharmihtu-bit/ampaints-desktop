@@ -37,7 +37,7 @@ export default function BillPrint() {
   const [selectedColor, setSelectedColor] = useState<ColorWithVariantAndProduct | null>(null);
   const [quantity, setQuantity] = useState("1");
   const [searchQuery, setSearchQuery] = useState("");
-  const [editingItems, setEditingItems] = useState<{ [key: number]: { quantity: string; rate: string } }>({});
+  const [editingItems, setEditingItems] = useState<{ [key: string]: { quantity: string; rate: string } }>({});
   
   // Load receipt settings from localStorage
   const [receiptSettings, setReceiptSettings] = useState({
@@ -126,7 +126,7 @@ export default function BillPrint() {
   const startEditMode = () => {
     if (!sale) return;
 
-    const initialEditingState: { [key: number]: { quantity: string; rate: string } } = {};
+    const initialEditingState: { [key: string]: { quantity: string; rate: string } } = {};
     sale.saleItems.forEach(item => {
       initialEditingState[item.id] = {
         quantity: item.quantity.toString(),
@@ -145,7 +145,7 @@ export default function BillPrint() {
   };
 
   // Update Item Field
-  const updateEditingItem = (itemId: number, field: 'quantity' | 'rate', value: string) => {
+  const updateEditingItem = (itemId: string, field: 'quantity' | 'rate', value: string) => {
     setEditingItems(prev => ({
       ...prev,
       [itemId]: {
@@ -207,7 +207,7 @@ export default function BillPrint() {
   };
 
   // Delete Individual Item
-  const deleteItem = async (itemId: number, itemName: string) => {
+  const deleteItem = async (itemId: string, itemName: string) => {
     try {
       await apiRequest("DELETE", `/api/sale-items/${itemId}`);
       await queryClient.invalidateQueries({ queryKey: ["/api/sales", saleId] });
@@ -321,7 +321,7 @@ export default function BillPrint() {
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div><span className="text-muted-foreground">Customer:</span> <strong>{sale.customerName}</strong></div>
               <div><span className="text-muted-foreground">Phone:</span> <strong>{sale.customerPhone}</strong></div>
-              <div><span className="text-muted-foreground">Date:</span> <strong>{formatDate(sale.createdAt)}</strong></div>
+              <div><span className="text-muted-foreground">Date:</span> <strong>{new Date(sale.createdAt).toLocaleDateString("en-GB")}</strong></div>
               <div><span className="text-muted-foreground">Time:</span> <strong>{new Date(sale.createdAt).toLocaleTimeString()}</strong></div>
             </div>
 
