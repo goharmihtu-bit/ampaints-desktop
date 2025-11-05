@@ -19,6 +19,13 @@ PaintPulse is a professional Paint Store Point of Sale (POS) and Inventory Manag
   - Improved color code filtering with exact match normalization (uppercase, trim)
   - Added PATCH endpoints for updating products and colors
   - All color codes now normalized to uppercase for consistent exact matching
+- **Stock Management Enhancements:**
+  - Added advanced filters to all tabs (Products, Variants, Colors) - filter by Company, Product, Packing Size
+  - Colors tab includes additional Stock Status filter (Out of Stock/Low Stock/In Stock)
+  - Implemented multi-select functionality with checkboxes across all tabs
+  - Added bulk delete operations with "Select All" capability and confirmation dialogs
+  - Fixed edit forms to properly populate with existing data using useEffect hooks
+  - All filters work in combination and use memoized filtering for optimal performance
 
 ## Project Architecture
 
