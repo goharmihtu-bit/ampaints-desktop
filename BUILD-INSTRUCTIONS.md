@@ -16,26 +16,17 @@ Before building the desktop .exe application, ensure you have:
 npm install
 ```
 
-### 2. Add Application Icon (⚠️ CRITICAL - REQUIRED!)
+### 2. Application Icon - ✅ ADDED
 
-**YOU MUST ADD THIS ICON FILE BEFORE BUILDING THE .EXE**
+**Status**: ✅ **COMPLETED** - Icon file is ready!
 
-Create or obtain an application icon and place it in the `build` folder:
 - **File name**: `icon.ico`
 - **Location**: `build/icon.ico`
-- **Format**: Windows ICO format (256x256 pixels)
-- **Status**: ⚠️ **MISSING** - Add this file before running `npm run package:win`
+- **Format**: Windows ICO format (multi-resolution)
+- **Size**: 128KB
+- **Resolutions**: 256x256, 128x128, 64x64, 48x48, 32x32, 16x16
 
-Without this icon file, the build will FAIL with error:
-```
-Error: ENOENT: no such file or directory, open 'build/icon.ico'
-```
-
-**How to create icon.ico:**
-1. Use an online converter (e.g., convertio.co, icoconvert.com)
-2. Upload a PNG/JPG logo (256x256 recommended)
-3. Download as `.ico` format
-4. Place in `build/icon.ico`
+The A.M.P Paint Store logo has been successfully converted and placed in the correct location. You can proceed with the build!
 
 ### 3. Build Frontend (Vite)
 
