@@ -706,45 +706,38 @@ export default function POSSales() {
                       <div className="flex flex-col gap-3">
                         {/* Top: Company & Product */}
                         <div>
-                          <div className="text-base font-semibold text-gray-900 truncate">
+                          <div className="text-base font-semibold text-gray-900 truncate uppercase">
                             {color.variant.product.company}
                           </div>
-                          <div className="text-sm text-gray-600 truncate">
+                          <div className="text-sm text-gray-600 truncate uppercase">
                             {color.variant.product.productName}
                           </div>
                         </div>
 
-                        {/* Middle: Color Code, Packing, Color Name in row */}
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Badge variant="secondary" className="bg-blue-100 text-blue-700 font-semibold px-3 py-1 text-sm">
+                        {/* One Line: Packing Size, Color Code, Color Name */}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Badge variant="secondary" className="bg-blue-100 text-blue-700 font-semibold px-3 py-1 text-sm uppercase">
                             {color.colorCode}
                           </Badge>
-                          <div className="text-sm font-semibold text-gray-900">
+                          <div className="text-sm font-semibold text-gray-900 uppercase">
                             {color.variant.packingSize}
                           </div>
-                        </div>
-
-                        {/* Color Name */}
-                        <div className="text-sm text-gray-700 font-medium line-clamp-2 min-h-[40px]">
-                          {color.colorName}
+                          <div className="text-sm text-gray-700 font-medium uppercase truncate flex-1">
+                            {color.colorName}
+                          </div>
                         </div>
 
                         {/* Price & Stock Row */}
                         <div className="flex items-center justify-between pt-2 border-t">
-                          <div>
-                            <div className="text-xl font-bold text-blue-600">
-                              Rs. {Math.round(parseFloat(color.variant.rate))}
-                            </div>
-                            <div className="text-xs text-gray-500">
-                              Rs. {Math.round(parseFloat(color.variant.rate))} each
-                            </div>
+                          <div className="text-xl font-bold text-blue-600">
+                            Rs. {Math.round(parseFloat(color.variant.rate))}
                           </div>
                           <StockQuantity stock={color.stockQuantity} />
                         </div>
 
                         {/* Bottom: Add to Cart Button */}
                         <Button
-                          className="w-full h-9 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium"
+                          className="w-full h-9 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium uppercase"
                           onClick={(e) => {
                             e.stopPropagation();
                             addToCart(color);
