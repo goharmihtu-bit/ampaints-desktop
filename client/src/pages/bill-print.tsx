@@ -476,16 +476,18 @@ export default function BillPrint() {
         </DialogContent>
       </Dialog>
 
-      {/* Print CSS - HIGH QUALITY THERMAL PRINT */}
+      {/* Print CSS - 80MM THERMAL OPTIMIZED */}
       <style>{`
         @media print {
           @page { 
             size: 80mm auto;
             margin: 0;
           }
-          body { 
-            margin: 0;
-            padding: 0;
+          html, body { 
+            margin: 0 !important;
+            padding: 0 !important;
+            width: 80mm !important;
+            max-width: 80mm !important;
             font-family: 'Courier New', 'Consolas', monospace;
             font-size: 11px;
             font-weight: bold;
@@ -493,10 +495,7 @@ export default function BillPrint() {
             background: white;
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
-          }
-          html {
-            margin: 0;
-            padding: 0;
+            overflow-x: hidden;
           }
           .no-print, dialog, button { 
             display: none !important; 
@@ -506,10 +505,13 @@ export default function BillPrint() {
             font-weight: bold;
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
+            box-sizing: border-box;
           }
           table {
             font-weight: bold;
             border-collapse: collapse;
+            width: 100% !important;
+            max-width: 100% !important;
           }
           h1, p, td, th, span, div {
             image-rendering: -webkit-optimize-contrast;
