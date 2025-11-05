@@ -31,28 +31,52 @@ let sqlite: Database.Database;
 let dbInstance: BetterSQLite3Database<typeof schema>;
 
 function initializeDatabase() {
-  // Close existing connection if any
-  if (sqlite) {
-    sqlite.close();
+  try {
+    console.log('[Database] Initializing database at:', dbPath);
+    
+    // Ensure directory exists
+    const dir = path.dirname(dbPath);
+    if (!fs.existsSync(dir)) {
+      console.log('[Database] Creating directory:', dir);
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    
+    // Close existing connection if any
+    if (sqlite) {
+      console.log('[Database] Closing existing connection');
+      sqlite.close();
+    }
+    
+    // Create new connection
+    console.log('[Database] Creating new database connection');
+    sqlite = new Database(dbPath);
+    sqlite.pragma("journal_mode = WAL"); // Write-Ahead Logging for better performance
+    sqlite.pragma("foreign_keys = ON"); // Enable foreign key constraints
+    
+    // Initialize drizzle
+    dbInstance = drizzle(sqlite, { schema });
+    
+    // Create tables if they don't exist
+    console.log('[Database] Creating tables and indexes');
+    createTables();
+    
+    console.log('[Database] ✅ Database initialized successfully');
+  } catch (error) {
+    console.error('[Database] ❌ ERROR initializing database:', error);
+    console.error('[Database] Database path:', dbPath);
+    throw error;
   }
-  
-  // Create new connection
-  sqlite = new Database(dbPath);
-  sqlite.pragma("journal_mode = WAL"); // Write-Ahead Logging for better performance
-  sqlite.pragma("foreign_keys = ON"); // Enable foreign key constraints
-  
-  // Initialize drizzle
-  dbInstance = drizzle(sqlite, { schema });
-  
-  // Create tables if they don't exist
-  createTables();
 }
 
 function createTables() {
-  if (!sqlite) return;
+  if (!sqlite) {
+    console.error('[Database] ❌ Cannot create tables - SQLite instance not initialized');
+    return;
+  }
   
-  // Create products table
-  sqlite.exec(`
+  try {
+    // Create products table
+    sqlite.exec(`
     CREATE TABLE IF NOT EXISTS products (
       id TEXT PRIMARY KEY,
       company TEXT NOT NULL,
@@ -141,6 +165,12 @@ function createTables() {
     -- Sale items indexes
     CREATE INDEX IF NOT EXISTS idx_sale_items_sale_color ON sale_items(sale_id, color_id);
   `);
+  
+    console.log('[Database] ✅ All tables and indexes created successfully');
+  } catch (error) {
+    console.error('[Database] ❌ ERROR creating tables:', error);
+    throw error;
+  }
 }
 
 // Initialize database on startup
