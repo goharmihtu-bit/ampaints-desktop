@@ -51,7 +51,9 @@ export interface IStorage {
   findUnpaidSaleByPhone(customerPhone: string): Promise<Sale | undefined>;
   getSale(id: string): Promise<SaleWithItems | undefined>;
   createSale(sale: InsertSale, items: InsertSaleItem[]): Promise<Sale>;
+  createManualBalance(data: { customerName: string; customerPhone: string; totalAmount: string; dueDate: Date | null; notes?: string }): Promise<Sale>;
   updateSalePayment(saleId: string, amount: number): Promise<Sale>;
+  updateSaleDueDate(saleId: string, data: { dueDate: Date | null; notes?: string }): Promise<Sale>;
   addSaleItem(saleId: string, item: InsertSaleItem): Promise<SaleItem>;
   updateSaleItem(id: string, data: { quantity: number; rate: number; subtotal: number }): Promise<SaleItem>;
   deleteSaleItem(saleItemId: string): Promise<void>;
@@ -263,6 +265,9 @@ export class DatabaseStorage implements IStorage {
       ...insertSale,
       totalAmount: typeof insertSale.totalAmount === 'number' ? insertSale.totalAmount.toString() : insertSale.totalAmount,
       amountPaid: typeof insertSale.amountPaid === 'number' ? insertSale.amountPaid.toString() : insertSale.amountPaid,
+      dueDate: null,
+      isManualBalance: false,
+      notes: null,
       createdAt: new Date(),
     };
     await db.insert(sales).values(sale);
@@ -315,6 +320,40 @@ export class DatabaseStorage implements IStorage {
         amountPaid: newPaid.toString(),
         paymentStatus,
       })
+      .where(eq(sales.id, saleId));
+
+    const [updatedSale] = await db.select().from(sales).where(eq(sales.id, saleId));
+    return updatedSale;
+  }
+
+  async createManualBalance(data: { customerName: string; customerPhone: string; totalAmount: string; dueDate: Date | null; notes?: string }): Promise<Sale> {
+    const sale: Sale = {
+      id: crypto.randomUUID(),
+      customerName: data.customerName,
+      customerPhone: data.customerPhone,
+      totalAmount: data.totalAmount,
+      amountPaid: "0",
+      paymentStatus: "unpaid",
+      dueDate: data.dueDate,
+      isManualBalance: true,
+      notes: data.notes || null,
+      createdAt: new Date(),
+    };
+    await db.insert(sales).values(sale);
+    return sale;
+  }
+
+  async updateSaleDueDate(saleId: string, data: { dueDate: Date | null; notes?: string }): Promise<Sale> {
+    const updateData: any = {
+      dueDate: data.dueDate,
+    };
+    if (data.notes !== undefined) {
+      updateData.notes = data.notes;
+    }
+    
+    await db
+      .update(sales)
+      .set(updateData)
       .where(eq(sales.id, saleId));
 
     const [updatedSale] = await db.select().from(sales).where(eq(sales.id, saleId));
@@ -385,8 +424,7 @@ export class DatabaseStorage implements IStorage {
         .set({
           quantity: data.quantity,
           rate: data.rate.toString(),
-          subtotal: data.subtotal.toString(),
-          updatedAt: new Date()
+          subtotal: data.subtotal.toString()
         })
         .where(eq(saleItems.id, id))
         .returning();

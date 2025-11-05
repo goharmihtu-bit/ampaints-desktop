@@ -372,6 +372,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Create manual pending balance (no items, just a balance record)
+  app.post("/api/sales/manual-balance", async (req, res) => {
+    try {
+      const { customerName, customerPhone, totalAmount, dueDate, notes } = req.body;
+      
+      if (!customerName || !customerPhone || !totalAmount) {
+        res.status(400).json({ error: "Customer name, phone, and amount are required" });
+        return;
+      }
+      
+      if (parseFloat(totalAmount) <= 0) {
+        res.status(400).json({ error: "Amount must be greater than 0" });
+        return;
+      }
+      
+      const sale = await storage.createManualBalance({
+        customerName,
+        customerPhone,
+        totalAmount: totalAmount.toString(),
+        dueDate: dueDate ? new Date(dueDate) : null,
+        notes
+      });
+      
+      res.json(sale);
+    } catch (error) {
+      console.error("Error creating manual balance:", error);
+      res.status(500).json({ error: "Failed to create manual balance" });
+    }
+  });
+
+  // Update due date for a sale
+  app.patch("/api/sales/:id/due-date", async (req, res) => {
+    try {
+      const { dueDate, notes } = req.body;
+      
+      const sale = await storage.updateSaleDueDate(req.params.id, {
+        dueDate: dueDate ? new Date(dueDate) : null,
+        notes
+      });
+      
+      res.json(sale);
+    } catch (error) {
+      console.error("Error updating due date:", error);
+      res.status(500).json({ error: "Failed to update due date" });
+    }
+  });
+
   // Dashboard Stats
   app.get("/api/dashboard-stats", async (_req, res) => {
     try {

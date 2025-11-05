@@ -42,6 +42,9 @@ export const sales = sqliteTable("sales", {
   totalAmount: text("total_amount").notNull(), // stored as text to preserve decimal precision
   amountPaid: text("amount_paid").notNull().default("0"),
   paymentStatus: text("payment_status").notNull().default("unpaid"), // unpaid, partial, paid
+  dueDate: integer("due_date", { mode: 'timestamp' }), // payment due date (nullable for old records)
+  isManualBalance: integer("is_manual_balance", { mode: 'boolean' }).notNull().default(false), // true if added manually (not from POS)
+  notes: text("notes"), // optional notes for manual balances
   createdAt: integer("created_at", { mode: 'timestamp' }).$defaultFn(() => new Date()).notNull(),
 });
 
