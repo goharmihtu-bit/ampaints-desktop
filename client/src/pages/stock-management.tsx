@@ -1600,7 +1600,7 @@ export default function StockManagement() {
                           ))}
                         </TableBody>
                       </Table>
-                      {(colorSearchQuery || colorCompanyFilter || colorProductFilter || colorSizeFilter || colorStockStatusFilter) && (
+                      {(colorSearchQuery || colorCompanyFilter !== "all" || colorProductFilter !== "all" || colorSizeFilter !== "all" || colorStockStatusFilter !== "all") && (
                         <p className="text-xs text-muted-foreground text-center">Showing {filteredColors.length} of {colorsData.length} colors</p>
                       )}
                     </div>
