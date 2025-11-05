@@ -619,7 +619,7 @@ export default function UnpaidBills() {
                 <th>Phone</th>
                 <th>Due Date</th>
                 <th class="amount">Outstanding</th>
-                <th>Days Overdue</th>
+                <th>Days Until/Overdue</th>
                 <th>Status</th>
               </tr>
             </thead>
@@ -628,8 +628,37 @@ export default function UnpaidBills() {
       
       upcomingDues.forEach(customer => {
         const bill = customer.bills.find(b => b.dueDate) || customer.bills[0];
-        const statusClass = customer.daysOverdue > 30 ? 'badge-danger' : customer.daysOverdue > 0 ? 'badge-warning' : 'badge-success';
-        const status = customer.daysOverdue > 30 ? 'Critical' : customer.daysOverdue > 0 ? 'Overdue' : 'Upcoming';
+        
+        // Calculate days based on due date, not creation date
+        let daysValue = '';
+        let statusClass = 'badge-success';
+        let status = 'Upcoming';
+        
+        if (bill.dueDate) {
+          const dueDate = new Date(bill.dueDate);
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          dueDate.setHours(0, 0, 0, 0);
+          
+          const diffTime = dueDate.getTime() - today.getTime();
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          
+          if (diffDays < 0) {
+            // Overdue
+            const overdueDays = Math.abs(diffDays);
+            daysValue = `${overdueDays} days overdue`;
+            statusClass = overdueDays > 30 ? 'badge-danger' : 'badge-warning';
+            status = overdueDays > 30 ? 'Critical' : 'Overdue';
+          } else if (diffDays === 0) {
+            daysValue = 'Due today';
+            statusClass = 'badge-warning';
+            status = 'Due Today';
+          } else {
+            daysValue = `${diffDays} days remaining`;
+            statusClass = 'badge-success';
+            status = 'Upcoming';
+          }
+        }
         
         pdfHTML += `
               <tr>
@@ -637,7 +666,7 @@ export default function UnpaidBills() {
                 <td>${customer.customerPhone}</td>
                 <td>${bill.dueDate ? new Date(bill.dueDate).toLocaleDateString('en-PK') : '-'}</td>
                 <td class="amount">Rs. ${customer.totalOutstanding.toFixed(2)}</td>
-                <td>${customer.daysOverdue > 0 ? customer.daysOverdue : '-'} days</td>
+                <td>${daysValue}</td>
                 <td><span class="badge ${statusClass}">${status}</span></td>
               </tr>
         `;
