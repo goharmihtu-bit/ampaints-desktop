@@ -20,6 +20,19 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import { 
   CreditCard, 
   Calendar, 
@@ -34,7 +47,8 @@ import {
   Receipt,
   Filter,
   X,
-  ChevronDown
+  ChevronDown,
+  FileText
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -48,6 +62,13 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
+
+interface CustomerSuggestion {
+  customerName: string;
+  customerPhone: string;
+  lastSaleDate: string;
+  totalSpent: number;
+}
 
 type ConsolidatedCustomer = {
   customerPhone: string;
@@ -93,6 +114,7 @@ export default function UnpaidBills() {
     dueDate: "",
     notes: ""
   });
+  const [customerSuggestionsOpen, setCustomerSuggestionsOpen] = useState(false);
   
   // Due date edit state
   const [dueDateDialogOpen, setDueDateDialogOpen] = useState(false);
@@ -103,6 +125,10 @@ export default function UnpaidBills() {
   });
   
   const { toast } = useToast();
+
+  const { data: customerSuggestions = [] } = useQuery<CustomerSuggestion[]>({
+    queryKey: ["/api/customer-suggestions"],
+  });
 
   const [filters, setFilters] = useState<FilterType>({
     search: "",
@@ -526,24 +552,194 @@ export default function UnpaidBills() {
     });
   };
 
-  const generateCSVReport = () => {
-    const headers = ['Customer Name', 'Phone', 'Total Amount', 'Paid', 'Outstanding', 'Days Overdue', 'Bills Count'];
-    const rows = filteredAndSortedCustomers.map((customer: ConsolidatedCustomer) => [
-      customer.customerName,
-      customer.customerPhone,
-      customer.totalAmount.toFixed(2),
-      customer.totalPaid.toFixed(2),
-      customer.totalOutstanding.toFixed(2),
-      customer.daysOverdue,
-      customer.bills.length
-    ]);
+  const selectCustomer = (customer: CustomerSuggestion) => {
+    setManualBalanceForm(prev => ({
+      ...prev,
+      customerName: customer.customerName,
+      customerPhone: customer.customerPhone
+    }));
+    setCustomerSuggestionsOpen(false);
+  };
+
+  const generatePDFStatement = () => {
+    // Create PDF content
+    const currentDate = new Date().toLocaleDateString('en-PK');
+    let pdfHTML = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>Unpaid Bills Statement</title>
+        <style>
+          @page { size: A4; margin: 20mm; }
+          body { font-family: Arial, sans-serif; color: #333; margin: 0; padding: 20px; }
+          .header { text-align: center; border-bottom: 3px solid #2563eb; padding-bottom: 15px; margin-bottom: 25px; }
+          .header h1 { margin: 0; color: #2563eb; font-size: 28px; }
+          .header p { margin: 5px 0; color: #666; font-size: 14px; }
+          .section { margin-bottom: 30px; page-break-inside: avoid; }
+          .section-title { background: #2563eb; color: white; padding: 10px 15px; font-size: 16px; font-weight: bold; margin-bottom: 15px; }
+          table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+          th { background: #f3f4f6; text-align: left; padding: 10px; font-size: 12px; border-bottom: 2px solid #ddd; }
+          td { padding: 8px 10px; font-size: 11px; border-bottom: 1px solid #eee; }
+          tr:hover { background: #f9fafb; }
+          .amount { text-align: right; font-family: monospace; font-weight: 600; }
+          .total-row { background: #fef3c7; font-weight: bold; border-top: 2px solid #2563eb; }
+          .badge { display: inline-block; padding: 3px 8px; border-radius: 12px; font-size: 10px; font-weight: 600; }
+          .badge-danger { background: #fee2e2; color: #991b1b; }
+          .badge-warning { background: #fef3c7; color: #92400e; }
+          .badge-success { background: #d1fae5; color: #065f46; }
+          .footer { margin-top: 30px; text-align: center; font-size: 11px; color: #666; border-top: 1px solid #ddd; padding-top: 15px; }
+          .summary-box { display: inline-block; border: 2px solid #e5e7eb; padding: 15px; margin: 10px; border-radius: 8px; min-width: 180px; }
+          .summary-box h3 { margin: 0 0 5px 0; font-size: 12px; color: #666; }
+          .summary-box p { margin: 0; font-size: 20px; font-weight: bold; color: #2563eb; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>📊 PaintPulse Unpaid Bills Statement</h1>
+          <p>Generated on ${currentDate}</p>
+        </div>
+    `;
+
+    // Section 1: Upcoming Dues (bills with due dates that are approaching or overdue)
+    const upcomingDues = filteredAndSortedCustomers.filter(customer => 
+      customer.bills.some(bill => bill.dueDate)
+    );
+
+    if (upcomingDues.length > 0) {
+      const totalUpcomingAmount = upcomingDues.reduce((sum, c) => sum + c.totalOutstanding, 0);
+      
+      pdfHTML += `
+        <div class="section">
+          <div class="section-title">🔔 Upcoming & Overdue Payments (${upcomingDues.length} Customers)</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Customer</th>
+                <th>Phone</th>
+                <th>Due Date</th>
+                <th class="amount">Outstanding</th>
+                <th>Days Overdue</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+      `;
+      
+      upcomingDues.forEach(customer => {
+        const bill = customer.bills.find(b => b.dueDate) || customer.bills[0];
+        const statusClass = customer.daysOverdue > 30 ? 'badge-danger' : customer.daysOverdue > 0 ? 'badge-warning' : 'badge-success';
+        const status = customer.daysOverdue > 30 ? 'Critical' : customer.daysOverdue > 0 ? 'Overdue' : 'Upcoming';
+        
+        pdfHTML += `
+              <tr>
+                <td>${customer.customerName}</td>
+                <td>${customer.customerPhone}</td>
+                <td>${bill.dueDate ? new Date(bill.dueDate).toLocaleDateString('en-PK') : '-'}</td>
+                <td class="amount">Rs. ${customer.totalOutstanding.toFixed(2)}</td>
+                <td>${customer.daysOverdue > 0 ? customer.daysOverdue : '-'} days</td>
+                <td><span class="badge ${statusClass}">${status}</span></td>
+              </tr>
+        `;
+      });
+      
+      pdfHTML += `
+              <tr class="total-row">
+                <td colspan="3"><strong>Subtotal</strong></td>
+                <td class="amount"><strong>Rs. ${totalUpcomingAmount.toFixed(2)}</strong></td>
+                <td colspan="2"></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    // Section 2: All Unpaid Bills
+    const allUnpaid = filteredAndSortedCustomers;
+    const totalUnpaidAmount = allUnpaid.reduce((sum, c) => sum + c.totalOutstanding, 0);
     
-    const csvContent = [
-      headers.join(','),
-      ...rows.map((row: (string | number)[]) => row.join(','))
-    ].join('\n');
+    pdfHTML += `
+      <div class="section">
+        <div class="section-title">💰 All Unpaid Bills (${allUnpaid.length} Customers)</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Customer</th>
+              <th>Phone</th>
+              <th class="amount">Total</th>
+              <th class="amount">Paid</th>
+              <th class="amount">Outstanding</th>
+              <th>Bills</th>
+            </tr>
+          </thead>
+          <tbody>
+    `;
     
-    return csvContent;
+    allUnpaid.forEach(customer => {
+      pdfHTML += `
+            <tr>
+              <td>${customer.customerName}</td>
+              <td>${customer.customerPhone}</td>
+              <td class="amount">Rs. ${customer.totalAmount.toFixed(2)}</td>
+              <td class="amount">Rs. ${customer.totalPaid.toFixed(2)}</td>
+              <td class="amount">Rs. ${customer.totalOutstanding.toFixed(2)}</td>
+              <td>${customer.bills.length}</td>
+            </tr>
+      `;
+    });
+    
+    pdfHTML += `
+            <tr class="total-row">
+              <td colspan="2"><strong>Grand Total</strong></td>
+              <td class="amount"><strong>Rs. ${allUnpaid.reduce((sum, c) => sum + c.totalAmount, 0).toFixed(2)}</strong></td>
+              <td class="amount"><strong>Rs. ${allUnpaid.reduce((sum, c) => sum + c.totalPaid, 0).toFixed(2)}</strong></td>
+              <td class="amount"><strong>Rs. ${totalUnpaidAmount.toFixed(2)}</strong></td>
+              <td><strong>${allUnpaid.reduce((sum, c) => sum + c.bills.length, 0)}</strong></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    `;
+
+    // Summary boxes
+    pdfHTML += `
+      <div class="section" style="text-align: center;">
+        <div class="summary-box">
+          <h3>Total Customers</h3>
+          <p>${allUnpaid.length}</p>
+        </div>
+        <div class="summary-box">
+          <h3>Total Outstanding</h3>
+          <p>Rs. ${totalUnpaidAmount.toFixed(2)}</p>
+        </div>
+        <div class="summary-box">
+          <h3>With Due Dates</h3>
+          <p>${upcomingDues.length}</p>
+        </div>
+      </div>
+    `;
+
+    pdfHTML += `
+        <div class="footer">
+          <p>PaintPulse POS System • Statement generated on ${currentDate}</p>
+          <p>This is a system-generated report</p>
+        </div>
+      </body>
+      </html>
+    `;
+
+    // Create blob and download
+    const blob = new Blob([pdfHTML], { type: 'text/html' });
+    const url = window.URL.createObjectURL(blob);
+    const printWindow = window.open(url, '_blank');
+    if (printWindow) {
+      printWindow.onload = () => {
+        printWindow.print();
+      };
+    }
+    
+    toast({ title: "PDF Statement opened for printing" });
   };
 
   const [selectedCustomerPhone, setSelectedCustomerPhone] = useState<string | null>(null);
@@ -551,54 +747,48 @@ export default function UnpaidBills() {
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight" data-testid="text-unpaid-bills-title">
-            Unpaid Bills
-          </h1>
-          <p className="text-sm text-muted-foreground">Track and manage outstanding payments</p>
+      {/* Header with Title */}
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight" data-testid="text-unpaid-bills-title">
+              Unpaid Bills
+            </h1>
+            <p className="text-sm text-muted-foreground">Track and manage outstanding payments</p>
+          </div>
+          
+          {/* Action Buttons */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button 
+              variant="default" 
+              onClick={() => setManualBalanceDialogOpen(true)}
+              className="flex items-center gap-2"
+            >
+              <Plus className="h-4 w-4" />
+              Add Pending Balance
+            </Button>
+
+            <Button 
+              variant="outline" 
+              onClick={generatePDFStatement}
+              className="flex items-center gap-2"
+            >
+              <FileText className="h-4 w-4" />
+              PDF Statement
+            </Button>
+          </div>
         </div>
-        
-        <div className="flex items-center gap-2">
-          {/* Add Pending Balance Button */}
-          <Button 
-            variant="default" 
-            onClick={() => setManualBalanceDialogOpen(true)}
-            className="flex items-center gap-2"
-          >
-            <Plus className="h-4 w-4" />
-            Add Pending Balance
-          </Button>
 
-          {/* Export Button */}
-          <Button 
-            variant="outline" 
-            onClick={() => {
-              // Export functionality
-              const csvContent = generateCSVReport();
-              const blob = new Blob([csvContent], { type: 'text/csv' });
-              const url = window.URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = `unpaid-bills-${new Date().toISOString().split('T')[0]}.csv`;
-              a.click();
-              window.URL.revokeObjectURL(url);
-              toast({ title: "Report exported successfully" });
-            }}
-            className="flex items-center gap-2"
-          >
-            <Printer className="h-4 w-4" />
-            Export
-          </Button>
-
+        {/* Search and Filter Row */}
+        <div className="flex items-center gap-2 flex-wrap">
           {/* Search Input */}
-          <div className="relative">
+          <div className="relative flex-1 min-w-[200px] max-w-sm">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Search customers..."
               value={filters.search}
               onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
-              className="pl-9 w-48 sm:w-64"
+              className="pl-9"
             />
           </div>
 
@@ -1192,16 +1382,61 @@ export default function UnpaidBills() {
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="customerName">Customer Name</Label>
-              <Input
-                id="customerName"
-                placeholder="Enter customer name"
-                value={manualBalanceForm.customerName}
-                onChange={(e) => setManualBalanceForm(prev => ({ ...prev, customerName: e.target.value }))}
-              />
+              <Label className="text-sm font-medium">Customer</Label>
+              <div className="relative">
+                <Input
+                  value={manualBalanceForm.customerName}
+                  onChange={(e) => setManualBalanceForm(prev => ({ ...prev, customerName: e.target.value }))}
+                  className="pr-12"
+                  placeholder="Type or select customer"
+                />
+                <Popover open={customerSuggestionsOpen} onOpenChange={setCustomerSuggestionsOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                    >
+                      <Search className="h-4 w-4 text-muted-foreground" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-80 p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Search customers..." />
+                      <CommandList>
+                        <CommandEmpty>No customers found</CommandEmpty>
+                        <CommandGroup heading="Recent Customers">
+                          {customerSuggestions.map((customer) => (
+                            <CommandItem
+                              key={customer.customerPhone}
+                              onSelect={() => selectCustomer(customer)}
+                              className="flex flex-col items-start gap-2 py-3 px-4 cursor-pointer"
+                            >
+                              <div className="flex items-center gap-2 w-full">
+                                <User className="h-4 w-4 text-blue-500" />
+                                <span className="font-medium">{customer.customerName}</span>
+                              </div>
+                              <div className="flex items-center gap-4 text-xs text-muted-foreground w-full pl-6">
+                                <div className="flex items-center gap-1">
+                                  <Phone className="h-3 w-3" />
+                                  {customer.customerPhone}
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <Calendar className="h-3 w-3" />
+                                  {new Date(customer.lastSaleDate).toLocaleDateString()}
+                                </div>
+                              </div>
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="customerPhone">Customer Phone</Label>
+              <Label htmlFor="customerPhone">Phone</Label>
               <Input
                 id="customerPhone"
                 placeholder="Enter phone number"
