@@ -31,6 +31,22 @@ export default function Settings() {
         setDatabasePath(path);
       });
     }
+    
+    // Load POS receipt settings from localStorage
+    try {
+      const savedReceiptSettings = localStorage.getItem('posReceiptSettings');
+      if (savedReceiptSettings) {
+        const settings = JSON.parse(savedReceiptSettings);
+        setReceiptBusinessName(settings.businessName || "ALI MUHAMMAD PAINTS");
+        setReceiptAddress(settings.address || "Basti Malook, Multan. 0300-868-3395");
+        setReceiptDealerText(settings.dealerText || "AUTHORIZED DEALER:");
+        setReceiptDealerBrands(settings.dealerBrands || "ICI-DULUX • MOBI PAINTS • WESTER 77");
+        setReceiptThankYou(settings.thankYou || "THANKS FOR YOUR BUSINESS");
+      }
+    } catch (error) {
+      console.error("Error loading receipt settings:", error);
+      // Keep default settings if parsing fails
+    }
   }, []);
 
   // POS Bill Settings
@@ -38,6 +54,13 @@ export default function Settings() {
   const [showGST, setShowGST] = useState(true);
   const [autoprint, setAutoprint] = useState(false);
   const [billFooter, setBillFooter] = useState("Thank you for your business!");
+  
+  // POS Receipt Header/Footer Settings
+  const [receiptBusinessName, setReceiptBusinessName] = useState("ALI MUHAMMAD PAINTS");
+  const [receiptAddress, setReceiptAddress] = useState("Basti Malook, Multan. 0300-868-3395");
+  const [receiptDealerText, setReceiptDealerText] = useState("AUTHORIZED DEALER:");
+  const [receiptDealerBrands, setReceiptDealerBrands] = useState("ICI-DULUX • MOBI PAINTS • WESTER 77");
+  const [receiptThankYou, setReceiptThankYou] = useState("THANKS FOR YOUR BUSINESS");
 
   // Bluetooth Settings
   const [bluetoothEnabled, setBluetoothEnabled] = useState(false);
@@ -48,6 +71,15 @@ export default function Settings() {
   };
 
   const handleSaveBillSettings = () => {
+    // Save POS receipt settings to localStorage
+    const receiptSettings = {
+      businessName: receiptBusinessName,
+      address: receiptAddress,
+      dealerText: receiptDealerText,
+      dealerBrands: receiptDealerBrands,
+      thankYou: receiptThankYou,
+    };
+    localStorage.setItem('posReceiptSettings', JSON.stringify(receiptSettings));
     toast({ title: "Bill settings saved successfully" });
   };
 
@@ -373,6 +405,67 @@ export default function Settings() {
                 />
                 <p className="text-xs text-muted-foreground">This message appears at the bottom of every bill</p>
               </div>
+              <Separator />
+              
+              {/* POS Receipt Header/Footer Settings */}
+              <div className="space-y-4 pt-4">
+                <h3 className="font-semibold">Thermal Receipt Customization</h3>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="receiptBusinessName">Business Name</Label>
+                  <Input
+                    id="receiptBusinessName"
+                    value={receiptBusinessName}
+                    onChange={(e) => setReceiptBusinessName(e.target.value)}
+                    placeholder="Enter business name"
+                  />
+                  <p className="text-xs text-muted-foreground">Appears at the top of thermal receipt</p>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="receiptAddress">Address & Contact</Label>
+                  <Input
+                    id="receiptAddress"
+                    value={receiptAddress}
+                    onChange={(e) => setReceiptAddress(e.target.value)}
+                    placeholder="Enter address and phone"
+                  />
+                  <p className="text-xs text-muted-foreground">Shop address and phone number</p>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="receiptDealerText">Dealer Label</Label>
+                  <Input
+                    id="receiptDealerText"
+                    value={receiptDealerText}
+                    onChange={(e) => setReceiptDealerText(e.target.value)}
+                    placeholder="e.g., AUTHORIZED DEALER:"
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="receiptDealerBrands">Dealer Brands</Label>
+                  <Input
+                    id="receiptDealerBrands"
+                    value={receiptDealerBrands}
+                    onChange={(e) => setReceiptDealerBrands(e.target.value)}
+                    placeholder="e.g., ICI-DULUX • MOBI PAINTS • WESTER 77"
+                  />
+                  <p className="text-xs text-muted-foreground">Use • (bullet) to separate brands</p>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="receiptThankYou">Thank You Message</Label>
+                  <Input
+                    id="receiptThankYou"
+                    value={receiptThankYou}
+                    onChange={(e) => setReceiptThankYou(e.target.value)}
+                    placeholder="e.g., THANKS FOR YOUR BUSINESS"
+                  />
+                  <p className="text-xs text-muted-foreground">Final message at the bottom of receipt</p>
+                </div>
+              </div>
+              
               <Separator />
               <div className="flex justify-end">
                 <Button onClick={handleSaveBillSettings} data-testid="button-save-bill">

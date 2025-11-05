@@ -9,7 +9,7 @@ import type { SaleWithItems, ColorWithVariantAndProduct, SaleItem } from "@share
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -37,6 +37,27 @@ export default function BillPrint() {
   const [quantity, setQuantity] = useState("1");
   const [searchQuery, setSearchQuery] = useState("");
   const [editingItems, setEditingItems] = useState<{ [key: number]: { quantity: string; rate: string } }>({});
+  
+  // Load receipt settings from localStorage
+  const [receiptSettings, setReceiptSettings] = useState({
+    businessName: "ALI MUHAMMAD PAINTS",
+    address: "Basti Malook, Multan. 0300-868-3395",
+    dealerText: "AUTHORIZED DEALER:",
+    dealerBrands: "ICI-DULUX • MOBI PAINTS • WESTER 77",
+    thankYou: "THANKS FOR YOUR BUSINESS"
+  });
+  
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('posReceiptSettings');
+      if (saved) {
+        setReceiptSettings(JSON.parse(saved));
+      }
+    } catch (error) {
+      console.error("Error loading receipt settings:", error);
+      // Keep default settings if parsing fails
+    }
+  }, []);
 
   const { data: sale, isLoading } = useQuery<SaleWithItems>({
     queryKey: ["/api/sales", saleId],
@@ -395,10 +416,10 @@ export default function BillPrint() {
 
       {/* PRINT ONLY: Thermal Receipt - UPDATED WITH PRODUCT NAME AND LARGER FONT FOR TOTALS */}
       <div className="hidden print:block font-mono text-xs leading-tight">
-        <div className="w-[80mm] mx-auto p-4 bg-white">
+        <div className="w-[80mm] mx-auto bg-white" style={{padding: '8px 12px 12px 12px'}}>
           <div className="text-center">
-            <h1 className="font-bold text-lg" style={{fontSize: '18px', fontWeight: 'bold', color: 'black'}}>ALI MUHAMMAD PAINTS</h1>
-            <p style={{color: 'black', fontWeight: 'bold'}}>Basti Malook, Multan. 0300-868-3395</p>
+            <h1 className="font-bold text-lg" style={{fontSize: '18px', fontWeight: 'bold', color: 'black'}}>{receiptSettings.businessName}</h1>
+            <p style={{color: 'black', fontWeight: 'bold'}}>{receiptSettings.address}</p>
           </div>
 
           <div className="my-3 border-t border-dotted border-black pt-2" style={{color: 'black'}}>
@@ -411,16 +432,16 @@ export default function BillPrint() {
           <table className="w-full border-collapse text-sm" style={{color: 'black', fontWeight: 'bold'}}>
             <thead>
               <tr className="border-b border-black">
-                <th className="text-left py-1">Item</th>
-                <th className="text-right py-1">Qty</th>
-                <th className="text-right py-1">Price</th>
-                <th className="text-right py-1">Amount</th>
+                <th className="text-left py-1 pr-1">Item</th>
+                <th className="text-right py-1 px-2" style={{minWidth: '32px'}}>Qty</th>
+                <th className="text-right py-1 px-2" style={{minWidth: '45px'}}>Price</th>
+                <th className="text-right py-1 pl-2" style={{minWidth: '50px'}}>Amount</th>
               </tr>
             </thead>
             <tbody>
               {sale.saleItems.map((item) => (
                 <tr key={item.id} className="border-b border-gray-200 last:border-none">
-                  <td className="py-1 pr-2 align-top">
+                  <td className="py-1 pr-1 align-top">
                     <div className="font-medium text-gray-900" style={{color: 'black', fontWeight: 'bold'}}>
                       {/* UPDATED: Show product name before color name */}
                       {item.color.variant.product.productName} - {item.color.colorName}
@@ -429,11 +450,11 @@ export default function BillPrint() {
                       {item.color.colorCode} • {item.color.variant.packingSize}
                     </div>
                   </td>
-                  <td className="text-right py-1 align-top" style={{color: 'black', fontWeight: 'bold'}}>{item.quantity}</td>
-                  <td className="text-right py-1 align-top" style={{color: 'black', fontWeight: 'bold'}}>
+                  <td className="text-right py-1 px-2 align-top" style={{color: 'black', fontWeight: 'bold', minWidth: '32px'}}>{item.quantity}</td>
+                  <td className="text-right py-1 px-2 align-top" style={{color: 'black', fontWeight: 'bold', minWidth: '45px'}}>
                     {Math.round(parseFloat(item.rate))}
                   </td>
-                  <td className="text-right font-semibold py-1 align-top" style={{color: 'black', fontWeight: 'bold'}}>
+                  <td className="text-right font-semibold py-1 pl-2 align-top" style={{color: 'black', fontWeight: 'bold', minWidth: '50px'}}>
                     {Math.round(parseFloat(item.subtotal))}
                   </td>
                 </tr>
@@ -478,13 +499,13 @@ export default function BillPrint() {
           {/* UPDATED FOOTER - Increased font size and bold ICI-DULUX */}
           <div className="text-center mt-4 border-t border-black pt-2" style={{color: 'black'}}>
             <p className="text-[11px] mt-1 font-bold uppercase" style={{fontSize: '11px', fontWeight: 'bold'}}>
-              AUTHORIZED DEALER:
+              {receiptSettings.dealerText}
             </p>
             <p className="text-[12px] font-bold" style={{fontSize: '12px', fontWeight: 'bold'}}>
-              ICI-DULUX • MOBI PAINTS • WESTER 77
+              {receiptSettings.dealerBrands}
             </p>
             <p className="text-[12px] mt-3 font-bold" style={{fontSize: '12px', fontWeight: 'bold', marginTop: '8px'}}>
-              THANKS FOR YOUR BUSINESS
+              {receiptSettings.thankYou}
             </p>
           </div>
         </div>
