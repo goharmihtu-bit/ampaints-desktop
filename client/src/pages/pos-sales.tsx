@@ -695,64 +695,71 @@ export default function POSSales() {
                 <p className="text-gray-500">Try adjusting your search terms</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+              <div className="space-y-3">
                 {filteredColors.map((color) => (
                   <Card 
                     key={color.id} 
-                    className="border border-gray-200 bg-white hover:border-blue-400 hover:shadow-md transition-all cursor-pointer"
+                    className="border border-gray-200 bg-white hover:border-blue-400 hover:shadow-sm transition-all cursor-pointer"
                     onClick={() => openConfirmFor(color)}
                   >
-                    <CardContent className="p-3">
-                      <div className="space-y-2">
-                        {/* Company Name */}
-                        <div className="text-xs text-gray-500 uppercase truncate">
-                          {color.variant.product.company}
-                        </div>
-
-                        {/* Product Name */}
-                        <div className="text-sm font-bold text-gray-900 truncate">
-                          {color.variant.product.productName}
-                        </div>
-
-                        {/* Color Code */}
-                        <div className="flex items-center gap-1.5 py-1.5 px-2 bg-gray-50 rounded">
-                          <div className="w-3 h-3 border border-gray-400 rounded flex items-center justify-center">
-                            <div className="w-1.5 h-1.5 bg-gray-700 rounded-sm"></div>
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between gap-4">
+                        {/* Left: Company & Product */}
+                        <div className="flex-shrink-0 min-w-0" style={{ width: '180px' }}>
+                          <div className="text-base font-semibold text-gray-900 truncate">
+                            {color.variant.product.company}
                           </div>
-                          <span className="text-base font-bold text-gray-900">
+                          <div className="text-sm text-gray-600 truncate">
+                            {color.variant.product.productName}
+                          </div>
+                        </div>
+
+                        {/* Middle: Color Code, Packing, Color Name, Stock */}
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                          {/* Color Code Badge */}
+                          <Badge variant="secondary" className="bg-blue-100 text-blue-700 font-semibold px-3 py-1 text-sm">
                             {color.colorCode}
-                          </span>
-                        </div>
+                          </Badge>
 
-                        {/* Color Name */}
-                        <div className="text-sm text-gray-600 line-clamp-2 min-h-[40px]">
-                          {color.colorName}
-                        </div>
-
-                        {/* Packing Size */}
-                        <div className="text-sm font-semibold text-gray-900">
-                          {color.variant.packingSize}
-                        </div>
-
-                        {/* Price & Stock */}
-                        <div className="flex items-center justify-between pt-2 border-t">
-                          <div className="text-lg font-bold text-blue-600">
-                            Rs. {Math.round(parseFloat(color.variant.rate))}
+                          {/* Packing Size */}
+                          <div className="text-sm font-semibold text-gray-900 flex-shrink-0">
+                            {color.variant.packingSize}
                           </div>
-                          <StockQuantity stock={color.stockQuantity} />
+
+                          {/* Color Name */}
+                          <div className="text-sm text-gray-700 font-medium truncate flex-1">
+                            {color.colorName}
+                          </div>
+
+                          {/* Stock Badge */}
+                          <div className="flex-shrink-0">
+                            <StockQuantity stock={color.stockQuantity} />
+                          </div>
                         </div>
 
-                        {/* Button */}
-                        <Button
-                          className="w-full h-8 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            addToCart(color);
-                          }}
-                        >
-                          <Plus className="h-3 w-3 mr-1" />
-                          Add to Cart
-                        </Button>
+                        {/* Right: Price & Button */}
+                        <div className="flex items-center gap-3 flex-shrink-0">
+                          <div className="text-right">
+                            <div className="text-2xl font-bold text-blue-600">
+                              Rs. {Math.round(parseFloat(color.variant.rate))}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              Rs. {Math.round(parseFloat(color.variant.rate))} each
+                            </div>
+                          </div>
+
+                          {/* Add to Cart Button */}
+                          <Button
+                            className="h-9 px-4 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium flex-shrink-0"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              addToCart(color);
+                            }}
+                          >
+                            <Plus className="h-4 w-4 mr-1" />
+                            Add
+                          </Button>
+                        </div>
                       </div>
                     </CardContent>
                   </Card>
