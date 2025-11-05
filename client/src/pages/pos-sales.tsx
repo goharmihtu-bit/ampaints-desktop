@@ -89,10 +89,6 @@ export default function POSSales() {
     queryKey: ["/api/customers/suggestions"],
   });
 
-  const { data: recentSales = [] } = useQuery<Sale[]>({
-    queryKey: ["/api/sales/recent"],
-  });
-
   const filteredColors = useMemo(() => {
     if (!searchQuery) return colors;
     const q = searchQuery.toUpperCase().trim(); // Uppercase for exact color code matching
