@@ -8,6 +8,12 @@ PaintPulse is a professional Paint Store Point of Sale (POS) and Inventory Manag
 **Current State**: Running successfully on Replit with full functionality.
 
 ## Recent Changes (November 5, 2025)
+- **Dashboard Enhancements:**
+  - Added "Top 20 High Purchaser Customers" section
+  - Shows ranking with gold/silver/bronze badges for top 3 customers
+  - Displays customer name, phone, total purchases, and transaction count
+  - Sorted by total purchase amount in descending order
+  - Clean table design with hover effects and responsive layout
 - Migrated from GitHub import to Replit environment
 - Fixed database configuration (changed from PostgreSQL to SQLite to match original design)
 - Configured development workflow on port 5000

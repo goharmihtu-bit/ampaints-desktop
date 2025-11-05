@@ -66,6 +66,7 @@ export interface IStorage {
     unpaidBills: { count: number; totalAmount: number };
     recentSales: Sale[];
     monthlyChart: { date: string; revenue: number }[];
+    topCustomers: Array<{ customerName: string; customerPhone: string; totalPurchases: number; transactionCount: number }>;
   }>;
 }
 
@@ -594,6 +595,20 @@ export class DatabaseStorage implements IStorage {
       .groupBy(sql`DATE(${sales.createdAt} / 1000, 'unixepoch')`)
       .orderBy(sql`DATE(${sales.createdAt} / 1000, 'unixepoch')`);
 
+    // Top 20 customers by total purchases (exclude null/empty phone numbers)
+    const topCustomersData = await db
+      .select({
+        customerName: sql<string>`${sales.customerName}`,
+        customerPhone: sql<string>`${sales.customerPhone}`,
+        totalPurchases: sql<number>`COALESCE(SUM(CAST(${sales.totalAmount} AS REAL)), 0)`,
+        transactionCount: sql<number>`COUNT(*)`,
+      })
+      .from(sales)
+      .where(sql`${sales.customerPhone} IS NOT NULL AND ${sales.customerPhone} != ''`)
+      .groupBy(sales.customerPhone, sales.customerName)
+      .orderBy(sql`COALESCE(SUM(CAST(${sales.totalAmount} AS REAL)), 0) DESC`)
+      .limit(20);
+
     return {
       todaySales: {
         revenue: Number(todaySalesData[0]?.revenue || 0),
@@ -618,6 +633,12 @@ export class DatabaseStorage implements IStorage {
       monthlyChart: dailySales.map((day) => ({
         date: new Date(day.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
         revenue: Number(day.revenue),
+      })),
+      topCustomers: topCustomersData.map((customer) => ({
+        customerName: customer.customerName,
+        customerPhone: customer.customerPhone,
+        totalPurchases: Number(customer.totalPurchases || 0),
+        transactionCount: Number(customer.transactionCount || 0),
       })),
     };
   }

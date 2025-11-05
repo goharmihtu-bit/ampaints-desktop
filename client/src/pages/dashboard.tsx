@@ -36,6 +36,12 @@ interface DashboardStats {
     date: string;
     revenue: number;
   }>;
+  topCustomers: Array<{
+    customerName: string;
+    customerPhone: string;
+    totalPurchases: number;
+    transactionCount: number;
+  }>;
 }
 
 export default function Dashboard() {
@@ -224,6 +230,72 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Top 20 Customers Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Top 20 High Purchaser Customers</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {stats?.topCustomers && stats.topCustomers.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-border text-sm text-muted-foreground">
+                    <th className="text-left py-3 px-4 font-medium">Rank</th>
+                    <th className="text-left py-3 px-4 font-medium">Customer Name</th>
+                    <th className="text-left py-3 px-4 font-medium">Phone</th>
+                    <th className="text-right py-3 px-4 font-medium">Total Purchases</th>
+                    <th className="text-right py-3 px-4 font-medium">Transactions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stats.topCustomers.map((customer, index) => {
+                    const totalPurchases = parseFloat(customer.totalPurchases.toString()) || 0;
+                    const transactionCount = parseInt(customer.transactionCount.toString()) || 0;
+                    
+                    return (
+                      <tr
+                        key={`${customer.customerPhone}-${index}`}
+                        className="border-b border-border last:border-0 hover:bg-muted/50 transition-colors"
+                      >
+                        <td className="py-3 px-4">
+                          <Badge 
+                            variant={index < 3 ? "default" : "secondary"}
+                            className={
+                              index === 0 
+                                ? "bg-yellow-500 hover:bg-yellow-600" 
+                                : index === 1 
+                                ? "bg-gray-400 hover:bg-gray-500" 
+                                : index === 2 
+                                ? "bg-amber-600 hover:bg-amber-700" 
+                                : ""
+                            }
+                          >
+                            #{index + 1}
+                          </Badge>
+                        </td>
+                        <td className="py-3 px-4 font-medium">{customer.customerName || 'N/A'}</td>
+                        <td className="py-3 px-4 text-muted-foreground">{customer.customerPhone || 'N/A'}</td>
+                        <td className="py-3 px-4 text-right font-mono font-semibold text-blue-600">
+                          Rs. {Math.round(totalPurchases).toLocaleString()}
+                        </td>
+                        <td className="py-3 px-4 text-right text-muted-foreground">
+                          {transactionCount}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="h-[200px] flex items-center justify-center text-sm text-muted-foreground">
+              No customer data available
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
