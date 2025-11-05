@@ -714,8 +714,8 @@ export default function POSSales() {
                           </div>
                         </div>
 
-                        {/* One Line: Color Code Badge, Color Name, Packing Size - Centered */}
-                        <div className="flex items-center justify-center gap-2 py-2">
+                        {/* One Line: Color Code Badge, Color Name, Packing Size - Left Aligned */}
+                        <div className="flex items-center gap-2 py-2">
                           <Badge variant="secondary" className="bg-blue-100 text-blue-700 font-semibold px-3 py-1 text-sm uppercase">
                             {color.colorCode}
                           </Badge>

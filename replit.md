@@ -63,7 +63,7 @@ PaintPulse is a professional Paint Store Point of Sale (POS) and Inventory Manag
     - 3 cards per row on large screens (lg:grid-cols-3) for optimal viewing
     - Vertical card layout with clean information hierarchy:
       - Top: Company name (UPPERCASE, bold) + Product name (UPPERCASE, gray)
-      - Middle: Color code badge (blue) + "NAME - SIZE" format (e.g., [452] BLUE - 1L)
+      - Middle: Color code badge (blue) + "NAME - SIZE" format (e.g., [452] BLUE - 1L) - left aligned
       - Bottom row: Stock badge (left) + Price (right, large blue)
       - Full-width Add to Cart button at bottom
     - All text displayed in UPPERCASE for consistency
