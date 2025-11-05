@@ -45,14 +45,27 @@ export default function BillPrint() {
     address: "Basti Malook, Multan. 0300-868-3395",
     dealerText: "AUTHORIZED DEALER:",
     dealerBrands: "ICI-DULUX • MOBI PAINTS • WESTER 77",
-    thankYou: "THANKS FOR YOUR BUSINESS"
+    thankYou: "THANKS FOR YOUR BUSINESS",
+    fontSize: "11px",
+    itemFontSize: "12px",
+    padding: "0 12px 12px 12px"
   });
   
   useEffect(() => {
     try {
       const saved = localStorage.getItem('posReceiptSettings');
       if (saved) {
-        setReceiptSettings(JSON.parse(saved));
+        const settings = JSON.parse(saved);
+        setReceiptSettings({
+          businessName: settings.businessName || "ALI MUHAMMAD PAINTS",
+          address: settings.address || "Basti Malook, Multan. 0300-868-3395",
+          dealerText: settings.dealerText || "AUTHORIZED DEALER:",
+          dealerBrands: settings.dealerBrands || "ICI-DULUX • MOBI PAINTS • WESTER 77",
+          thankYou: settings.thankYou || "THANKS FOR YOUR BUSINESS",
+          fontSize: settings.fontSize ? `${settings.fontSize}px` : "11px",
+          itemFontSize: settings.itemFontSize ? `${settings.itemFontSize}px` : "12px",
+          padding: settings.padding ? `0 ${settings.padding}px 12px ${settings.padding}px` : "0 12px 12px 12px"
+        });
       }
     } catch (error) {
       console.error("Error loading receipt settings:", error);

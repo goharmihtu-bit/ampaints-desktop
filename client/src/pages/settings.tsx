@@ -42,6 +42,9 @@ export default function Settings() {
         setReceiptDealerText(settings.dealerText || "AUTHORIZED DEALER:");
         setReceiptDealerBrands(settings.dealerBrands || "ICI-DULUX • MOBI PAINTS • WESTER 77");
         setReceiptThankYou(settings.thankYou || "THANKS FOR YOUR BUSINESS");
+        setReceiptFontSize(settings.fontSize || "11");
+        setReceiptItemFontSize(settings.itemFontSize || "12");
+        setReceiptPadding(settings.padding || "12");
       }
     } catch (error) {
       console.error("Error loading receipt settings:", error);
@@ -61,6 +64,9 @@ export default function Settings() {
   const [receiptDealerText, setReceiptDealerText] = useState("AUTHORIZED DEALER:");
   const [receiptDealerBrands, setReceiptDealerBrands] = useState("ICI-DULUX • MOBI PAINTS • WESTER 77");
   const [receiptThankYou, setReceiptThankYou] = useState("THANKS FOR YOUR BUSINESS");
+  const [receiptFontSize, setReceiptFontSize] = useState("11");
+  const [receiptItemFontSize, setReceiptItemFontSize] = useState("12");
+  const [receiptPadding, setReceiptPadding] = useState("12");
 
   // Bluetooth Settings
   const [bluetoothEnabled, setBluetoothEnabled] = useState(false);
@@ -78,6 +84,9 @@ export default function Settings() {
       dealerText: receiptDealerText,
       dealerBrands: receiptDealerBrands,
       thankYou: receiptThankYou,
+      fontSize: receiptFontSize,
+      itemFontSize: receiptItemFontSize,
+      padding: receiptPadding,
     };
     localStorage.setItem('posReceiptSettings', JSON.stringify(receiptSettings));
     toast({ title: "Bill settings saved successfully" });
@@ -463,6 +472,50 @@ export default function Settings() {
                     placeholder="e.g., THANKS FOR YOUR BUSINESS"
                   />
                   <p className="text-xs text-muted-foreground">Final message at the bottom of receipt</p>
+                </div>
+                
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="receiptFontSize">General Font Size (px)</Label>
+                    <Input
+                      id="receiptFontSize"
+                      type="number"
+                      min="8"
+                      max="16"
+                      value={receiptFontSize}
+                      onChange={(e) => setReceiptFontSize(e.target.value)}
+                      placeholder="11"
+                    />
+                    <p className="text-xs text-muted-foreground">Base font size</p>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="receiptItemFontSize">Item Font Size (px)</Label>
+                    <Input
+                      id="receiptItemFontSize"
+                      type="number"
+                      min="10"
+                      max="18"
+                      value={receiptItemFontSize}
+                      onChange={(e) => setReceiptItemFontSize(e.target.value)}
+                      placeholder="12"
+                    />
+                    <p className="text-xs text-muted-foreground">Item list size</p>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="receiptPadding">Padding (px)</Label>
+                    <Input
+                      id="receiptPadding"
+                      type="number"
+                      min="0"
+                      max="20"
+                      value={receiptPadding}
+                      onChange={(e) => setReceiptPadding(e.target.value)}
+                      placeholder="12"
+                    />
+                    <p className="text-xs text-muted-foreground">Side padding</p>
+                  </div>
                 </div>
               </div>
               

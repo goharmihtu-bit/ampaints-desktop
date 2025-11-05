@@ -8,6 +8,9 @@ interface ThermalReceiptProps {
     dealerText: string;
     dealerBrands: string;
     thankYou: string;
+    fontSize?: string;
+    itemFontSize?: string;
+    padding?: string;
   };
 }
 
@@ -18,10 +21,15 @@ function formatDate(dateStr: string | Date) {
 
 export default function ThermalReceipt({ sale, receiptSettings }: ThermalReceiptProps) {
   const outstanding = Math.round(parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid));
+  
+  // Default values
+  const fontSize = receiptSettings.fontSize || '11px';
+  const itemFontSize = receiptSettings.itemFontSize || '12px';
+  const padding = receiptSettings.padding || '0 12px 12px 12px';
 
   return (
-    <div className="hidden print:block font-mono text-xs leading-tight">
-      <div className="w-[80mm] mx-auto bg-white" style={{padding: '0 12px 12px 12px'}}>
+    <div className="hidden print:block font-mono leading-tight" style={{fontSize}}>
+      <div className="w-[80mm] mx-auto bg-white" style={{padding}}>
         <div className="text-center">
           <h1 className="font-bold text-lg" style={{fontSize: '18px', fontWeight: 'bold', color: 'black', marginTop: '0', paddingTop: '0'}}>
             {receiptSettings.businessName}
@@ -36,7 +44,7 @@ export default function ThermalReceipt({ sale, receiptSettings }: ThermalReceipt
           <p style={{fontWeight: 'bold'}}>Phone: {sale.customerPhone}</p>
         </div>
 
-        <table className="w-full border-collapse text-sm" style={{color: 'black', fontWeight: 'bold'}}>
+        <table className="w-full border-collapse" style={{color: 'black', fontWeight: 'bold', fontSize: itemFontSize}}>
           <thead>
             <tr className="border-b border-black">
               <th className="text-left py-1 pr-1">Item</th>
@@ -49,10 +57,10 @@ export default function ThermalReceipt({ sale, receiptSettings }: ThermalReceipt
             {sale.saleItems.map((item) => (
               <tr key={item.id} className="border-b border-gray-200 last:border-none">
                 <td className="py-1 pr-1 align-top">
-                  <div className="font-medium text-gray-900" style={{color: 'black', fontWeight: 'bold'}}>
+                  <div className="font-medium" style={{color: 'black', fontWeight: 'bold', fontSize: itemFontSize}}>
                     {item.color.variant.product.productName} - {item.color.colorName}
                   </div>
-                  <div className="text-gray-500 text-xs" style={{color: 'black', fontWeight: 'bold'}}>
+                  <div style={{color: 'black', fontWeight: 'bold', fontSize: `calc(${itemFontSize} - 1px)`}}>
                     {item.color.colorCode} • {item.color.variant.packingSize}
                   </div>
                 </td>
