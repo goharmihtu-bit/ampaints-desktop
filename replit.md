@@ -32,6 +32,7 @@ PaintPulse is a professional Paint Store Point of Sale (POS) and Inventory Manag
   - Added bulk delete operations with "Select All" capability and confirmation dialogs
   - Fixed edit forms to properly populate with existing data using useEffect hooks
   - All filters work in combination and use memoized filtering for optimal performance
+  - **Products tab now shows Price Range** - displays min-max rates from all variants of each product
   - **Unique ID System & Duplicate Handling (COMPLETE):**
     - Each item (Product, Variant, Color) has a globally unique UUID-based ID (text type)
     - System supports multiple items with same names, codes, sizes, and rates

@@ -1079,6 +1079,7 @@ export default function StockManagement() {
                         </TableHead>
                         <TableHead>Company</TableHead>
                         <TableHead>Product Name</TableHead>
+                        <TableHead>Price Range</TableHead>
                         <TableHead>Variants</TableHead>
                         <TableHead>Created</TableHead>
                         <TableHead className="w-[100px]">Actions</TableHead>
@@ -1087,6 +1088,17 @@ export default function StockManagement() {
                     <TableBody>
                       {filteredProducts.map(product => {
                         const productVariants = variantsData.filter(v => v.productId === product.id);
+                        
+                        // Calculate price range from variants
+                        const rates = productVariants.map(v => parseFloat(v.rate)).filter(r => !isNaN(r));
+                        const minRate = rates.length > 0 ? Math.min(...rates) : 0;
+                        const maxRate = rates.length > 0 ? Math.max(...rates) : 0;
+                        const priceRange = rates.length > 0 
+                          ? (minRate === maxRate 
+                              ? `Rs. ${minRate.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}` 
+                              : `Rs. ${minRate.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} - ${maxRate.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`)
+                          : "No variants";
+                        
                         return (
                           <TableRow key={product.id}>
                             <TableCell>
@@ -1107,6 +1119,7 @@ export default function StockManagement() {
                             </TableCell>
                             <TableCell className="font-medium">{product.company}</TableCell>
                             <TableCell>{product.productName}</TableCell>
+                            <TableCell className="font-mono text-blue-600 font-semibold">{priceRange}</TableCell>
                             <TableCell><Badge variant="outline">{productVariants.length} variants</Badge></TableCell>
                             <TableCell className="text-muted-foreground">{new Date(product.createdAt).toLocaleDateString()}</TableCell>
                             <TableCell>
