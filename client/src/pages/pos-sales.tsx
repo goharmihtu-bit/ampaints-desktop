@@ -95,14 +95,28 @@ export default function POSSales() {
 
   const filteredColors = useMemo(() => {
     if (!searchQuery) return colors;
-    const q = searchQuery.toLowerCase().trim();
-    return colors.filter(
+    const q = searchQuery.toUpperCase().trim(); // Uppercase for exact color code matching
+    
+    // Priority-based filtering for super-fast exact color code matching
+    const results = colors.filter(
       (c) =>
-        c.colorCode.toLowerCase().includes(q) ||
-        c.colorName.toLowerCase().includes(q) ||
-        c.variant.product.productName.toLowerCase().includes(q) ||
-        c.variant.product.company.toLowerCase().includes(q)
+        c.colorCode.toUpperCase().includes(q) ||
+        c.colorName.toLowerCase().includes(q.toLowerCase()) ||
+        c.variant.product.productName.toLowerCase().includes(q.toLowerCase()) ||
+        c.variant.product.company.toLowerCase().includes(q.toLowerCase())
     );
+    
+    // Sort with priority: Exact color code matches first, then starts-with, then contains
+    return results.sort((a, b) => {
+      const aCodeUpper = a.colorCode.toUpperCase();
+      const bCodeUpper = b.colorCode.toUpperCase();
+      
+      // Exact match gets highest priority
+      const aExact = aCodeUpper === q ? 0 : aCodeUpper.startsWith(q) ? 1 : 2;
+      const bExact = bCodeUpper === q ? 0 : bCodeUpper.startsWith(q) ? 1 : 2;
+      
+      return aExact - bExact;
+    });
   }, [colors, searchQuery]);
 
   const enableGST = false;
@@ -681,61 +695,64 @@ export default function POSSales() {
                 <p className="text-gray-500">Try adjusting your search terms</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
                 {filteredColors.map((color) => (
                   <Card 
                     key={color.id} 
-                    className="border border-gray-200 shadow-sm bg-white hover:shadow-md transition-all duration-200 cursor-pointer group overflow-hidden"
+                    className="border border-gray-200 shadow-sm bg-white hover:shadow-lg hover:border-blue-300 transition-all duration-200 cursor-pointer group overflow-hidden rounded-lg"
                     onClick={() => openConfirmFor(color)}
                   >
                     <CardContent className="p-4">
                       <div className="space-y-3">
-                        {/* Header */}
-                        <div className="flex justify-between items-start gap-2">
+                        {/* Header: Company & Product Name */}
+                        <div className="flex justify-between items-start gap-2 min-h-[40px]">
                           <div className="flex-1 min-w-0">
-                            <div className="text-xs font-medium text-gray-500 truncate mb-1">
+                            <div className="text-xs font-medium text-gray-500 truncate">
                               {color.variant.product.company}
                             </div>
-                            <div className="text-sm font-semibold text-gray-900 truncate">
+                            <div className="text-sm font-bold text-gray-900 truncate mt-0.5">
                               {color.variant.product.productName}
                             </div>
                           </div>
-                          <StockQuantity stock={color.stockQuantity} />
-                        </div>
-
-                        {/* Color Info */}
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2">
-                            <div className="w-4 h-4 rounded border border-gray-300" 
-                                 style={{ backgroundColor: color.colorCode }} />
-                            <span className="text-xs font-mono text-gray-600">
-                              {color.colorCode}
-                            </span>
-                          </div>
-                          <div className="text-xs text-gray-600 line-clamp-2">
-                            {color.colorName}
+                          <div className="flex-shrink-0">
+                            <StockQuantity stock={color.stockQuantity} />
                           </div>
                         </div>
 
-                        {/* Details */}
-                        <div className="flex flex-wrap gap-1">
-                          <Badge variant="outline" className="text-xs px-1.5 py-0.5 border-gray-300">
+                        {/* Color Code - Checkbox Style */}
+                        <div className="flex items-center gap-2.5 py-2 border-t border-b border-gray-100">
+                          <div className="flex items-center justify-center w-4 h-4 border-2 border-gray-400 rounded bg-white">
+                            <div className="w-2 h-2 rounded-sm bg-gray-700"></div>
+                          </div>
+                          <span className="text-base font-bold text-gray-900 tracking-wide">
+                            {color.colorCode}
+                          </span>
+                        </div>
+
+                        {/* Color Name */}
+                        <div className="text-sm text-gray-700 font-medium leading-snug min-h-[36px] line-clamp-2">
+                          {color.colorName}
+                        </div>
+
+                        {/* Packing Size & Rate */}
+                        <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+                          <div className="text-base font-bold text-gray-900">
                             {color.variant.packingSize}
-                          </Badge>
-                          <div className="text-xs font-semibold text-gray-900 ml-auto">
+                          </div>
+                          <div className="text-lg font-bold text-blue-600">
                             Rs. {Math.round(parseFloat(color.variant.rate))}
                           </div>
                         </div>
 
                         {/* Action Button */}
                         <Button
-                          className="w-full h-8 bg-gray-900 hover:bg-gray-800 text-white text-xs font-medium transition-all duration-200"
+                          className="w-full h-10 bg-gradient-to-r from-gray-900 to-gray-800 hover:from-gray-800 hover:to-gray-700 text-white text-sm font-semibold transition-all duration-200 shadow-sm hover:shadow-md"
                           onClick={(e) => {
                             e.stopPropagation();
                             addToCart(color);
                           }}
                         >
-                          <Plus className="h-3 w-3 mr-1" />
+                          <Plus className="h-4 w-4 mr-1.5" />
                           Add to Cart
                         </Button>
                       </div>
