@@ -414,28 +414,32 @@ export default function StockManagement() {
   };
 
   const filteredColors = useMemo(() => {
-    const query = colorSearchQuery.toLowerCase().trim();
+    const query = colorSearchQuery.trim().toUpperCase();
+    const queryLower = query.toLowerCase();
     if (!query) return colorsData;
 
     return colorsData
       .map((color) => {
         let score = 0;
-        const colorCode = color.colorCode.toLowerCase();
+        const colorCode = color.colorCode.trim().toUpperCase();
+        const colorCodeLower = colorCode.toLowerCase();
         const colorName = color.colorName.toLowerCase();
         const company = color.variant.product.company.toLowerCase();
         const product = color.variant.product.productName.toLowerCase();
         const size = color.variant.packingSize.toLowerCase();
 
-        if (colorCode === query) score += 1000;
-        else if (colorCode.startsWith(query)) score += 500;
-        else if (colorCode.includes(query)) score += 100;
+        // Exact match on normalized color code gets highest priority
+        if (colorCode === query) score += 10000;
+        else if (colorCodeLower === queryLower) score += 1000;
+        else if (colorCodeLower.startsWith(queryLower)) score += 500;
+        else if (colorCodeLower.includes(queryLower)) score += 100;
 
-        if (colorName === query) score += 200;
-        else if (colorName.includes(query)) score += 50;
+        if (colorName === queryLower) score += 200;
+        else if (colorName.includes(queryLower)) score += 50;
 
-        if (company.includes(query)) score += 30;
-        if (product.includes(query)) score += 30;
-        if (size.includes(query)) score += 20;
+        if (company.includes(queryLower)) score += 30;
+        if (product.includes(queryLower)) score += 30;
+        if (size.includes(queryLower)) score += 20;
 
         return { color, score };
       })
@@ -445,28 +449,32 @@ export default function StockManagement() {
   }, [colorsData, colorSearchQuery]);
 
   const filteredColorsForStockIn = useMemo(() => {
-    const query = stockInSearchQuery.toLowerCase().trim();
+    const query = stockInSearchQuery.trim().toUpperCase();
+    const queryLower = query.toLowerCase();
     if (!query) return colorsData;
 
     return colorsData
       .map((color) => {
         let score = 0;
-        const colorCode = color.colorCode.toLowerCase();
+        const colorCode = color.colorCode.trim().toUpperCase();
+        const colorCodeLower = colorCode.toLowerCase();
         const colorName = color.colorName.toLowerCase();
         const company = color.variant.product.company.toLowerCase();
         const product = color.variant.product.productName.toLowerCase();
         const size = color.variant.packingSize.toLowerCase();
 
-        if (colorCode === query) score += 1000;
-        else if (colorCode.startsWith(query)) score += 500;
-        else if (colorCode.includes(query)) score += 100;
+        // Exact match on normalized color code gets highest priority
+        if (colorCode === query) score += 10000;
+        else if (colorCodeLower === queryLower) score += 1000;
+        else if (colorCodeLower.startsWith(queryLower)) score += 500;
+        else if (colorCodeLower.includes(queryLower)) score += 100;
 
-        if (colorName === query) score += 200;
-        else if (colorName.includes(query)) score += 50;
+        if (colorName === queryLower) score += 200;
+        else if (colorName.includes(queryLower)) score += 50;
 
-        if (company.includes(query)) score += 30;
-        if (product.includes(query)) score += 30;
-        if (size.includes(query)) score += 20;
+        if (company.includes(queryLower)) score += 30;
+        if (product.includes(queryLower)) score += 30;
+        if (size.includes(queryLower)) score += 20;
 
         return { color, score };
       })

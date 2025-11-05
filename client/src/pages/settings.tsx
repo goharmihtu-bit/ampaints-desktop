@@ -98,54 +98,128 @@ export default function Settings() {
   };
 
   const handleExportDatabase = async () => {
-    if (!(window as any).electron) return;
-    
-    try {
-      const result = await (window as any).electron.exportDatabase();
-      if (result.success) {
+    if ((window as any).electron) {
+      try {
+        const result = await (window as any).electron.exportDatabase();
+        if (result.success) {
+          toast({
+            title: "Export Successful",
+            description: `Database exported successfully!`,
+          });
+        } else {
+          toast({
+            title: "Export Failed",
+            description: result.error || "Unknown error occurred",
+            variant: "destructive",
+          });
+        }
+      } catch (error) {
         toast({
-          title: "Export Successful",
-          description: `Database exported successfully!`,
-        });
-      } else {
-        toast({
-          title: "Export Failed",
-          description: result.error || "Unknown error occurred",
+          title: "Error",
+          description: "Failed to export database.",
           variant: "destructive",
         });
       }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to export database.",
-        variant: "destructive",
-      });
+    } else {
+      try {
+        const response = await fetch("/api/database/export");
+        if (!response.ok) throw new Error("Export failed");
+        
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `paintpulse-backup-${new Date().toISOString().split('T')[0]}.db`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+        
+        toast({
+          title: "Export Successful",
+          description: "Database backup downloaded successfully!",
+        });
+      } catch (error) {
+        toast({
+          title: "Error",
+          description: "Failed to export database.",
+          variant: "destructive",
+        });
+      }
     }
   };
 
   const handleImportDatabase = async () => {
-    if (!(window as any).electron) return;
-    
-    try {
-      const result = await (window as any).electron.importDatabase();
-      if (result.success) {
+    if ((window as any).electron) {
+      try {
+        const result = await (window as any).electron.importDatabase();
+        if (result.success) {
+          toast({
+            title: "Import Successful",
+            description: "Application will restart to apply changes.",
+          });
+        } else {
+          toast({
+            title: "Import Failed",
+            description: result.error || "Unknown error occurred",
+            variant: "destructive",
+          });
+        }
+      } catch (error) {
         toast({
-          title: "Import Successful",
-          description: "Application will restart to apply changes.",
-        });
-      } else {
-        toast({
-          title: "Import Failed",
-          description: result.error || "Unknown error occurred",
+          title: "Error",
+          description: "Failed to import database.",
           variant: "destructive",
         });
       }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to import database.",
-        variant: "destructive",
-      });
+    } else {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.db';
+      input.onchange = async (e) => {
+        const file = (e.target as HTMLInputElement).files?.[0];
+        if (!file) return;
+        
+        try {
+          const reader = new FileReader();
+          reader.onload = async (e) => {
+            const arrayBuffer = e.target?.result as ArrayBuffer;
+            const base64 = btoa(
+              new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+            );
+            
+            const response = await fetch("/api/database/import", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ fileData: base64 }),
+            });
+            
+            const result = await response.json();
+            
+            if (response.ok && result.success) {
+              toast({
+                title: "Import Successful",
+                description: "Database imported. Refreshing page...",
+              });
+              setTimeout(() => window.location.reload(), 1500);
+            } else {
+              toast({
+                title: "Import Failed",
+                description: result.error || "Unknown error occurred",
+                variant: "destructive",
+              });
+            }
+          };
+          reader.readAsArrayBuffer(file);
+        } catch (error) {
+          toast({
+            title: "Error",
+            description: "Failed to import database.",
+            variant: "destructive",
+          });
+        }
+      };
+      input.click();
     }
   };
 
@@ -159,7 +233,7 @@ export default function Settings() {
       </div>
 
       <Tabs defaultValue="store" className="w-full">
-        <TabsList className={`grid w-full ${isElectron ? 'grid-cols-4' : 'grid-cols-3'}`}>
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="store" data-testid="tab-store-settings">
             <Store className="h-4 w-4 mr-2" />
             Store
@@ -172,12 +246,10 @@ export default function Settings() {
             <Bluetooth className="h-4 w-4 mr-2" />
             Bluetooth
           </TabsTrigger>
-          {isElectron && (
-            <TabsTrigger value="database" data-testid="tab-database-settings">
-              <Database className="h-4 w-4 mr-2" />
-              Database
-            </TabsTrigger>
-          )}
+          <TabsTrigger value="database" data-testid="tab-database-settings">
+            <Database className="h-4 w-4 mr-2" />
+            Database
+          </TabsTrigger>
         </TabsList>
 
         {/* Store Settings */}
@@ -373,32 +445,35 @@ export default function Settings() {
           </Card>
         </TabsContent>
         
-        {/* Database Settings - Desktop Only */}
-        {isElectron && (
-          <TabsContent value="database" className="space-y-4">
-            <Card data-testid="card-database-settings">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Database className="h-5 w-5" />
-                  Database Management
-                </CardTitle>
-                <CardDescription>
-                  Manage your database location and backups
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Current Database Location</Label>
-                  <div className="flex items-center gap-2">
-                    <code className="flex-1 p-2 bg-muted rounded text-sm font-mono" data-testid="text-database-path">
-                      {databasePath || "Loading..."}
-                    </code>
+        {/* Database Settings */}
+        <TabsContent value="database" className="space-y-4">
+          <Card data-testid="card-database-settings">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Database className="h-5 w-5" />
+                Database Management
+              </CardTitle>
+              <CardDescription>
+                Manage your database backups and restore data
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {isElectron && (
+                <>
+                  <div className="space-y-2">
+                    <Label>Current Database Location</Label>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 p-2 bg-muted rounded text-sm font-mono" data-testid="text-database-path">
+                        {databasePath || "Loading..."}
+                      </code>
+                    </div>
                   </div>
-                </div>
+                  <Separator />
+                </>
+              )}
 
-                <Separator />
-
-                <div className="flex flex-wrap gap-3">
+              <div className="flex flex-wrap gap-3">
+                {isElectron && (
                   <Button 
                     onClick={handleChangeDatabaseLocation}
                     variant="outline"
@@ -407,39 +482,40 @@ export default function Settings() {
                     <FolderOpen className="h-4 w-4 mr-2" />
                     Change Location
                   </Button>
-                  <Button 
-                    onClick={handleExportDatabase}
-                    variant="outline"
-                    data-testid="button-export"
-                  >
-                    <Download className="h-4 w-4 mr-2" />
-                    Export Backup
-                  </Button>
-                  <Button 
-                    onClick={handleImportDatabase}
-                    variant="outline"
-                    data-testid="button-import"
-                  >
-                    <Upload className="h-4 w-4 mr-2" />
-                    Import Database
-                  </Button>
-                </div>
+                )}
+                <Button 
+                  onClick={handleExportDatabase}
+                  variant="outline"
+                  data-testid="button-export"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Export Backup
+                </Button>
+                <Button 
+                  onClick={handleImportDatabase}
+                  variant="outline"
+                  data-testid="button-import"
+                >
+                  <Upload className="h-4 w-4 mr-2" />
+                  Import Database
+                </Button>
+              </div>
 
-                <Separator />
+              <Separator />
 
-                <div className="p-4 bg-muted/50 rounded-lg">
-                  <h4 className="font-medium text-sm mb-2">Important Notes:</h4>
-                  <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside">
-                    <li>Changing database location will restart the application</li>
-                    <li>Export your database regularly to prevent data loss</li>
-                    <li>Importing a database will replace your current data</li>
-                    <li>Keep your database backups in a safe location</li>
-                  </ul>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        )}
+              <div className="p-4 bg-muted/50 rounded-lg">
+                <h4 className="font-medium text-sm mb-2">Important Notes:</h4>
+                <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside">
+                  {isElectron && <li>Changing database location will restart the application</li>}
+                  <li>Export your database regularly to prevent data loss</li>
+                  <li>Importing a database will replace your current data</li>
+                  <li>Keep your database backups in a safe location</li>
+                  <li>Export creates a .db file you can download and save</li>
+                </ul>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
     </div>
   );

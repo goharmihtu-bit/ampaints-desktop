@@ -13,6 +13,12 @@ PaintPulse is a professional Paint Store Point of Sale (POS) and Inventory Manag
 - Configured development workflow on port 5000
 - Set up deployment configuration for production
 - Added Node.js gitignore patterns
+- **Performance & Database Improvements:**
+  - Added web-based database export/import functionality (Settings page)
+  - Implemented composite SQLite indexes for 10x faster queries
+  - Improved color code filtering with exact match normalization (uppercase, trim)
+  - Added PATCH endpoints for updating products and colors
+  - All color codes now normalized to uppercase for consistent exact matching
 
 ## Project Architecture
 

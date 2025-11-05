@@ -31,6 +31,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.patch("/api/products/:id", async (req, res) => {
+    try {
+      const { company, productName } = req.body;
+      if (!company || !productName) {
+        res.status(400).json({ error: "Company and product name are required" });
+        return;
+      }
+      const product = await storage.updateProduct(req.params.id, { company, productName });
+      res.json(product);
+    } catch (error) {
+      console.error("Error updating product:", error);
+      res.status(500).json({ error: "Failed to update product" });
+    }
+  });
+
   app.delete("/api/products/:id", async (req, res) => {
     try {
       await storage.deleteProduct(req.params.id);
@@ -106,6 +121,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/colors", async (req, res) => {
     try {
       const validated = insertColorSchema.parse(req.body);
+      // Normalize color code (uppercase and trim)
+      validated.colorCode = validated.colorCode.trim().toUpperCase();
       const color = await storage.createColor(validated);
       res.json(color);
     } catch (error) {
@@ -115,6 +132,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error("Error creating color:", error);
         res.status(500).json({ error: "Failed to create color" });
       }
+    }
+  });
+
+  app.patch("/api/colors/:id", async (req, res) => {
+    try {
+      const { colorName, colorCode } = req.body;
+      if (!colorName || !colorCode) {
+        res.status(400).json({ error: "Color name and code are required" });
+        return;
+      }
+      // Normalize color code (uppercase and trim)
+      const normalizedCode = colorCode.trim().toUpperCase();
+      const color = await storage.updateColor(req.params.id, { colorName: colorName.trim(), colorCode: normalizedCode });
+      res.json(color);
+    } catch (error) {
+      console.error("Error updating color:", error);
+      res.status(500).json({ error: "Failed to update color" });
     }
   });
 
@@ -346,6 +380,93 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching dashboard stats:", error);
       res.status(500).json({ error: "Failed to fetch dashboard stats" });
+    }
+  });
+
+  // Database Export/Import
+  app.get("/api/database/export", async (_req, res) => {
+    try {
+      const { getDatabasePath } = await import("./db");
+      const fs = await import("fs/promises");
+      const path = await import("path");
+      
+      const dbPath = getDatabasePath();
+      const fileName = `paintpulse-backup-${new Date().toISOString().split('T')[0]}.db`;
+      
+      // Check if database file exists
+      const stats = await fs.stat(dbPath);
+      if (!stats.isFile()) {
+        throw new Error("Database file not found");
+      }
+
+      // Set headers for file download
+      res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+      res.setHeader('Content-Length', stats.size);
+      
+      // Stream the file
+      const fileStream = (await import("fs")).createReadStream(dbPath);
+      fileStream.pipe(res);
+    } catch (error) {
+      console.error("Error exporting database:", error);
+      res.status(500).json({ error: "Failed to export database" });
+    }
+  });
+
+  app.post("/api/database/import", async (req, res) => {
+    try {
+      const { getDatabasePath, setDatabasePath } = await import("./db");
+      const fs = await import("fs/promises");
+      const path = await import("path");
+      const os = await import("os");
+      
+      // Get the uploaded file from request body (base64)
+      const { fileData } = req.body;
+      
+      if (!fileData) {
+        res.status(400).json({ error: "No file data provided" });
+        return;
+      }
+
+      // Create temporary file
+      const tempPath = path.join(os.tmpdir(), `paintpulse-import-${Date.now()}.db`);
+      
+      // Decode base64 and write to temp file
+      const buffer = Buffer.from(fileData, 'base64');
+      await fs.writeFile(tempPath, buffer);
+
+      // Validate it's a SQLite database (basic check)
+      const header = await fs.readFile(tempPath, { encoding: 'utf8', flag: 'r' });
+      if (!header.startsWith('SQLite format 3')) {
+        await fs.unlink(tempPath);
+        res.status(400).json({ error: "Invalid database file format" });
+        return;
+      }
+
+      // Backup current database
+      const currentDbPath = getDatabasePath();
+      const backupPath = `${currentDbPath}.backup-${Date.now()}`;
+      
+      try {
+        await fs.copyFile(currentDbPath, backupPath);
+      } catch (error) {
+        console.log("No existing database to backup");
+      }
+
+      // Replace current database with uploaded one
+      await fs.copyFile(tempPath, currentDbPath);
+      await fs.unlink(tempPath);
+
+      // Reinitialize database connection
+      setDatabasePath(currentDbPath);
+
+      res.json({ 
+        success: true, 
+        message: "Database imported successfully. Please refresh the page." 
+      });
+    } catch (error) {
+      console.error("Error importing database:", error);
+      res.status(500).json({ error: "Failed to import database" });
     }
   });
 

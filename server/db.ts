@@ -112,6 +112,19 @@ function createTables() {
       FOREIGN KEY (color_id) REFERENCES colors(id)
     );
   `);
+  
+  // Create composite indexes for performance
+  sqlite.exec(`
+    CREATE INDEX IF NOT EXISTS idx_variants_product_created ON variants(product_id, created_at);
+    
+    CREATE INDEX IF NOT EXISTS idx_colors_variant_created ON colors(variant_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_colors_code_lookup ON colors(color_code);
+    
+    CREATE INDEX IF NOT EXISTS idx_sales_phone_status ON sales(customer_phone, payment_status);
+    CREATE INDEX IF NOT EXISTS idx_sales_status_created ON sales(payment_status, created_at);
+    
+    CREATE INDEX IF NOT EXISTS idx_sale_items_sale_color ON sale_items(sale_id, color_id);
+  `);
 }
 
 // Initialize database on startup

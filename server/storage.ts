@@ -26,6 +26,7 @@ export interface IStorage {
   getProducts(): Promise<Product[]>;
   getProduct(id: string): Promise<Product | undefined>;
   createProduct(product: InsertProduct): Promise<Product>;
+  updateProduct(id: string, data: { company: string; productName: string }): Promise<Product>;
   deleteProduct(id: string): Promise<void>;
 
   // Variants
@@ -39,6 +40,7 @@ export interface IStorage {
   getColors(): Promise<ColorWithVariantAndProduct[]>;
   getColor(id: string): Promise<Color | undefined>;
   createColor(color: InsertColor): Promise<Color>;
+  updateColor(id: string, data: { colorName: string; colorCode: string }): Promise<Color>;
   updateColorStock(id: string, stockQuantity: number): Promise<Color>;
   stockIn(id: string, quantity: number): Promise<Color>;
   deleteColor(id: string): Promise<void>;
@@ -84,6 +86,16 @@ export class DatabaseStorage implements IStorage {
     };
     await db.insert(products).values(product);
     return product;
+  }
+
+  async updateProduct(id: string, data: { company: string; productName: string }): Promise<Product> {
+    await db
+      .update(products)
+      .set({ company: data.company, productName: data.productName })
+      .where(eq(products.id, id));
+    const updated = await this.getProduct(id);
+    if (!updated) throw new Error("Product not found after update");
+    return updated;
   }
 
   async deleteProduct(id: string): Promise<void> {
@@ -159,6 +171,16 @@ export class DatabaseStorage implements IStorage {
     };
     await db.insert(colors).values(color);
     return color;
+  }
+
+  async updateColor(id: string, data: { colorName: string; colorCode: string }): Promise<Color> {
+    await db
+      .update(colors)
+      .set({ colorName: data.colorName, colorCode: data.colorCode })
+      .where(eq(colors.id, id));
+    const updated = await this.getColor(id);
+    if (!updated) throw new Error("Color not found after update");
+    return updated;
   }
 
   async updateColorStock(id: string, stockQuantity: number): Promise<Color> {
