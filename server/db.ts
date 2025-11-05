@@ -113,16 +113,29 @@ function createTables() {
     );
   `);
   
-  // Create composite indexes for performance
+  // Create composite indexes for performance and duplicate handling
   sqlite.exec(`
+    -- Product indexes for fast lookups with duplicates
+    CREATE INDEX IF NOT EXISTS idx_products_company_name ON products(company, product_name);
+    CREATE INDEX IF NOT EXISTS idx_products_company ON products(company);
+    
+    -- Variant indexes for fast lookups with duplicates
     CREATE INDEX IF NOT EXISTS idx_variants_product_created ON variants(product_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_variants_product_packing_rate ON variants(product_id, packing_size, rate);
+    CREATE INDEX IF NOT EXISTS idx_variants_packing_size ON variants(packing_size);
     
+    -- Color indexes for fast lookups with duplicates
     CREATE INDEX IF NOT EXISTS idx_colors_variant_created ON colors(variant_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_colors_variant_code ON colors(variant_id, color_code);
     CREATE INDEX IF NOT EXISTS idx_colors_code_lookup ON colors(color_code);
+    CREATE INDEX IF NOT EXISTS idx_colors_name_lookup ON colors(color_name);
+    CREATE INDEX IF NOT EXISTS idx_colors_code_name ON colors(color_code, color_name);
     
+    -- Sales indexes
     CREATE INDEX IF NOT EXISTS idx_sales_phone_status ON sales(customer_phone, payment_status);
     CREATE INDEX IF NOT EXISTS idx_sales_status_created ON sales(payment_status, created_at);
     
+    -- Sale items indexes
     CREATE INDEX IF NOT EXISTS idx_sale_items_sale_color ON sale_items(sale_id, color_id);
   `);
 }
