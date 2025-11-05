@@ -531,9 +531,9 @@ export default function UnpaidBills() {
     const rows = filteredAndSortedCustomers.map((customer: ConsolidatedCustomer) => [
       customer.customerName,
       customer.customerPhone,
-      Math.round(customer.totalAmount),
-      Math.round(customer.totalPaid),
-      Math.round(customer.totalOutstanding),
+      customer.totalAmount.toFixed(2),
+      customer.totalPaid.toFixed(2),
+      customer.totalOutstanding.toFixed(2),
       customer.daysOverdue,
       customer.bills.length
     ]);
