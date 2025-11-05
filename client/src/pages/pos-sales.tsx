@@ -695,7 +695,7 @@ export default function POSSales() {
                 <p className="text-gray-500">Try adjusting your search terms</p>
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {filteredColors.map((color) => (
                   <Card 
                     key={color.id} 
@@ -703,9 +703,9 @@ export default function POSSales() {
                     onClick={() => openConfirmFor(color)}
                   >
                     <CardContent className="p-4">
-                      <div className="flex items-center justify-between gap-4">
-                        {/* Left: Company & Product */}
-                        <div className="flex-shrink-0 min-w-0" style={{ width: '180px' }}>
+                      <div className="flex flex-col gap-3">
+                        {/* Top: Company & Product */}
+                        <div>
                           <div className="text-base font-semibold text-gray-900 truncate">
                             {color.variant.product.company}
                           </div>
@@ -714,52 +714,45 @@ export default function POSSales() {
                           </div>
                         </div>
 
-                        {/* Middle: Color Code, Packing, Color Name, Stock */}
-                        <div className="flex items-center gap-3 flex-1 min-w-0">
-                          {/* Color Code Badge */}
+                        {/* Middle: Color Code, Packing, Color Name in row */}
+                        <div className="flex flex-wrap items-center gap-2">
                           <Badge variant="secondary" className="bg-blue-100 text-blue-700 font-semibold px-3 py-1 text-sm">
                             {color.colorCode}
                           </Badge>
-
-                          {/* Packing Size */}
-                          <div className="text-sm font-semibold text-gray-900 flex-shrink-0">
+                          <div className="text-sm font-semibold text-gray-900">
                             {color.variant.packingSize}
-                          </div>
-
-                          {/* Color Name */}
-                          <div className="text-sm text-gray-700 font-medium truncate flex-1">
-                            {color.colorName}
-                          </div>
-
-                          {/* Stock Badge */}
-                          <div className="flex-shrink-0">
-                            <StockQuantity stock={color.stockQuantity} />
                           </div>
                         </div>
 
-                        {/* Right: Price & Button */}
-                        <div className="flex items-center gap-3 flex-shrink-0">
-                          <div className="text-right">
-                            <div className="text-2xl font-bold text-blue-600">
+                        {/* Color Name */}
+                        <div className="text-sm text-gray-700 font-medium line-clamp-2 min-h-[40px]">
+                          {color.colorName}
+                        </div>
+
+                        {/* Price & Stock Row */}
+                        <div className="flex items-center justify-between pt-2 border-t">
+                          <div>
+                            <div className="text-xl font-bold text-blue-600">
                               Rs. {Math.round(parseFloat(color.variant.rate))}
                             </div>
                             <div className="text-xs text-gray-500">
                               Rs. {Math.round(parseFloat(color.variant.rate))} each
                             </div>
                           </div>
-
-                          {/* Add to Cart Button */}
-                          <Button
-                            className="h-9 px-4 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium flex-shrink-0"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              addToCart(color);
-                            }}
-                          >
-                            <Plus className="h-4 w-4 mr-1" />
-                            Add
-                          </Button>
+                          <StockQuantity stock={color.stockQuantity} />
                         </div>
+
+                        {/* Bottom: Add to Cart Button */}
+                        <Button
+                          className="w-full h-9 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            addToCart(color);
+                          }}
+                        >
+                          <Plus className="h-4 w-4 mr-1" />
+                          Add to Cart
+                        </Button>
                       </div>
                     </CardContent>
                   </Card>
