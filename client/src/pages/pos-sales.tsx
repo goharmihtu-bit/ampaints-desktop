@@ -30,6 +30,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { ColorWithVariantAndProduct, Sale } from "@shared/schema";
+import { getEffectiveRate } from "@shared/schema";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Command,
@@ -179,7 +180,7 @@ export default function POSSales() {
     qty = 1,
     rate?: number
   ) => {
-    const effectiveRate = rate ?? parseFloat(color.variant.rate);
+    const effectiveRate = rate ?? parseFloat(getEffectiveRate(color));
     
     // REMOVED STOCK VALIDATION - Allow adding even when stock is 0
     // Only show warning but don't prevent adding to cart
@@ -220,7 +221,7 @@ export default function POSSales() {
   const openConfirmFor = (color: ColorWithVariantAndProduct) => {
     setSelectedColor(color);
     setConfirmQty(1);
-    setConfirmRate(Number(color.variant.rate) || "");
+    setConfirmRate(Number(getEffectiveRate(color)) || "");
     setConfirmOpen(true);
   };
 
@@ -238,7 +239,7 @@ export default function POSSales() {
       });
     }
 
-    const r = Number(confirmRate) || parseFloat(selectedColor.variant.rate);
+    const r = Number(confirmRate) || parseFloat(getEffectiveRate(selectedColor));
     addToCart(selectedColor, qty, r);
     setConfirmOpen(false);
     setSelectedColor(null);
@@ -724,7 +725,8 @@ export default function POSSales() {
                         <div className="flex items-center justify-between pt-2 border-t">
                           <StockQuantity stock={color.stockQuantity} />
                           <div className="text-xl font-bold text-blue-600">
-                            Rs. {Math.round(parseFloat(color.variant.rate))}
+                            Rs. {Math.round(parseFloat(getEffectiveRate(color)))}
+                            {color.rateOverride && <span className="text-xs text-orange-500 ml-1">*</span>}
                           </div>
                         </div>
 
