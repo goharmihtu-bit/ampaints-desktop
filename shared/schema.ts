@@ -59,6 +59,18 @@ export const saleItems = sqliteTable("sale_items", {
   subtotal: text("subtotal").notNull(), // stored as text to preserve decimal precision
 });
 
+// Settings table - stores app preferences (single row)
+export const settings = sqliteTable("settings", {
+  id: text("id").primaryKey().default("default"),
+  // Card Design Settings
+  cardBorderStyle: text("card_border_style").notNull().default("shadow"), // shadow, border, none
+  cardShadowSize: text("card_shadow_size").notNull().default("sm"), // sm, md, lg
+  cardButtonColor: text("card_button_color").notNull().default("gray-900"), // color class
+  cardPriceColor: text("card_price_color").notNull().default("blue-600"), // color class
+  showStockBadgeBorder: integer("show_stock_badge_border", { mode: 'boolean' }).notNull().default(false),
+  updatedAt: integer("updated_at", { mode: 'timestamp' }).$defaultFn(() => new Date()).notNull(),
+});
+
 // Relations
 export const productsRelations = relations(products, ({ many }) => ({
   variants: many(variants),
@@ -134,12 +146,20 @@ export const insertSaleItemSchema = createInsertSchema(saleItems).omit({
   subtotal: z.string().or(z.number()),
 });
 
+export const insertSettingsSchema = createInsertSchema(settings).omit({
+  id: true,
+  updatedAt: true,
+});
+
+export const updateSettingsSchema = insertSettingsSchema.partial();
+
 // Select schemas
 export const selectProductSchema = createSelectSchema(products);
 export const selectVariantSchema = createSelectSchema(variants);
 export const selectColorSchema = createSelectSchema(colors);
 export const selectSaleSchema = createSelectSchema(sales);
 export const selectSaleItemSchema = createSelectSchema(saleItems);
+export const selectSettingsSchema = createSelectSchema(settings);
 
 // Types
 export type InsertProduct = z.infer<typeof insertProductSchema>;
@@ -156,6 +176,10 @@ export type Sale = typeof sales.$inferSelect;
 
 export type InsertSaleItem = z.infer<typeof insertSaleItemSchema>;
 export type SaleItem = typeof saleItems.$inferSelect;
+
+export type InsertSettings = z.infer<typeof insertSettingsSchema>;
+export type UpdateSettings = z.infer<typeof updateSettingsSchema>;
+export type Settings = typeof settings.$inferSelect;
 
 // Extended types for queries with relations
 export type VariantWithProduct = Variant & {
