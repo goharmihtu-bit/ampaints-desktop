@@ -51,7 +51,21 @@ None specified yet.
 
 ## Recent Updates (November 6, 2025)
 
-### Windows SmartScreen Solution (9:00 AM - LATEST)
+### Bill Management System (2:15 AM - LATEST)
+- ✅ Added comprehensive bill editing and deletion capabilities
+- ✅ Created three-dot menu on each bill in Unpaid Bills page
+- ✅ Implemented Edit Bill dialog for updating customer info, notes, and due date
+- ✅ Implemented Add Items dialog for adding products to existing bills
+- ✅ Implemented Delete Bill dialog with confirmation and stock restoration
+- ✅ Backend API endpoints: PATCH /api/sales/:id and DELETE /api/sales/:id
+- ✅ Storage methods: updateSale() and deleteSale() with automatic stock restoration
+- ✅ Delete bill returns all items' stock quantities to inventory automatically
+- ✅ Add items uses same color selection UI as POS with search functionality
+- ✅ Edit bill updates customer name, phone, notes, and due date
+- ✅ All operations properly invalidate React Query caches for instant UI updates
+- ✅ Zero LSP errors, all features tested and working correctly
+
+### Windows SmartScreen Solution (9:00 AM)
 - ✅ Resolved Windows SmartScreen "Unknown publisher" warning issue
 - ✅ Enhanced electron-builder configuration in package.json
 - ✅ Added proper app metadata (appId, productName, copyright, publisherName)
