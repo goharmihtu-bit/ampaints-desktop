@@ -31,6 +31,7 @@ export const colors = sqliteTable("colors", {
   colorName: text("color_name").notNull(), // e.g., "Sky Blue", "Sunset Red"
   colorCode: text("color_code").notNull(), // e.g., RAL1015, RAL5002
   stockQuantity: integer("stock_quantity").notNull().default(0),
+  rateOverride: text("rate_override"), // optional per-color rate override (stored as text to preserve decimal precision)
   createdAt: integer("created_at", { mode: 'timestamp' }).$defaultFn(() => new Date()).notNull(),
 });
 
@@ -112,6 +113,7 @@ export const insertColorSchema = createInsertSchema(colors).omit({
   createdAt: true,
 }).extend({
   stockQuantity: z.number().int().min(0),
+  rateOverride: z.string().or(z.number()).optional().nullable(),
 });
 
 export const insertSaleSchema = createInsertSchema(sales).omit({

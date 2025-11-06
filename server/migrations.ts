@@ -11,26 +11,38 @@ export function migrateDatabase(db: Database.Database): void {
   try {
     // Check and add missing columns to sales table (added in v0.1.7)
     const salesColumns = db.pragma('table_info(sales)') as Array<{ name: string; type: string }>;
-    const columnNames = salesColumns.map((col) => col.name);
+    const salesColumnNames = salesColumns.map((col) => col.name);
     
-    console.log('[Migration] Current sales columns:', columnNames);
+    console.log('[Migration] Current sales columns:', salesColumnNames);
     
     // Add dueDate column if missing
-    if (!columnNames.includes('due_date')) {
+    if (!salesColumnNames.includes('due_date')) {
       console.log('[Migration] Adding due_date column to sales table');
       db.exec('ALTER TABLE sales ADD COLUMN due_date INTEGER');
     }
     
     // Add isManualBalance column if missing
-    if (!columnNames.includes('is_manual_balance')) {
+    if (!salesColumnNames.includes('is_manual_balance')) {
       console.log('[Migration] Adding is_manual_balance column to sales table');
       db.exec('ALTER TABLE sales ADD COLUMN is_manual_balance INTEGER NOT NULL DEFAULT 0');
     }
     
     // Add notes column if missing
-    if (!columnNames.includes('notes')) {
+    if (!salesColumnNames.includes('notes')) {
       console.log('[Migration] Adding notes column to sales table');
       db.exec('ALTER TABLE sales ADD COLUMN notes TEXT');
+    }
+    
+    // Check and add missing columns to colors table (added in v0.1.8)
+    const colorsColumns = db.pragma('table_info(colors)') as Array<{ name: string; type: string }>;
+    const colorsColumnNames = colorsColumns.map((col) => col.name);
+    
+    console.log('[Migration] Current colors columns:', colorsColumnNames);
+    
+    // Add rateOverride column if missing
+    if (!colorsColumnNames.includes('rate_override')) {
+      console.log('[Migration] Adding rate_override column to colors table');
+      db.exec('ALTER TABLE colors ADD COLUMN rate_override TEXT');
     }
     
     // Ensure all indexes exist (CREATE INDEX IF NOT EXISTS is safe)
