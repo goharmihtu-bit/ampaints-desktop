@@ -434,6 +434,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Update sale details
+  app.patch("/api/sales/:id", async (req, res) => {
+    try {
+      const { customerName, customerPhone, notes, dueDate } = req.body;
+      
+      const sale = await storage.updateSale(req.params.id, {
+        customerName,
+        customerPhone,
+        notes,
+        dueDate: dueDate ? new Date(dueDate) : undefined
+      });
+      
+      res.json(sale);
+    } catch (error) {
+      console.error("Error updating sale:", error);
+      res.status(500).json({ error: "Failed to update sale" });
+    }
+  });
+
+  // Delete sale
+  app.delete("/api/sales/:id", async (req, res) => {
+    try {
+      await storage.deleteSale(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting sale:", error);
+      res.status(500).json({ error: "Failed to delete sale" });
+    }
+  });
+
   // Dashboard Stats
   app.get("/api/dashboard-stats", async (_req, res) => {
     try {
