@@ -382,6 +382,51 @@ export class DatabaseStorage implements IStorage {
     return updatedSale;
   }
 
+  async updateSale(saleId: string, data: { customerName?: string; customerPhone?: string; notes?: string; dueDate?: Date | null }): Promise<Sale> {
+    const updateData: any = {};
+    if (data.customerName !== undefined) {
+      updateData.customerName = data.customerName;
+    }
+    if (data.customerPhone !== undefined) {
+      updateData.customerPhone = data.customerPhone;
+    }
+    if (data.notes !== undefined) {
+      updateData.notes = data.notes;
+    }
+    if (data.dueDate !== undefined) {
+      updateData.dueDate = data.dueDate;
+    }
+    
+    await db
+      .update(sales)
+      .set(updateData)
+      .where(eq(sales.id, saleId));
+
+    const [updatedSale] = await db.select().from(sales).where(eq(sales.id, saleId));
+    return updatedSale;
+  }
+
+  async deleteSale(saleId: string): Promise<void> {
+    // Get all items for this sale
+    const items = await db.select().from(saleItems).where(eq(saleItems.saleId, saleId));
+    
+    // Return stock for each item
+    for (const item of items) {
+      await db
+        .update(colors)
+        .set({
+          stockQuantity: sql`${colors.stockQuantity} + ${item.quantity}`,
+        })
+        .where(eq(colors.id, item.colorId));
+    }
+    
+    // Delete all sale items
+    await db.delete(saleItems).where(eq(saleItems.saleId, saleId));
+    
+    // Delete the sale
+    await db.delete(sales).where(eq(sales.id, saleId));
+  }
+
   async addSaleItem(saleId: string, item: InsertSaleItem): Promise<SaleItem> {
     // Add the item to the sale
     const saleItem: SaleItem = {
