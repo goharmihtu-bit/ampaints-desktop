@@ -50,7 +50,14 @@ None specified yet.
 
 ## Recent Updates (November 6, 2025)
 
-### POS Add to Cart Button Styling (1:05 AM - LATEST)
+### POS Cards Border Removal (1:10 AM - LATEST)
+- ✅ Removed all extra borders from product cards for cleaner look
+- ✅ Removed card outline borders - now using shadow-based design
+- ✅ Removed internal border-t from stock/price section
+- ✅ Removed colored borders from stock badges
+- ✅ Cards now have subtle shadow with hover effect for modern appearance
+
+### POS Add to Cart Button Styling (1:05 AM)
 - ✅ Changed "Add to Cart" button color from blue to dark black (gray-900)
 - ✅ Added shadow effect for better visual prominence
 - ✅ Updated hover state to gray-800 for smooth interaction

@@ -327,27 +327,27 @@ export default function POSSales() {
 
     if (isOutOfStock) {
       return (
-        <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200 text-xs px-2 py-1">
+        <Badge variant="outline" className="bg-red-50 text-red-700 text-xs px-2 py-1">
           <AlertTriangle className="h-3 w-3 mr-1" />
           Out of Stock
         </Badge>
       );
     } else if (hasInsufficientStock) {
       return (
-        <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200 text-xs px-2 py-1">
+        <Badge variant="outline" className="bg-orange-50 text-orange-700 text-xs px-2 py-1">
           <AlertTriangle className="h-3 w-3 mr-1" />
           Low: {stock} (Need: {required})
         </Badge>
       );
     } else if (isLowStock) {
       return (
-        <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200 text-xs px-2 py-1">
+        <Badge variant="outline" className="bg-orange-50 text-orange-700 text-xs px-2 py-1">
           Low: {stock}
         </Badge>
       );
     } else {
       return (
-        <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 text-xs px-2 py-1">
+        <Badge variant="outline" className="bg-green-50 text-green-700 text-xs px-2 py-1">
           {stock}
         </Badge>
       );
@@ -696,7 +696,7 @@ export default function POSSales() {
                 {filteredColors.map((color) => (
                   <Card 
                     key={color.id} 
-                    className="border border-gray-200 bg-white hover:border-blue-400 hover:shadow-sm transition-all cursor-pointer"
+                    className="bg-white hover:shadow-lg transition-all cursor-pointer shadow-sm"
                     onClick={() => openConfirmFor(color)}
                   >
                     <CardContent className="p-4">
@@ -722,7 +722,7 @@ export default function POSSales() {
                         </div>
 
                         {/* Stock (Left) & Price (Right) Row */}
-                        <div className="flex items-center justify-between pt-2 border-t">
+                        <div className="flex items-center justify-between pt-2">
                           <StockQuantity stock={color.stockQuantity} />
                           <div className="text-xl font-bold text-blue-600">
                             Rs. {Math.round(parseFloat(getEffectiveRate(color)))}
