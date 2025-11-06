@@ -50,7 +50,13 @@ None specified yet.
 
 ## Recent Updates (November 6, 2025)
 
-### Fullscreen Desktop Mode (1:00 AM - LATEST)
+### POS Add to Cart Button Styling (1:05 AM - LATEST)
+- ✅ Changed "Add to Cart" button color from blue to dark black (gray-900)
+- ✅ Added shadow effect for better visual prominence
+- ✅ Updated hover state to gray-800 for smooth interaction
+- ✅ Button now stands out more clearly in product cards
+
+### Fullscreen Desktop Mode (1:00 AM)
 - ✅ Desktop application now launches in fullscreen mode by default
 - ✅ Added `fullscreen: true` option to BrowserWindow configuration
 - ✅ Added `setFullScreen(true)` on window ready-to-show event

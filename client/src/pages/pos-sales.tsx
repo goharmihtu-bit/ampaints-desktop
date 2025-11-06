@@ -732,7 +732,7 @@ export default function POSSales() {
 
                         {/* Bottom: Add to Cart Button */}
                         <Button
-                          className="w-full h-9 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium uppercase"
+                          className="w-full h-9 bg-gray-900 hover:bg-gray-800 text-white text-sm font-medium uppercase shadow-md"
                           onClick={(e) => {
                             e.stopPropagation();
                             addToCart(color);
