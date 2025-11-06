@@ -3,9 +3,9 @@
   "version": "0.1.7",
   "description": "AMPaints PaintPulse - Paint Store POS and Inventory Management System",
   "author": "AMPaints",
+  "license": "MIT",
   "main": "dist-electron/main.cjs",
   "type": "module",
-  "license": "MIT",
   "scripts": {
     "dev": "NODE_ENV=development tsx server/index.ts",
     "build": "vite build && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
@@ -115,6 +115,39 @@
   },
   "optionalDependencies": {
     "bufferutil": "^4.0.8"
+  },
+  "build": {
+    "appId": "com.ampaints.paintpulse",
+    "productName": "PaintPulse",
+    "copyright": "Copyright © 2025 AMPaints",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "dist-electron/**",
+      "build/icon.ico",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "PaintPulse",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico"
+    }
   }
 }
-
