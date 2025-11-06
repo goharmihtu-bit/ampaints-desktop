@@ -97,6 +97,7 @@ type QuickColor = {
   colorName: string;
   colorCode: string;
   stockQuantity: string;
+  rateOverride?: string; // optional per-color rate override
 };
 
 /* -------------------------
@@ -132,7 +133,7 @@ export default function StockManagement() {
     { id: `${Date.now()}-v0`, packingSize: "", rate: "" },
   ]);
   const [quickColors, setQuickColors] = useState<QuickColor[]>(() => [
-    { id: `${Date.now()}-c0`, colorName: "", colorCode: "", stockQuantity: "" },
+    { id: `${Date.now()}-c0`, colorName: "", colorCode: "", stockQuantity: "", rateOverride: "" },
   ]);
   const [expandedSections, setExpandedSections] = useState({ variants: true, colors: true });
 
@@ -468,7 +469,7 @@ export default function StockManagement() {
   });
 
   const createColorMutation = useMutation({
-    mutationFn: async (data: { variantId: string; colorName: string; colorCode: string; stockQuantity: number }) => {
+    mutationFn: async (data: { variantId: string; colorName: string; colorCode: string; stockQuantity: number; rateOverride?: number }) => {
       const res = await apiRequest("POST", "/api/colors", data);
       return await res.json();
     },
@@ -668,7 +669,12 @@ export default function StockManagement() {
 
     const finalColors = quickColors
       .filter(c => c.colorName.trim() !== "" && c.colorCode.trim() !== "" && c.stockQuantity.trim() !== "")
-      .map(c => ({ colorName: c.colorName.trim(), colorCode: c.colorCode.trim(), stockQuantity: c.stockQuantity.trim() }));
+      .map(c => ({ 
+        colorName: c.colorName.trim(), 
+        colorCode: c.colorCode.trim(), 
+        stockQuantity: c.stockQuantity.trim(),
+        rateOverride: c.rateOverride && c.rateOverride.trim() !== "" ? c.rateOverride.trim() : undefined
+      }));
 
     setIsSavingQuick(true);
     try {
@@ -700,6 +706,7 @@ export default function StockManagement() {
               colorName: color.colorName,
               colorCode: color.colorCode,
               stockQuantity: parseInt(color.stockQuantity, 10),
+              rateOverride: color.rateOverride ? parseFloat(color.rateOverride) : undefined,
             });
           }
         }
@@ -725,7 +732,7 @@ export default function StockManagement() {
       setUseExistingCompany(true);
       setUseExistingProduct(true);
       setQuickVariants([{ id: `${Date.now()}-v0`, packingSize: "", rate: "" }]);
-      setQuickColors([{ id: `${Date.now()}-c0`, colorName: "", colorCode: "", stockQuantity: "" }]);
+      setQuickColors([{ id: `${Date.now()}-c0`, colorName: "", colorCode: "", stockQuantity: "", rateOverride: "" }]);
     } catch (err: any) {
       console.error("Quick Add save error:", err);
       toast({ title: "Save failed", description: err?.message || "Unknown error occurred", variant: "destructive" });
@@ -759,7 +766,7 @@ export default function StockManagement() {
               setUseExistingCompany(true);
               setUseExistingProduct(true);
               setQuickVariants([{ id: `${Date.now()}-v0`, packingSize: "", rate: "" }]);
-              setQuickColors([{ id: `${Date.now()}-c0`, colorName: "", colorCode: "", stockQuantity: "" }]);
+              setQuickColors([{ id: `${Date.now()}-c0`, colorName: "", colorCode: "", stockQuantity: "", rateOverride: "" }]);
             }
           }}>
             <Button onClick={() => setIsQuickAddOpen(true)}>
@@ -898,26 +905,34 @@ export default function StockManagement() {
 
                       {expandedSections.colors && (
                         <div className="mt-4 space-y-4">
+                          <div className="text-sm text-muted-foreground mb-2">
+                            💡 Tip: Leave "Custom Rate" empty to use the variant's default rate. Only set it if this color has a different price.
+                          </div>
                           <div className="space-y-3">
                             {quickColors.map((color, index) => (
-                              <div key={color.id} className="grid grid-cols-12 gap-3 items-center">
-                                <div className="col-span-4">
-                                  <Input placeholder="Color name" value={color.colorName} onChange={e => updateColor(index, "colorName", e.target.value)} />
-                                </div>
-                                <div className="col-span-4">
-                                  <Input placeholder="Color code" value={color.colorCode} onChange={e => updateColor(index, "colorCode", e.target.value)} />
-                                </div>
-                                <div className="col-span-3">
-                                  <Input type="number" min="0" placeholder="Quantity" value={color.stockQuantity} onChange={e => updateColor(index, "stockQuantity", e.target.value)} />
-                                </div>
-                                <div className="col-span-1">
-                                  <Button variant="ghost" size="sm" onClick={() => removeColorAt(index)} disabled={quickColors.length === 1}><Trash className="h-4 w-4" /></Button>
+                              <div key={color.id} className="space-y-2 p-3 border rounded-lg">
+                                <div className="grid grid-cols-12 gap-3 items-center">
+                                  <div className="col-span-3">
+                                    <Input placeholder="Color name" value={color.colorName} onChange={e => updateColor(index, "colorName", e.target.value)} />
+                                  </div>
+                                  <div className="col-span-3">
+                                    <Input placeholder="Color code" value={color.colorCode} onChange={e => updateColor(index, "colorCode", e.target.value)} />
+                                  </div>
+                                  <div className="col-span-2">
+                                    <Input type="number" min="0" placeholder="Stock qty" value={color.stockQuantity} onChange={e => updateColor(index, "stockQuantity", e.target.value)} />
+                                  </div>
+                                  <div className="col-span-3">
+                                    <Input type="number" min="0" step="0.01" placeholder="Custom rate (optional)" value={color.rateOverride || ""} onChange={e => updateColor(index, "rateOverride", e.target.value)} className="border-dashed" />
+                                  </div>
+                                  <div className="col-span-1">
+                                    <Button variant="ghost" size="sm" onClick={() => removeColorAt(index)} disabled={quickColors.length === 1}><Trash className="h-4 w-4" /></Button>
+                                  </div>
                                 </div>
                               </div>
                             ))}
                           </div>
 
-                          <Button size="sm" variant="outline" onClick={() => setQuickColors(p => [...p, { id: String(Date.now()), colorName: "", colorCode: "", stockQuantity: "" }])}><Plus className="mr-2 h-4 w-4" /> Add Color</Button>
+                          <Button size="sm" variant="outline" onClick={() => setQuickColors(p => [...p, { id: String(Date.now()), colorName: "", colorCode: "", stockQuantity: "", rateOverride: "" }])}><Plus className="mr-2 h-4 w-4" /> Add Color</Button>
                         </div>
                       )}
                     </div>
