@@ -51,7 +51,16 @@ None specified yet.
 
 ## Recent Updates (November 6, 2025)
 
-### Windows SmartScreen Solution (9:00 AM - LATEST)
+### Paid Bills Editing Enabled (9:10 AM - LATEST)
+- ✅ Removed restriction that prevented editing of PAID bills
+- ✅ All bills (paid, unpaid, partial) can now be edited from Sales page
+- ✅ Users can click "View Bill" on any sale in Sales page
+- ✅ Full editing capabilities available: Add items, Edit items, Delete items, Delete bill
+- ✅ Payment status recalculates automatically after edits
+- ✅ Architect review: PASS - no functional regressions, safe for all bill types
+- 📝 Note: Edit controls now show for all bills regardless of payment status
+
+### Windows SmartScreen Solution (9:00 AM)
 - ✅ Resolved Windows SmartScreen "Unknown publisher" warning issue
 - ✅ Enhanced electron-builder configuration in package.json
 - ✅ Added proper app metadata (appId, productName, copyright, publisherName)
