@@ -61,6 +61,7 @@ function createWindow() {
     ...windowBounds,
     minWidth: 1024,
     minHeight: 768,
+    fullscreen: true,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
@@ -86,6 +87,7 @@ function createWindow() {
   // Show window when ready
   mainWindow.once("ready-to-show", () => {
     mainWindow?.show();
+    mainWindow?.setFullScreen(true);
   });
 
   // ✅ FIXED: Always load from local server (works for both dev and production)

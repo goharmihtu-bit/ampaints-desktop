@@ -50,7 +50,13 @@ None specified yet.
 
 ## Recent Updates (November 6, 2025)
 
-### Per-Color Rate Override System (12:50 AM - LATEST)
+### Fullscreen Desktop Mode (1:00 AM - LATEST)
+- ✅ Desktop application now launches in fullscreen mode by default
+- ✅ Added `fullscreen: true` option to BrowserWindow configuration
+- ✅ Added `setFullScreen(true)` on window ready-to-show event
+- ✅ Users can press F11 or ESC to exit fullscreen if needed
+
+### Per-Color Rate Override System (12:50 AM)
 - ✅ Added `rateOverride` column to colors table (nullable TEXT for decimal precision)
 - ✅ Implemented automatic migration for backward compatibility with existing databases
 - ✅ Created API endpoint (PATCH /api/colors/:id/rate-override) for rate updates
