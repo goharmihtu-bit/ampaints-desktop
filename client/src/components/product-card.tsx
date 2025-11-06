@@ -58,12 +58,12 @@ export function ProductCard({ color, onAddToCart, onClick, settings }: ProductCa
     let baseClass = "bg-white transition-all cursor-pointer";
     
     if (cardBorderStyle === 'shadow') {
-      const shadowSizes = {
+      const shadowSizes: Record<string, string> = {
         sm: 'shadow-sm hover:shadow-lg',
         md: 'shadow-md hover:shadow-xl',
         lg: 'shadow-lg hover:shadow-2xl',
       };
-      return `${baseClass} ${shadowSizes[cardShadowSize]}`;
+      return `${baseClass} ${shadowSizes[cardShadowSize] || shadowSizes.sm}`;
     } else if (cardBorderStyle === 'border') {
       return `${baseClass} border-2 hover:border-gray-400`;
     } else {
