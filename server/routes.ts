@@ -349,6 +349,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.patch("/api/sales/:id", async (req, res) => {
+    try {
+      const { customerName, customerPhone, notes, dueDate } = req.body;
+      
+      if (!customerName || !customerPhone) {
+        res.status(400).json({ error: "Customer name and phone are required" });
+        return;
+      }
+
+      const updateData: any = {
+        customerName,
+        customerPhone,
+        notes: notes || null,
+      };
+
+      if (dueDate) {
+        updateData.dueDate = new Date(dueDate);
+      }
+
+      const sale = await storage.updateSale(req.params.id, updateData);
+      res.json(sale);
+    } catch (error) {
+      console.error("Error updating sale:", error);
+      res.status(500).json({ error: "Failed to update sale" });
+    }
+  });
+
+  app.delete("/api/sales/:id", async (req, res) => {
+    try {
+      await storage.deleteSale(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting sale:", error);
+      res.status(500).json({ error: "Failed to delete sale" });
+    }
+  });
+
   // UPDATE SALE ITEM ENDPOINT - ADD THIS
   app.patch("/api/sale-items/:id", async (req, res) => {
     try {

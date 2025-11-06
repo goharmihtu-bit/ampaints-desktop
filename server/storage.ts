@@ -56,11 +56,13 @@ export interface IStorage {
   getSale(id: string): Promise<SaleWithItems | undefined>;
   createSale(sale: InsertSale, items: InsertSaleItem[]): Promise<Sale>;
   createManualBalance(data: { customerName: string; customerPhone: string; totalAmount: string; dueDate: Date | null; notes?: string }): Promise<Sale>;
+  updateSale(saleId: string, data: { customerName: string; customerPhone: string; notes?: string; dueDate?: string }): Promise<Sale>;
   updateSalePayment(saleId: string, amount: number): Promise<Sale>;
   updateSaleDueDate(saleId: string, data: { dueDate: Date | null; notes?: string }): Promise<Sale>;
   addSaleItem(saleId: string, item: InsertSaleItem): Promise<SaleItem>;
   updateSaleItem(id: string, data: { quantity: number; rate: number; subtotal: number }): Promise<SaleItem>;
   deleteSaleItem(saleItemId: string): Promise<void>;
+  deleteSale(saleId: string): Promise<void>;
 
   // Dashboard Stats
   getDashboardStats(): Promise<{
