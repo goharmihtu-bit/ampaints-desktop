@@ -1,5 +1,6 @@
 import { LayoutDashboard, Package, ShoppingCart, Receipt, CreditCard, TrendingUp, Settings } from "lucide-react";
 import { Link, useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import {
   Sidebar,
   SidebarContent,
@@ -11,6 +12,7 @@ import {
   SidebarMenuItem,
   SidebarHeader,
 } from "@/components/ui/sidebar";
+import type { Settings as UISettings } from "@shared/schema";
 
 const menuItems = [
   {
@@ -53,14 +55,21 @@ const menuItems = [
 export function AppSidebar() {
   const [location] = useLocation();
 
+  const { data: settings } = useQuery<UISettings>({
+    queryKey: ["/api/settings"],
+  });
+
+  const storeName = settings?.storeName ?? "PaintPulse";
+  const storeInitial = storeName.charAt(0).toUpperCase();
+
   return (
     <Sidebar>
       <SidebarHeader className="border-b border-sidebar-border px-6 py-4">
         <div className="flex items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary">
-            <span className="text-lg font-bold text-primary-foreground">P</span>
+            <span className="text-lg font-bold text-primary-foreground">{storeInitial}</span>
           </div>
-          <span className="text-lg font-semibold">A.M Paints</span>
+          <span className="text-lg font-semibold">{storeName}</span>
         </div>
       </SidebarHeader>
       <SidebarContent>
