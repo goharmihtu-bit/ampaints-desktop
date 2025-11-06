@@ -25,8 +25,9 @@ None specified yet.
 ### Key Features
 - **Inventory Management**: Comprehensive tracking of products, variants, colors, and stock levels. Includes advanced filtering, multi-select, bulk operations, and a unique ID system for handling duplicates.
 - **POS Sales**: Efficient sales transaction processing with real-time inventory updates, optimized color code matching, and redesigned product cards for better display.
-- **Rate Management**: Tools for managing product pricing and packing sizes.
+- **Rate Management**: Tools for managing product pricing and packing sizes, including per-color rate override capability.
 - **Unpaid Bills**: Robust system for tracking partial payments, including due dates, manual balance additions, and a PDF statement generation feature with detailed summaries.
+- **UI Customization**: Comprehensive settings system for customizing store branding (name, logo initial), product card design (border style, shadow size, button color, price color), and badge appearance.
 - **Thermal Receipt Improvements**: Customizable thermal receipt printing with configurable header/footer, font sizes, and margins.
 - **Dashboard Enhancements**: Includes a "Top 20 High Purchaser Customers" section for sales insights.
 - **Database Management**: Web-based export/import functionality and performance-optimized SQLite with composite indexes.
@@ -50,7 +51,23 @@ None specified yet.
 
 ## Recent Updates (November 6, 2025)
 
-### POS Cards Border Removal (1:10 AM - LATEST)
+### UI Customization Settings System (1:24 AM - LATEST)
+- ✅ Created comprehensive settings system for UI customization
+- ✅ Added settings database table with automatic migration
+- ✅ Implemented backend API (GET/PATCH /api/settings) with validation
+- ✅ Created "UI" tab in Settings page with customization controls
+- ✅ Store Branding: Customizable store name (displays in sidebar)
+- ✅ Card Border Style: Shadow (Modern), Border (Classic), or None (Minimal)
+- ✅ Card Shadow Size: Small, Medium, or Large options
+- ✅ Button Color: Black, Blue, Green, Purple, or Red "Add to Cart" button
+- ✅ Price Color: Blue, Green, Purple, Black, or Orange price text
+- ✅ Stock Badge Border: Toggle border visibility on stock badges
+- ✅ ProductCard component now dynamically applies all settings
+- ✅ Sidebar displays store name from settings with dynamic initial
+- ✅ All settings persist in database and load automatically
+- ✅ Architect review: PASS - complete end-to-end implementation
+
+### POS Cards Border Removal (1:10 AM)
 - ✅ Removed all extra borders from product cards for cleaner look
 - ✅ Removed card outline borders - now using shadow-based design
 - ✅ Removed internal border-t from stock/price section
