@@ -1719,6 +1719,252 @@ export default function UnpaidBills() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Edit Bill Dialog */}
+      <Dialog open={editBillDialogOpen} onOpenChange={setEditBillDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Bill</DialogTitle>
+            <DialogDescription>
+              Update customer information and bill details
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="editCustomerName">Customer Name</Label>
+              <Input
+                id="editCustomerName"
+                value={editBillForm.customerName}
+                onChange={(e) => setEditBillForm(prev => ({ ...prev, customerName: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="editCustomerPhone">Phone Number</Label>
+              <Input
+                id="editCustomerPhone"
+                value={editBillForm.customerPhone}
+                onChange={(e) => setEditBillForm(prev => ({ ...prev, customerPhone: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="editBillDueDate">Due Date (Optional)</Label>
+              <Input
+                id="editBillDueDate"
+                type="date"
+                value={editBillForm.dueDate}
+                onChange={(e) => setEditBillForm(prev => ({ ...prev, dueDate: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="editBillNotes">Notes (Optional)</Label>
+              <Input
+                id="editBillNotes"
+                placeholder="Add notes about this bill"
+                value={editBillForm.notes}
+                onChange={(e) => setEditBillForm(prev => ({ ...prev, notes: e.target.value }))}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setEditBillDialogOpen(false);
+                  setEditingBill(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  if (!editingBill) return;
+                  if (!editBillForm.customerName || !editBillForm.customerPhone) {
+                    toast({ title: "Please fill customer name and phone", variant: "destructive" });
+                    return;
+                  }
+                  updateBillMutation.mutate({
+                    saleId: editingBill.id,
+                    customerName: editBillForm.customerName,
+                    customerPhone: editBillForm.customerPhone,
+                    notes: editBillForm.notes,
+                    dueDate: editBillForm.dueDate
+                  });
+                }}
+                disabled={updateBillMutation.isPending}
+              >
+                {updateBillMutation.isPending ? "Updating..." : "Update Bill"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Items to Bill Dialog */}
+      <Dialog open={addItemsToBillDialogOpen} onOpenChange={setAddItemsToBillDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Add Items to Bill</DialogTitle>
+            <DialogDescription>
+              Search and add products to this bill
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                type="text"
+                placeholder="Search by color name or code..."
+                value={addItemsSearchQuery}
+                onChange={(e) => setAddItemsSearchQuery(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+            
+            <div className="grid grid-cols-2 gap-2 max-h-[400px] overflow-y-auto">
+              {colors
+                .filter(color => {
+                  const query = addItemsSearchQuery.toLowerCase();
+                  return (
+                    color.colorName.toLowerCase().includes(query) ||
+                    color.colorCode.toLowerCase().includes(query) ||
+                    color.variant.product.productName.toLowerCase().includes(query) ||
+                    color.variant.product.company.toLowerCase().includes(query)
+                  );
+                })
+                .map((color) => (
+                  <Card
+                    key={color.id}
+                    className={`cursor-pointer transition-all ${
+                      selectedColorForItem?.id === color.id ? "ring-2 ring-primary" : ""
+                    }`}
+                    onClick={() => setSelectedColorForItem(color)}
+                  >
+                    <CardContent className="p-3">
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium">{color.colorName}</p>
+                        <p className="text-xs text-muted-foreground">Code: {color.colorCode}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {color.variant.product.company} - {color.variant.product.productName}
+                        </p>
+                        <p className="text-xs">Stock: {color.stockQuantity}</p>
+                        <p className="text-xs font-semibold">Rs. {color.rateOverride || color.variant.rate}</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+            </div>
+
+            {selectedColorForItem && (
+              <div className="space-y-2 border-t pt-4">
+                <Label htmlFor="itemQuantity">Quantity</Label>
+                <Input
+                  id="itemQuantity"
+                  type="number"
+                  min="1"
+                  value={itemQuantity}
+                  onChange={(e) => setItemQuantity(e.target.value)}
+                />
+                <div className="text-sm text-muted-foreground">
+                  Selected: {selectedColorForItem.colorName} ({selectedColorForItem.colorCode})
+                  <br />
+                  Rate: Rs. {selectedColorForItem.rateOverride || selectedColorForItem.variant.rate}
+                  <br />
+                  Total: Rs. {(parseFloat(selectedColorForItem.rateOverride || selectedColorForItem.variant.rate) * parseInt(itemQuantity || "1")).toLocaleString()}
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setAddItemsToBillDialogOpen(false);
+                  setSelectedBillForItems(null);
+                  setSelectedColorForItem(null);
+                  setItemQuantity("1");
+                  setAddItemsSearchQuery("");
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  if (!selectedBillForItems || !selectedColorForItem) {
+                    toast({ title: "Please select a product", variant: "destructive" });
+                    return;
+                  }
+                  const qty = parseInt(itemQuantity) || 1;
+                  const rate = parseFloat(selectedColorForItem.rateOverride || selectedColorForItem.variant.rate);
+                  const subtotal = qty * rate;
+                  
+                  addItemToBillMutation.mutate({
+                    saleId: selectedBillForItems.id,
+                    colorId: selectedColorForItem.id,
+                    quantity: qty,
+                    rate: rate,
+                    subtotal: subtotal
+                  });
+                }}
+                disabled={!selectedColorForItem || addItemToBillMutation.isPending}
+              >
+                {addItemToBillMutation.isPending ? "Adding..." : "Add to Bill"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Bill Confirmation Dialog */}
+      <Dialog open={deleteBillDialogOpen} onOpenChange={setDeleteBillDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete Bill</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this bill? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          {billToDelete && (
+            <div className="space-y-2 p-4 bg-muted rounded-md text-sm">
+              <div>
+                <span className="text-muted-foreground">Customer: </span>
+                <span className="font-medium">{billToDelete.customerName}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Phone: </span>
+                <span className="font-medium">{billToDelete.customerPhone}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Total Amount: </span>
+                <span className="font-medium">Rs. {Math.round(parseFloat(billToDelete.totalAmount)).toLocaleString()}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Date: </span>
+                <span className="font-medium">{new Date(billToDelete.createdAt).toLocaleDateString()}</span>
+              </div>
+            </div>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDeleteBillDialogOpen(false);
+                setBillToDelete(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (!billToDelete) return;
+                deleteBillMutation.mutate(billToDelete.id);
+              }}
+              disabled={deleteBillMutation.isPending}
+            >
+              {deleteBillMutation.isPending ? "Deleting..." : "Delete Bill"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
