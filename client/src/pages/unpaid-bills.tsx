@@ -48,7 +48,10 @@ import {
   Filter,
   X,
   ChevronDown,
-  FileText
+  FileText,
+  MoreVertical,
+  Edit,
+  ShoppingCart
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -123,6 +126,27 @@ export default function UnpaidBills() {
     dueDate: "",
     notes: ""
   });
+  
+  // Edit bill state
+  const [editBillDialogOpen, setEditBillDialogOpen] = useState(false);
+  const [editBillForm, setEditBillForm] = useState({
+    customerName: "",
+    customerPhone: "",
+    notes: "",
+    dueDate: ""
+  });
+  const [editingBill, setEditingBill] = useState<Sale | null>(null);
+  
+  // Add items to bill state
+  const [addItemsToBillDialogOpen, setAddItemsToBillDialogOpen] = useState(false);
+  const [selectedBillForItems, setSelectedBillForItems] = useState<Sale | null>(null);
+  const [addItemsSearchQuery, setAddItemsSearchQuery] = useState("");
+  const [selectedColorForItem, setSelectedColorForItem] = useState<ColorWithVariantAndProduct | null>(null);
+  const [itemQuantity, setItemQuantity] = useState("1");
+  
+  // Delete bill state
+  const [deleteBillDialogOpen, setDeleteBillDialogOpen] = useState(false);
+  const [billToDelete, setBillToDelete] = useState<Sale | null>(null);
   
   const { toast } = useToast();
 
@@ -261,6 +285,67 @@ export default function UnpaidBills() {
     },
     onError: () => {
       toast({ title: "Failed to update due date", variant: "destructive" });
+    },
+  });
+
+  const updateBillMutation = useMutation({
+    mutationFn: async (data: { saleId: string; customerName: string; customerPhone: string; notes?: string; dueDate?: string }) => {
+      return await apiRequest("PATCH", `/api/sales/${data.saleId}`, {
+        customerName: data.customerName,
+        customerPhone: data.customerPhone,
+        notes: data.notes,
+        dueDate: data.dueDate || null
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
+      toast({ title: "Bill updated successfully" });
+      setEditBillDialogOpen(false);
+      setEditingBill(null);
+    },
+    onError: () => {
+      toast({ title: "Failed to update bill", variant: "destructive" });
+    },
+  });
+
+  const deleteBillMutation = useMutation({
+    mutationFn: async (saleId: string) => {
+      return await apiRequest("DELETE", `/api/sales/${saleId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
+      toast({ title: "Bill deleted successfully" });
+      setDeleteBillDialogOpen(false);
+      setBillToDelete(null);
+    },
+    onError: () => {
+      toast({ title: "Failed to delete bill", variant: "destructive" });
+    },
+  });
+
+  const addItemToBillMutation = useMutation({
+    mutationFn: async (data: { saleId: string; colorId: string; quantity: number; rate: number; subtotal: number }) => {
+      return await apiRequest("POST", `/api/sales/${data.saleId}/items`, {
+        colorId: data.colorId,
+        quantity: data.quantity,
+        rate: data.rate,
+        subtotal: data.subtotal,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
+      toast({ title: "Item added to bill successfully" });
+      setAddItemsToBillDialogOpen(false);
+      setSelectedBillForItems(null);
+      setSelectedColorForItem(null);
+      setItemQuantity("1");
+      setAddItemsSearchQuery("");
+    },
+    onError: () => {
+      toast({ title: "Failed to add item to bill", variant: "destructive" });
     },
   });
 
@@ -1182,6 +1267,50 @@ export default function UnpaidBills() {
                                 Print
                               </Button>
                             </Link>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="outline" size="sm">
+                                  <MoreVertical className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                  onClick={() => {
+                                    setEditingBill(bill);
+                                    setEditBillForm({
+                                      customerName: bill.customerName,
+                                      customerPhone: bill.customerPhone,
+                                      notes: bill.notes || "",
+                                      dueDate: bill.dueDate ? new Date(bill.dueDate).toISOString().split('T')[0] : ""
+                                    });
+                                    setEditBillDialogOpen(true);
+                                  }}
+                                >
+                                  <Edit className="h-4 w-4 mr-2" />
+                                  Edit Bill
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => {
+                                    setSelectedBillForItems(bill);
+                                    setAddItemsToBillDialogOpen(true);
+                                  }}
+                                >
+                                  <ShoppingCart className="h-4 w-4 mr-2" />
+                                  Add Items
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  className="text-destructive focus:text-destructive"
+                                  onClick={() => {
+                                    setBillToDelete(bill);
+                                    setDeleteBillDialogOpen(true);
+                                  }}
+                                >
+                                  <Trash2 className="h-4 w-4 mr-2" />
+                                  Delete Bill
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </div>
                         </div>
                       </CardContent>
