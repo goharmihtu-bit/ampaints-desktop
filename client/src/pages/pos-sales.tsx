@@ -30,7 +30,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { ColorWithVariantAndProduct, Sale } from "@shared/schema";
+import type { ColorWithVariantAndProduct, Sale, Settings } from "@shared/schema";
 import { getEffectiveRate } from "@shared/schema";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -64,6 +64,10 @@ interface CustomerSuggestion {
 export default function POSSales() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+
+  const { data: settings } = useQuery<Settings>({
+    queryKey: ["/api/settings"],
+  });
 
   const [cart, setCart] = useState<CartItem[]>([]);
   const [customerName, setCustomerName] = useState("");
@@ -700,6 +704,7 @@ export default function POSSales() {
                     color={color}
                     onAddToCart={addToCart}
                     onClick={openConfirmFor}
+                    settings={settings}
                   />
                 ))}
               </div>
