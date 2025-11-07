@@ -3,7 +3,7 @@ import { useRoute } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Receipt, MoreVertical, Edit, Plus, Trash2, Save, X, Printer } from "lucide-react";
+import { ArrowLeft, Receipt, MoreVertical, Edit, Plus, Trash2, Save, X } from "lucide-react";
 import { Link } from "wouter";
 import type { SaleWithItems, ColorWithVariantAndProduct, SaleItem } from "@shared/schema";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -77,12 +77,12 @@ export default function BillPrint() {
     }
   }, []);
 
-  const { data: sale, isLoading, error, refetch } = useQuery<SaleWithItems>({
+  const { data: sale, isLoading, error } = useQuery<SaleWithItems>({
     queryKey: ["/api/sales", saleId],
     enabled: !!saleId,
   });
 
-  // FIXED: Get ALL colors without limiting to 20
+  // Get ALL colors without limiting
   const { data: colors = [] } = useQuery<ColorWithVariantAndProduct[]>({
     queryKey: ["/api/colors"],
     enabled: addItemDialogOpen,
@@ -95,25 +95,39 @@ export default function BillPrint() {
     try {
       setIsDeleting(true);
       
-      console.log("Starting delete process for sale:", saleId);
-      
-      // First, get all sale items to return stock
-      const saleResponse = await apiRequest("GET", `/api/sales/${saleId}`);
+      // Get the sale details first to return stock
+      const saleResponse = await fetch(`/api/sales/${saleId}`);
+      if (!saleResponse.ok) throw new Error("Failed to fetch sale details");
       const saleData = await saleResponse.json();
       
       if (saleData.saleItems && saleData.saleItems.length > 0) {
-        console.log("Deleting sale items:", saleData.saleItems.length);
+        // Return stock for all items
+        for (const item of saleData.saleItems) {
+          const currentStock = item.color.stockQuantity || 0;
+          const newStock = currentStock + item.quantity;
+          
+          // Update stock quantity
+          await fetch(`/api/colors/${item.colorId}/stock`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ stockQuantity: newStock })
+          });
+        }
         
         // Delete all sale items
         for (const item of saleData.saleItems) {
-          await apiRequest("DELETE", `/api/sale-items/${item.id}`);
-          console.log("Deleted sale item:", item.id);
+          await fetch(`/api/sale-items/${item.id}`, {
+            method: "DELETE"
+          });
         }
       }
       
-      // Then delete the sale itself
-      console.log("Deleting sale record:", saleId);
-      await apiRequest("DELETE", `/api/sales/${saleId}`);
+      // Delete the sale itself
+      const deleteResponse = await fetch(`/api/sales/${saleId}`, {
+        method: "DELETE"
+      });
+      
+      if (!deleteResponse.ok) throw new Error("Failed to delete sale");
       
       // Invalidate all related queries
       await Promise.all([
@@ -122,8 +136,6 @@ export default function BillPrint() {
         queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] }),
         queryClient.invalidateQueries({ queryKey: ["/api/colors"] })
       ]);
-      
-      console.log("Delete completed successfully");
       
       toast({ 
         title: "Bill deleted successfully",
@@ -165,51 +177,59 @@ export default function BillPrint() {
         autoprintEnabled = settings.autoprint || false;
       }
       
-      console.log("Auto-print enabled:", autoprintEnabled);
-      
       if (autoprintEnabled) {
-        // Direct print logic - FIXED: Use a more reliable approach
+        // Direct print logic
         console.log("Auto-print: Printing directly...");
         
-        // Create a hidden iframe for printing
-        const printFrame = document.createElement('iframe');
-        printFrame.style.position = 'absolute';
-        printFrame.style.left = '-9999px';
-        printFrame.style.top = '0';
-        printFrame.style.width = '80mm';
-        printFrame.style.height = '0';
-        printFrame.style.border = 'none';
+        // Add print-specific styles
+        const printStyle = document.createElement('style');
+        printStyle.innerHTML = `
+          @media print {
+            @page { 
+              size: 80mm auto;
+              margin: 0;
+            }
+            body { 
+              margin: 0 !important;
+              padding: 0 !important;
+              width: 80mm !important;
+              max-width: 80mm !important;
+              font-family: 'Courier New', monospace !important;
+              font-size: 11px !important;
+              font-weight: bold !important;
+              color: #000 !important;
+              background: white !important;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            .no-print { 
+              display: none !important; 
+            }
+            * {
+              color: #000 !important;
+              font-weight: bold !important;
+            }
+          }
+        `;
+        document.head.appendChild(printStyle);
         
-        document.body.appendChild(printFrame);
-        
-        // Get the thermal receipt HTML
-        const thermalReceipt = document.getElementById('thermal-receipt');
-        if (thermalReceipt) {
-          printFrame.contentDocument?.write(thermalReceipt.outerHTML);
-          printFrame.contentDocument?.close();
-          
-          setTimeout(() => {
-            printFrame.contentWindow?.focus();
-            printFrame.contentWindow?.print();
-            
-            // Clean up
-            setTimeout(() => {
-              document.body.removeChild(printFrame);
-              setIsPrinting(false);
-              toast({ 
-                title: "Receipt printed successfully",
-                description: "Auto-print completed."
-              });
-            }, 500);
-          }, 500);
-        } else {
-          // Fallback to regular print
+        // Trigger print
+        setTimeout(() => {
           window.print();
-          setIsPrinting(false);
-        }
+          
+          // Clean up
+          setTimeout(() => {
+            document.head.removeChild(printStyle);
+            setIsPrinting(false);
+            toast({ 
+              title: "Receipt printed successfully",
+              description: "Auto-print completed."
+            });
+          }, 100);
+        }, 100);
         
       } else {
-        // Show print dialog - FIXED: Use window.print() directly
+        // Show print dialog
         console.log("Auto-print disabled: Showing print dialog...");
         
         setTimeout(() => {
@@ -219,7 +239,7 @@ export default function BillPrint() {
             title: "Print dialog opened",
             description: "Please select your printer from the dialog."
           });
-        }, 500);
+        }, 100);
       }
       
     } catch (error) {
@@ -233,7 +253,7 @@ export default function BillPrint() {
     }
   };
 
-  // Add Item (Zero Stock Allowed)
+  // Add Item Function
   const handleAddItem = () => {
     if (!selectedColor) {
       toast({ title: "Please select a product", variant: "destructive" });
@@ -249,12 +269,21 @@ export default function BillPrint() {
     const itemRate = parseFloat(selectedColor.variant.rate);
     const subtotal = itemRate * qty;
 
-    apiRequest("POST", `/api/sales/${saleId}/items`, {
-      colorId: selectedColor.id,
-      quantity: qty,
-      rate: itemRate,
-      subtotal: subtotal,
-    }).then(() => {
+    fetch(`/api/sales/${saleId}/items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        colorId: selectedColor.id,
+        quantity: qty,
+        rate: itemRate,
+        subtotal: subtotal,
+      })
+    })
+    .then(response => {
+      if (!response.ok) throw new Error("Failed to add item");
+      return response.json();
+    })
+    .then(() => {
       queryClient.invalidateQueries({ queryKey: ["/api/sales", saleId] });
       queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
       toast({ title: "Item added successfully" });
@@ -262,7 +291,8 @@ export default function BillPrint() {
       setSelectedColor(null);
       setQuantity("1");
       setSearchQuery("");
-    }).catch((error) => {
+    })
+    .catch((error) => {
       console.error("Error adding item:", error);
       toast({ title: "Failed to add item", variant: "destructive" });
     });
@@ -307,7 +337,6 @@ export default function BillPrint() {
 
     try {
       let hasChanges = false;
-      const updates = [];
 
       // Update existing items
       for (const item of sale.saleItems) {
@@ -330,18 +359,19 @@ export default function BillPrint() {
         // Only update if changed
         if (newQuantity !== item.quantity || newRate !== parseFloat(item.rate)) {
           hasChanges = true;
-          updates.push(
-            apiRequest("PATCH", `/api/sale-items/${item.id}`, {
+          await fetch(`/api/sale-items/${item.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
               quantity: newQuantity,
               rate: newRate,
               subtotal: newRate * newQuantity,
             })
-          );
+          });
         }
       }
 
       if (hasChanges) {
-        await Promise.all(updates);
         await queryClient.invalidateQueries({ queryKey: ["/api/sales", saleId] });
         await queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
         toast({ title: "All changes saved successfully" });
@@ -360,7 +390,9 @@ export default function BillPrint() {
   // Delete Individual Item
   const deleteItem = async (itemId: string, itemName: string) => {
     try {
-      await apiRequest("DELETE", `/api/sale-items/${itemId}`);
+      await fetch(`/api/sale-items/${itemId}`, {
+        method: "DELETE"
+      });
       await queryClient.invalidateQueries({ queryKey: ["/api/sales", saleId] });
       await queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
       toast({ title: `${itemName} deleted successfully` });
@@ -377,9 +409,9 @@ export default function BillPrint() {
     }
   };
 
-  // FIXED: Show ALL colors without limiting to 20
+  // Show ALL colors without limiting
   const filteredColors = useMemo(() => {
-    if (!searchQuery) return colors; // Remove .slice(0, 20)
+    if (!searchQuery) return colors;
     const q = searchQuery.toLowerCase();
     return colors.filter(c =>
       c.colorName.toLowerCase().includes(q) ||
@@ -387,10 +419,8 @@ export default function BillPrint() {
       c.variant.product.company.toLowerCase().includes(q) ||
       c.variant.product.productName.toLowerCase().includes(q) ||
       c.variant.packingSize.toLowerCase().includes(q)
-    ); // Remove .slice(0, 20)
+    );
   }, [colors, searchQuery]);
-
-  const formatDate = (d: string) => new Date(d).toLocaleDateString("en-GB");
 
   if (isLoading) return <div className="p-6"><Skeleton className="h-96 w-full max-w-2xl mx-auto" /></div>;
   if (!sale) return <div className="p-6 text-center text-muted-foreground">Bill not found</div>;
@@ -469,7 +499,8 @@ export default function BillPrint() {
         <Card className="print:hidden">
           <CardContent className="p-8 space-y-6">
             <div className="text-center border-b pb-4">
-              <p className="text-xs mt-1">Invoice: {sale.id.slice(0, 8).toUpperCase()}</p>
+              <h1 className="text-xl font-bold">INVOICE</h1>
+              <p className="text-xs mt-1">Bill #: {sale.id.slice(0, 8).toUpperCase()}</p>
             </div>
 
             <div className="grid grid-cols-2 gap-4 text-sm">
@@ -494,68 +525,70 @@ export default function BillPrint() {
                   No items in this bill
                 </div>
               ) : (
-                <table className="w-full text-sm">
-                  <thead className="border-b">
-                    <tr>
-                      <th className="text-left pb-2">Product</th>
-                      <th className="text-right pb-2">Qty</th>
-                      <th className="text-right pb-2">Rate</th>
-                      <th className="text-right pb-2">Amount</th>
-                      {editMode && <th className="text-right pb-2">Actions</th>}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sale.saleItems.map((item) => (
-                      <tr key={item.id} className="border-b last:border-0">
-                        <td className="py-3 font-medium">
-                          {getProductLine(item)}
-                        </td>
-                        <td className="py-3 text-right">
-                          {editMode ? (
-                            <Input
-                              type="number"
-                              min="1"
-                              value={editingItems[item.id]?.quantity || item.quantity}
-                              onChange={(e) => updateEditingItem(item.id, 'quantity', e.target.value)}
-                              className="w-20 text-right ml-auto"
-                            />
-                          ) : (
-                            item.quantity
-                          )}
-                        </td>
-                        <td className="py-3 text-right">
-                          {editMode ? (
-                            <Input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              value={editingItems[item.id]?.rate || item.rate}
-                              onChange={(e) => updateEditingItem(item.id, 'rate', e.target.value)}
-                              className="w-24 text-right ml-auto"
-                            />
-                          ) : (
-                            `Rs. ${Math.round(parseFloat(item.rate))}`
-                          )}
-                        </td>
-                        <td className="py-3 text-right font-bold">
-                          Rs. {Math.round(parseFloat(item.subtotal))}
-                        </td>
-                        {editMode && (
-                          <td className="py-3 text-right">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => deleteItem(item.id, item.color.colorName)}
-                              className="text-red-600 hover:text-red-700"
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </Button>
-                          </td>
-                        )}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="border-b">
+                      <tr>
+                        <th className="text-left pb-2">Product</th>
+                        <th className="text-right pb-2">Qty</th>
+                        <th className="text-right pb-2">Rate</th>
+                        <th className="text-right pb-2">Amount</th>
+                        {editMode && <th className="text-right pb-2">Actions</th>}
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {sale.saleItems.map((item) => (
+                        <tr key={item.id} className="border-b last:border-0">
+                          <td className="py-3 font-medium">
+                            {getProductLine(item)}
+                          </td>
+                          <td className="py-3 text-right">
+                            {editMode ? (
+                              <Input
+                                type="number"
+                                min="1"
+                                value={editingItems[item.id]?.quantity || item.quantity}
+                                onChange={(e) => updateEditingItem(item.id, 'quantity', e.target.value)}
+                                className="w-20 text-right ml-auto"
+                              />
+                            ) : (
+                              item.quantity
+                            )}
+                          </td>
+                          <td className="py-3 text-right">
+                            {editMode ? (
+                              <Input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={editingItems[item.id]?.rate || item.rate}
+                                onChange={(e) => updateEditingItem(item.id, 'rate', e.target.value)}
+                                className="w-24 text-right ml-auto"
+                              />
+                            ) : (
+                              `Rs. ${Math.round(parseFloat(item.rate))}`
+                            )}
+                          </td>
+                          <td className="py-3 text-right font-bold">
+                            Rs. {Math.round(parseFloat(item.subtotal))}
+                          </td>
+                          {editMode && (
+                            <td className="py-3 text-right">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => deleteItem(item.id, item.color.colorName)}
+                                className="text-red-600 hover:text-red-700"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
 
@@ -585,8 +618,8 @@ export default function BillPrint() {
             <div className="text-center border-t pt-4">
               <p className="text-sm text-muted-foreground">
                 {receiptSettings.autoprint ? 
-                  "Auto-print is enabled. Receipt will print directly." : 
-                  "Auto-print is disabled. Print dialog will open."
+                  "✓ Auto-print enabled: Receipt will print directly" : 
+                  "ℹ Auto-print disabled: Print dialog will open"
                 }
               </p>
             </div>
@@ -611,7 +644,7 @@ export default function BillPrint() {
           </DialogHeader>
           <div className="bg-destructive/10 p-4 rounded-md">
             <p className="text-sm text-destructive font-medium">
-              <strong>Warning:</strong> All bill items will be deleted and stock quantities will be updated.
+              <strong>Warning:</strong> All bill items will be deleted and stock quantities will be returned to inventory.
             </p>
           </div>
           <DialogFooter>
@@ -643,73 +676,110 @@ export default function BillPrint() {
         </DialogContent>
       </Dialog>
 
-      {/* Add Item Dialog - FIXED: Show all colors without limit */}
+      {/* Add Item Dialog - FIXED: Proper layout with Qty and Add Button */}
       <Dialog open={addItemDialogOpen} onOpenChange={setAddItemDialogOpen}>
-        <DialogContent className="max-w-4xl max-h-[80vh]">
+        <DialogContent className="max-w-4xl max-h-[80vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>Add Item to Bill</DialogTitle>
             <DialogDescription>
               Search and select a product to add to the bill. Showing {filteredColors.length} products.
             </DialogDescription>
           </DialogHeader>
-          <Input 
-            placeholder="Search by color code, name, company, or product..." 
-            value={searchQuery} 
-            onChange={e => setSearchQuery(e.target.value)} 
-          />
-          <div className="max-h-96 overflow-y-auto my-4 space-y-2">
-            {filteredColors.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                {searchQuery ? "No products found matching your search" : "No products available"}
-              </div>
-            ) : (
-              filteredColors.map(c => (
-                <Card
-                  key={c.id}
-                  className={`p-4 cursor-pointer transition ${selectedColor?.id === c.id ? "border-primary bg-accent" : ""}`}
-                  onClick={() => setSelectedColor(c)}
-                >
-                  <div className="flex justify-between">
-                    <div className="flex-1">
-                      <p className="font-semibold">{c.variant.product.productName} - {c.colorName} {c.colorCode} - {c.variant.packingSize}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {c.variant.product.company} • Stock: {c.stockQuantity}
+          
+          <div className="flex-1 flex flex-col gap-4">
+            {/* Search Input */}
+            <div className="relative">
+              <Input 
+                placeholder="Search by color code, name, company, or product..." 
+                value={searchQuery} 
+                onChange={e => setSearchQuery(e.target.value)} 
+                className="pl-9"
+              />
+            </div>
+            
+            {/* Products List */}
+            <div className="flex-1 overflow-y-auto border rounded-md">
+              {filteredColors.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  {searchQuery ? "No products found matching your search" : "No products available"}
+                </div>
+              ) : (
+                <div className="divide-y">
+                  {filteredColors.map(c => (
+                    <div
+                      key={c.id}
+                      className={`p-4 cursor-pointer transition ${selectedColor?.id === c.id ? "bg-blue-50 border-l-4 border-l-blue-500" : "hover:bg-gray-50"}`}
+                      onClick={() => setSelectedColor(c)}
+                    >
+                      <div className="flex justify-between items-center">
+                        <div className="flex-1">
+                          <p className="font-semibold">
+                            {c.variant.product.productName} - {c.colorName} {c.colorCode} - {c.variant.packingSize}
+                          </p>
+                          <p className="text-sm text-muted-foreground">
+                            {c.variant.product.company} • Stock: {c.stockQuantity}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-mono font-bold text-lg">Rs. {Math.round(parseFloat(c.variant.rate))}</p>
+                          <Badge variant={c.stockQuantity > 0 ? "default" : "destructive"}>
+                            {c.stockQuantity} in stock
+                          </Badge>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Quantity Input and Add Button - FIXED: Always visible when product selected */}
+            {selectedColor && (
+              <div className="border-t pt-4 space-y-4 bg-muted/50 p-4 rounded-lg">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="quantity" className="font-semibold">Quantity</Label>
+                    <Input 
+                      id="quantity"
+                      type="number" 
+                      min="1" 
+                      value={quantity} 
+                      onChange={e => setQuantity(e.target.value)} 
+                      className="text-lg h-12 text-center"
+                    />
+                    <p className="text-xs text-muted-foreground">Zero stock allowed</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="font-semibold">Subtotal</Label>
+                    <div className="p-3 bg-background rounded-md text-center border">
+                      <p className="font-mono font-bold text-lg text-green-600">
+                        Rs. {Math.round(parseFloat(selectedColor.variant.rate) * parseInt(quantity || "0")).toLocaleString()}
                       </p>
                     </div>
-                    <div className="text-right">
-                      <p className="font-mono font-bold">Rs. {Math.round(parseFloat(c.variant.rate))}</p>
-                      <Badge variant={c.stockQuantity > 0 ? "default" : "destructive"}>
-                        {c.stockQuantity} in stock
-                      </Badge>
-                    </div>
                   </div>
-                </Card>
-              ))
+                </div>
+                
+                <Button 
+                  onClick={handleAddItem} 
+                  className="w-full h-12 text-lg"
+                  size="lg"
+                >
+                  <Plus className="h-5 w-5 mr-2" />
+                  Add Item to Bill
+                </Button>
+              </div>
             )}
           </div>
 
-          {selectedColor && (
-            <div className="space-y-3">
-              <Label>Quantity</Label>
-              <Input 
-                type="number" 
-                min="1" 
-                value={quantity} 
-                onChange={e => setQuantity(e.target.value)} 
-              />
-              <p className="text-xs text-muted-foreground">Zero stock allowed</p>
-              <div className="p-3 bg-muted rounded-md">
-                <div className="flex justify-between font-mono font-bold">
-                  <span>Subtotal:</span>
-                  <span>Rs. {Math.round(parseFloat(selectedColor.variant.rate) * parseInt(quantity || "0"))}</span>
-                </div>
-              </div>
-            </div>
-          )}
-
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAddItemDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleAddItem} disabled={!selectedColor}>Add Item</Button>
+            <Button variant="outline" onClick={() => {
+              setAddItemDialogOpen(false);
+              setSelectedColor(null);
+              setQuantity("1");
+              setSearchQuery("");
+            }}>
+              Close
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -726,40 +796,38 @@ export default function BillPrint() {
             padding: 0 !important;
             width: 80mm !important;
             max-width: 80mm !important;
-            font-family: 'Courier New', 'Consolas', monospace;
-            font-size: 11px;
-            font-weight: bold;
+            font-family: 'Courier New', monospace !important;
+            font-size: 11px !important;
+            font-weight: bold !important;
             color: #000 !important;
-            background: white;
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
-            overflow-x: hidden;
-            border: none !important;
-            outline: none !important;
+            background: white !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
-          .no-print, dialog, button { 
+          .no-print, dialog, button, .print\\:hidden { 
             display: none !important; 
           }
           * {
             color: #000 !important;
-            font-weight: bold;
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
+            font-weight: bold !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
             box-sizing: border-box;
           }
           table {
-            font-weight: bold;
-            border-collapse: collapse;
+            font-weight: bold !important;
+            border-collapse: collapse !important;
             width: 100% !important;
             max-width: 100% !important;
           }
-          h1, p, td, th, span, div {
-            image-rendering: -webkit-optimize-contrast;
-            image-rendering: crisp-edges;
+          #thermal-receipt {
+            display: block !important;
+            width: 80mm !important;
+            margin: 0 !important;
+            padding: 0 !important;
           }
         }
       `}</style>
-
     </>
   );
 }
