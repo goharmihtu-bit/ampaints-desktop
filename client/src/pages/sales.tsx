@@ -1,11 +1,28 @@
 import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Search, Receipt, Calendar } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Search, Receipt, Calendar, MoreVertical, Trash2, Eye } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
+import { useToast } from "@/hooks/use-toast";
+import { queryClient, apiRequest } from "@/lib/queryClient";
 
 interface Sale {
   id: string;
@@ -19,12 +36,43 @@ interface Sale {
 
 export default function Sales() {
   const [customerSearchQuery, setCustomerSearchQuery] = useState("");
-  const [dateFilter, setDateFilter] = useState("all"); // "all", "today", "yesterday", "week", "month", "custom"
+  const [dateFilter, setDateFilter] = useState("all");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
+  const { toast } = useToast();
 
   const { data: sales = [], isLoading } = useQuery<Sale[]>({
     queryKey: ["/api/sales"],
+  });
+
+  const deleteSaleMutation = useMutation({
+    mutationFn: async (saleId: string) => {
+      // First delete all sale items
+      const saleItems = await apiRequest("GET", `/api/sales/${saleId}`);
+      const saleData = await saleItems.json();
+      
+      if (saleData.saleItems) {
+        for (const item of saleData.saleItems) {
+          await apiRequest("DELETE", `/api/sale-items/${item.id}`);
+        }
+      }
+      
+      // Then delete the sale
+      return await apiRequest("DELETE", `/api/sales/${saleId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
+      toast({ title: "Sale deleted successfully" });
+      setDeleteDialogOpen(false);
+      setSelectedSale(null);
+    },
+    onError: (error: Error) => {
+      console.error("Delete sale error:", error);
+      toast({ title: "Failed to delete sale", variant: "destructive" });
+    },
   });
 
   const filteredSales = useMemo(() => {
@@ -84,7 +132,7 @@ export default function Sales() {
           if (startDate && endDate) {
             const start = new Date(startDate);
             const end = new Date(endDate);
-            end.setHours(23, 59, 59, 999); // Include entire end date
+            end.setHours(23, 59, 59, 999);
             
             filtered = filtered.filter(sale => {
               const saleDate = new Date(sale.createdAt);
@@ -132,6 +180,17 @@ export default function Sales() {
         return <Badge variant="outline">Unpaid</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
+    }
+  };
+
+  const handleDeleteSale = (sale: Sale) => {
+    setSelectedSale(sale);
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmDelete = () => {
+    if (selectedSale) {
+      deleteSaleMutation.mutate(selectedSale.id);
     }
   };
 
@@ -292,13 +351,39 @@ export default function Sales() {
                                   )}
                                 </div>
                               </div>
-                              <Link
-                                href={`/bill/${sale.id}`}
-                                className="text-sm text-primary hover:underline whitespace-nowrap"
-                                data-testid={`link-view-bill-${sale.id}`}
-                              >
-                                View Bill
-                              </Link>
+                              <div className="flex items-center gap-2">
+                                <Link
+                                  href={`/bill/${sale.id}`}
+                                  className="text-sm text-primary hover:underline whitespace-nowrap"
+                                  data-testid={`link-view-bill-${sale.id}`}
+                                >
+                                  View Bill
+                                </Link>
+                                
+                                {/* Three Dots Menu */}
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8">
+                                      <MoreVertical className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem asChild>
+                                      <Link href={`/bill/${sale.id}`} className="flex items-center cursor-pointer">
+                                        <Eye className="h-4 w-4 mr-2" />
+                                        View Details
+                                      </Link>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem 
+                                      className="text-red-600"
+                                      onClick={() => handleDeleteSale(sale)}
+                                    >
+                                      <Trash2 className="h-4 w-4 mr-2" />
+                                      Delete Sale
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </div>
                             </div>
                           </CardContent>
                         </Card>
@@ -337,6 +422,35 @@ export default function Sales() {
           )}
         </CardContent>
       </Card>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Sale</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete the sale for {selectedSale?.customerName}? 
+              This action cannot be undone and all sale items will be removed.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setDeleteDialogOpen(false)}
+              disabled={deleteSaleMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={confirmDelete}
+              disabled={deleteSaleMutation.isPending}
+            >
+              {deleteSaleMutation.isPending ? "Deleting..." : "Delete Sale"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

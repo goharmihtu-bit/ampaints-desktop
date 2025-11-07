@@ -80,6 +80,26 @@ export default function Settings() {
   const [storePhone, setStorePhone] = useState("");
   const [storeEmail, setStoreEmail] = useState("");
   
+  // POS Bill Settings
+  const [showCompanyName, setShowCompanyName] = useState(true);
+  const [showGST, setShowGST] = useState(true);
+  const [autoprint, setAutoprint] = useState(false);
+  const [billFooter, setBillFooter] = useState("Thank you for your business!");
+  
+  // POS Receipt Header/Footer Settings
+  const [receiptBusinessName, setReceiptBusinessName] = useState("ALI MUHAMMAD PAINTS");
+  const [receiptAddress, setReceiptAddress] = useState("Basti Malook, Multan. 0300-868-3395");
+  const [receiptDealerText, setReceiptDealerText] = useState("AUTHORIZED DEALER:");
+  const [receiptDealerBrands, setReceiptDealerBrands] = useState("ICI-DULUX • MOBI PAINTS • WESTER 77");
+  const [receiptThankYou, setReceiptThankYou] = useState("THANKS FOR YOUR BUSINESS");
+  const [receiptFontSize, setReceiptFontSize] = useState("11");
+  const [receiptItemFontSize, setReceiptItemFontSize] = useState("12");
+  const [receiptPadding, setReceiptPadding] = useState("12");
+
+  // Bluetooth Settings
+  const [bluetoothEnabled, setBluetoothEnabled] = useState(false);
+  const [connectedDevice, setConnectedDevice] = useState<string | null>(null);
+
   useEffect(() => {
     // Check if running in Electron
     if (typeof window !== 'undefined' && (window as any).electron) {
@@ -103,32 +123,13 @@ export default function Settings() {
         setReceiptFontSize(settings.fontSize || "11");
         setReceiptItemFontSize(settings.itemFontSize || "12");
         setReceiptPadding(settings.padding || "12");
+        setAutoprint(settings.autoprint || false);
       }
     } catch (error) {
       console.error("Error loading receipt settings:", error);
       // Keep default settings if parsing fails
     }
   }, []);
-
-  // POS Bill Settings
-  const [showCompanyName, setShowCompanyName] = useState(true);
-  const [showGST, setShowGST] = useState(true);
-  const [autoprint, setAutoprint] = useState(false);
-  const [billFooter, setBillFooter] = useState("Thank you for your business!");
-  
-  // POS Receipt Header/Footer Settings
-  const [receiptBusinessName, setReceiptBusinessName] = useState("ALI MUHAMMAD PAINTS");
-  const [receiptAddress, setReceiptAddress] = useState("Basti Malook, Multan. 0300-868-3395");
-  const [receiptDealerText, setReceiptDealerText] = useState("AUTHORIZED DEALER:");
-  const [receiptDealerBrands, setReceiptDealerBrands] = useState("ICI-DULUX • MOBI PAINTS • WESTER 77");
-  const [receiptThankYou, setReceiptThankYou] = useState("THANKS FOR YOUR BUSINESS");
-  const [receiptFontSize, setReceiptFontSize] = useState("11");
-  const [receiptItemFontSize, setReceiptItemFontSize] = useState("12");
-  const [receiptPadding, setReceiptPadding] = useState("12");
-
-  // Bluetooth Settings
-  const [bluetoothEnabled, setBluetoothEnabled] = useState(false);
-  const [connectedDevice, setConnectedDevice] = useState<string | null>(null);
 
   const handleSaveStoreSettings = () => {
     toast({ title: "Store settings saved successfully" });
@@ -145,13 +146,29 @@ export default function Settings() {
       fontSize: receiptFontSize,
       itemFontSize: receiptItemFontSize,
       padding: receiptPadding,
+      autoprint: autoprint
     };
     localStorage.setItem('posReceiptSettings', JSON.stringify(receiptSettings));
-    toast({ title: "Bill settings saved successfully" });
+    toast({ 
+      title: "Bill settings saved successfully",
+      description: autoprint ? 
+        "Auto-print is enabled. Receipts will print directly." : 
+        "Auto-print is disabled. Print dialog will open."
+    });
   };
 
   const handleConnectBluetooth = async () => {
     try {
+      // Check if browser supports Bluetooth
+      if (!(navigator as any).bluetooth) {
+        toast({ 
+          title: "Bluetooth not supported", 
+          description: "Your browser doesn't support Bluetooth Web API",
+          variant: "destructive" 
+        });
+        return;
+      }
+
       // Request Bluetooth device
       const device = await (navigator as any).bluetooth.requestDevice({
         acceptAllDevices: true,
@@ -162,6 +179,7 @@ export default function Settings() {
       setBluetoothEnabled(true);
       toast({ title: `Connected to ${device.name}` });
     } catch (error) {
+      console.error("Bluetooth connection error:", error);
       toast({ 
         title: "Bluetooth connection failed", 
         description: "Make sure Bluetooth is enabled and the device is in pairing mode",
@@ -203,7 +221,7 @@ export default function Settings() {
         if (result.success) {
           toast({
             title: "Export Successful",
-            description: `Database exported successfully!`,
+            description: `Database exported successfully to ${result.filePath}`,
           });
         } else {
           toast({
@@ -581,9 +599,9 @@ export default function Settings() {
         <TabsContent value="pos" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Bill Display Settings</CardTitle>
+              <CardTitle>POS & Bill Settings</CardTitle>
               <CardDescription>
-                Customize what appears on printed bills
+                Customize your POS behavior and bill printing preferences
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -614,13 +632,38 @@ export default function Settings() {
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>Auto-print Bills</Label>
-                  <p className="text-sm text-muted-foreground">Automatically print after completing sale</p>
+                  <p className="text-sm text-muted-foreground">
+                    Automatically print receipt when clicking "Print Receipt" button
+                  </p>
                 </div>
                 <Switch
                   checked={autoprint}
-                  onCheckedChange={setAutoprint}
+                  onCheckedChange={(checked) => {
+                    setAutoprint(checked);
+                    // Save to receipt settings immediately for preview
+                    const receiptSettings = {
+                      businessName: receiptBusinessName,
+                      address: receiptAddress,
+                      dealerText: receiptDealerText,
+                      dealerBrands: receiptDealerBrands,
+                      thankYou: receiptThankYou,
+                      fontSize: receiptFontSize,
+                      itemFontSize: receiptItemFontSize,
+                      padding: receiptPadding,
+                      autoprint: checked
+                    };
+                    localStorage.setItem('posReceiptSettings', JSON.stringify(receiptSettings));
+                  }}
                   data-testid="switch-autoprint"
                 />
+              </div>
+              <div className="pl-6">
+                <p className={`text-xs ${autoprint ? 'text-green-600' : 'text-amber-600'}`}>
+                  {autoprint 
+                    ? "✓ Auto-print enabled: Receipts will print directly without dialog" 
+                    : "ℹ Auto-print disabled: Print dialog will open for printer selection"
+                  }
+                </p>
               </div>
               <Separator />
               <div className="space-y-2">
@@ -638,7 +681,10 @@ export default function Settings() {
               
               {/* POS Receipt Header/Footer Settings */}
               <div className="space-y-4 pt-4">
-                <h3 className="font-semibold">Thermal Receipt Customization</h3>
+                <h3 className="font-semibold text-lg">Thermal Receipt Customization</h3>
+                <p className="text-sm text-muted-foreground">
+                  Customize the content and appearance of your thermal receipts
+                </p>
                 
                 <div className="space-y-2">
                   <Label htmlFor="receiptBusinessName">Business Name</Label>
@@ -694,7 +740,7 @@ export default function Settings() {
                   <p className="text-xs text-muted-foreground">Final message at the bottom of receipt</p>
                 </div>
                 
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="receiptFontSize">General Font Size (px)</Label>
                     <Input
@@ -706,7 +752,7 @@ export default function Settings() {
                       onChange={(e) => setReceiptFontSize(e.target.value)}
                       placeholder="11"
                     />
-                    <p className="text-xs text-muted-foreground">Base font size</p>
+                    <p className="text-xs text-muted-foreground">Base font size for receipt text</p>
                   </div>
                   
                   <div className="space-y-2">
@@ -720,11 +766,11 @@ export default function Settings() {
                       onChange={(e) => setReceiptItemFontSize(e.target.value)}
                       placeholder="12"
                     />
-                    <p className="text-xs text-muted-foreground">Item list size</p>
+                    <p className="text-xs text-muted-foreground">Font size for item list</p>
                   </div>
                   
                   <div className="space-y-2">
-                    <Label htmlFor="receiptPadding">Padding (px)</Label>
+                    <Label htmlFor="receiptPadding">Side Padding (px)</Label>
                     <Input
                       id="receiptPadding"
                       type="number"
@@ -734,7 +780,32 @@ export default function Settings() {
                       onChange={(e) => setReceiptPadding(e.target.value)}
                       placeholder="12"
                     />
-                    <p className="text-xs text-muted-foreground">Side padding</p>
+                    <p className="text-xs text-muted-foreground">Padding on left and right sides</p>
+                  </div>
+                </div>
+
+                {/* Preview Section */}
+                <div className="mt-6 p-4 border rounded-md bg-gray-50 dark:bg-gray-900">
+                  <h4 className="font-medium mb-3">Receipt Preview</h4>
+                  <div className="font-mono text-xs bg-white p-4 border rounded max-w-80 mx-auto">
+                    <div className="text-center font-bold" style={{ fontSize: `${receiptFontSize}px` }}>
+                      {receiptBusinessName}
+                    </div>
+                    <div className="text-center mt-1" style={{ fontSize: `${receiptFontSize}px` }}>
+                      {receiptAddress}
+                    </div>
+                    <div className="text-center mt-2 font-bold" style={{ fontSize: `${receiptFontSize}px` }}>
+                      {receiptDealerText}
+                    </div>
+                    <div className="text-center" style={{ fontSize: `${receiptFontSize}px` }}>
+                      {receiptDealerBrands}
+                    </div>
+                    <div className="mt-4 text-center" style={{ fontSize: `${receiptItemFontSize}px` }}>
+                      [Item list would appear here]
+                    </div>
+                    <div className="mt-4 text-center font-bold" style={{ fontSize: `${receiptFontSize}px` }}>
+                      {receiptThankYou}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -766,7 +837,7 @@ export default function Settings() {
                     <p className="font-medium">
                       {connectedDevice ? connectedDevice : "No device connected"}
                     </p>
-                    <p className="text-sm text-muted-foreground">
+                    <p className={`text-sm ${bluetoothEnabled ? 'text-green-600' : 'text-muted-foreground'}`}>
                       {bluetoothEnabled ? "Connected" : "Not connected"}
                     </p>
                   </div>
@@ -807,6 +878,15 @@ export default function Settings() {
                   a Bluetooth-enabled thermal printer. Make sure your browser has Bluetooth permissions enabled.
                 </p>
               </div>
+
+              {!bluetoothEnabled && (
+                <div className="p-4 border border-blue-500/50 bg-blue-500/10 rounded-md">
+                  <p className="text-sm text-blue-900 dark:text-blue-100">
+                    <strong>Tip:</strong> For best results, use a dedicated thermal printer like Epson TM-series, 
+                    Star Micronics, or Citizen thermal printers with Bluetooth support.
+                  </p>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -829,10 +909,13 @@ export default function Settings() {
                   <div className="space-y-2">
                     <Label>Current Database Location</Label>
                     <div className="flex items-center gap-2">
-                      <code className="flex-1 p-2 bg-muted rounded text-sm font-mono" data-testid="text-database-path">
+                      <code className="flex-1 p-2 bg-muted rounded text-sm font-mono break-all" data-testid="text-database-path">
                         {databasePath || "Loading..."}
                       </code>
                     </div>
+                    <p className="text-xs text-muted-foreground">
+                      This is where your application data is stored
+                    </p>
                   </div>
                   <Separator />
                 </>
@@ -877,6 +960,19 @@ export default function Settings() {
                   <li>Importing a database will replace your current data</li>
                   <li>Keep your database backups in a safe location</li>
                   <li>Export creates a .db file you can download and save</li>
+                  <li>Always backup before importing new database</li>
+                </ul>
+              </div>
+
+              <div className="p-4 border border-green-500/50 bg-green-500/10 rounded-md">
+                <h4 className="font-medium text-sm mb-2 text-green-900 dark:text-green-100">
+                  Best Practices
+                </h4>
+                <ul className="text-sm text-green-800 dark:text-green-200 space-y-1 list-disc list-inside">
+                  <li>Export database weekly for regular backups</li>
+                  <li>Store backups in cloud storage or external drive</li>
+                  <li>Test your backups occasionally to ensure they work</li>
+                  <li>Keep multiple backup versions for safety</li>
                 </ul>
               </div>
             </CardContent>

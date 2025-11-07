@@ -19,7 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Edit2, Check, X, TrendingUp, Search, Filter } from "lucide-react";
+import { Edit2, Check, X, TrendingUp, Search, Filter, RefreshCw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { VariantWithProduct } from "@shared/schema";
@@ -34,8 +34,16 @@ export default function RateManagement() {
   const [sizeFilter, setSizeFilter] = useState<string>("all");
   const { toast } = useToast();
 
-  const { data: variants = [], isLoading } = useQuery<VariantWithProduct[]>({
+  const { 
+    data: variants = [], 
+    isLoading, 
+    error,
+    refetch 
+  } = useQuery<VariantWithProduct[]>({
     queryKey: ["/api/variants"],
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
+    staleTime: 30000, // 30 seconds
   });
 
   const updateRateMutation = useMutation({
@@ -44,11 +52,13 @@ export default function RateManagement() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/variants"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
       toast({ title: "Rate updated successfully" });
       setEditingId(null);
       setEditRate("");
     },
-    onError: () => {
+    onError: (error: Error) => {
+      console.error("Update rate error:", error);
       toast({ title: "Failed to update rate", variant: "destructive" });
     },
   });
@@ -70,6 +80,11 @@ export default function RateManagement() {
   const cancelEditing = () => {
     setEditingId(null);
     setEditRate("");
+  };
+
+  const handleRefresh = () => {
+    refetch();
+    toast({ title: "Refreshing rates..." });
   };
 
   const uniqueCompanies = useMemo(() => {
@@ -118,13 +133,44 @@ export default function RateManagement() {
 
   const groupedArray = Object.values(groupedVariants);
 
+  if (error) {
+    return (
+      <div className="p-6">
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+            <TrendingUp className="h-12 w-12 text-muted-foreground mb-4 opacity-50" />
+            <h3 className="text-lg font-medium mb-1">Error Loading Rates</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              Failed to load product variants. Please try again.
+            </p>
+            <Button onClick={() => refetch()} variant="outline">
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Retry
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight" data-testid="text-rate-management-title">
-          Rate Management
-        </h1>
-        <p className="text-sm text-muted-foreground">Manage pricing for all product variants</p>
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight" data-testid="text-rate-management-title">
+            Rate Management
+          </h1>
+          <p className="text-sm text-muted-foreground">Manage pricing for all product variants</p>
+        </div>
+        <Button 
+          variant="outline" 
+          onClick={handleRefresh}
+          disabled={isLoading}
+          className="flex items-center gap-2"
+        >
+          <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+          Refresh
+        </Button>
       </div>
 
       {/* Filters */}
@@ -249,6 +295,11 @@ export default function RateManagement() {
                 : "Try adjusting your filters"
               }
             </p>
+            {variants.length === 0 && (
+              <Button variant="outline" className="mt-4" asChild>
+                <a href="/products">Add Products</a>
+              </Button>
+            )}
           </CardContent>
         </Card>
       ) : (
