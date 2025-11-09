@@ -63,7 +63,7 @@ export interface IStorage {
   updateSaleItem(id: string, data: { quantity: number; rate: number; subtotal: number }): Promise<SaleItem>;
   deleteSaleItem(saleItemId: string): Promise<void>;
   
-  // ✅ NEW: Complete sale delete
+  // ✅ COMPLETE SALE DELETE
   deleteSale(saleId: string): Promise<void>;
 
   // Dashboard Stats
@@ -567,30 +567,49 @@ export class DatabaseStorage implements IStorage {
       .where(eq(sales.id, saleId));
   }
 
-  // ✅ NEW: Complete sale delete with stock return
+  // ✅ FIXED: COMPLETE SALE DELETE WITH PROPER ERROR HANDLING
   async deleteSale(saleId: string): Promise<void> {
-    return await db.transaction(async (tx) => {
-      // First return all stock from sale items
-      const saleItems = await tx
-        .select()
-        .from(saleItems)
-        .where(eq(saleItems.saleId, saleId));
+    try {
+      console.log("Starting sale deletion for:", saleId);
+      
+      return await db.transaction(async (tx) => {
+        console.log("Transaction started for sale deletion");
 
-      for (const item of saleItems) {
-        await tx
-          .update(colors)
-          .set({
-            stockQuantity: sql`${colors.stockQuantity} + ${item.quantity}`,
-          })
-          .where(eq(colors.id, item.colorId));
-      }
+        // First get all sale items to return stock
+        const saleItemsList = await tx
+          .select()
+          .from(saleItems)
+          .where(eq(saleItems.saleId, saleId));
 
-      // Delete all sale items
-      await tx.delete(saleItems).where(eq(saleItems.saleId, saleId));
+        console.log(`Found ${saleItemsList.length} items to delete`);
 
-      // Finally delete the sale
-      await tx.delete(sales).where(eq(sales.id, saleId));
-    });
+        // Return stock for each item
+        for (const item of saleItemsList) {
+          console.log(`Returning stock for color ${item.colorId}: ${item.quantity} units`);
+          await tx
+            .update(colors)
+            .set({
+              stockQuantity: sql`${colors.stockQuantity} + ${item.quantity}`,
+            })
+            .where(eq(colors.id, item.colorId));
+        }
+
+        // Delete all sale items
+        console.log("Deleting sale items...");
+        const deleteItemsResult = await tx.delete(saleItems).where(eq(saleItems.saleId, saleId));
+        console.log("Sale items deleted successfully");
+
+        // Finally delete the sale
+        console.log("Deleting sale record...");
+        const deleteSaleResult = await tx.delete(sales).where(eq(sales.id, saleId));
+        console.log("Sale record deleted successfully");
+
+        console.log("Sale deletion transaction completed successfully");
+      });
+    } catch (error) {
+      console.error("Error in deleteSale transaction:", error);
+      throw new Error(`Failed to delete sale: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   // Dashboard Stats

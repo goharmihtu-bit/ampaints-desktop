@@ -88,8 +88,15 @@ export default function BillPrint() {
     if (!saleId) return;
     
     try {
+      console.log("Deleting sale:", saleId);
+      
       // Use the new sale delete endpoint that handles everything
-      await apiRequest("DELETE", `/api/sales/${saleId}`);
+      const response = await apiRequest("DELETE", `/api/sales/${saleId}`);
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to delete sale");
+      }
       
       // Invalidate all queries
       queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
@@ -107,11 +114,11 @@ export default function BillPrint() {
         window.location.href = "/pos";
       }, 1000);
       
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error deleting bill:", error);
       toast({ 
         title: "❌ Failed to delete bill", 
-        description: "Please try again or check console for errors",
+        description: error.message || "Please try again or check console for errors",
         variant: "destructive" 
       });
     }
@@ -345,31 +352,50 @@ export default function BillPrint() {
     }
   };
 
-  // ✅ ADD ITEM FUNCTION (with full product list)
-  const handleAddItem = () => {
-    if (!selectedColor) return toast({ title: "Select product", variant: "destructive" });
+  // ✅ FIXED: ADD ITEM FUNCTION (with proper error handling)
+  const handleAddItem = async () => {
+    if (!selectedColor) {
+      toast({ title: "❌ Please select a product", variant: "destructive" });
+      return;
+    }
+    
     const qty = parseInt(quantity);
-    if (isNaN(qty) || qty < 1) return toast({ title: "Invalid quantity", variant: "destructive" });
+    if (isNaN(qty) || qty < 1) {
+      toast({ title: "❌ Invalid quantity", variant: "destructive" });
+      return;
+    }
 
-    const itemRate = parseFloat(selectedColor.variant.rate);
-    apiRequest("POST", `/api/sales/${saleId}/items`, {
-      colorId: selectedColor.id,
-      quantity: qty,
-      rate: itemRate,
-      subtotal: itemRate * qty,
-    }).then(() => {
-      queryClient.invalidateQueries({ queryKey: ["/api/sales", saleId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
+    try {
+      const itemRate = parseFloat(selectedColor.variant.rate);
+      const response = await apiRequest("POST", `/api/sales/${saleId}/items`, {
+        colorId: selectedColor.id,
+        quantity: qty,
+        rate: itemRate,
+        subtotal: itemRate * qty,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to add item");
+      }
+
+      await queryClient.invalidateQueries({ queryKey: ["/api/sales", saleId] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
+      
       toast({ title: "✅ Item added successfully" });
       setAddItemDialogOpen(false);
       setSelectedColor(null);
       setQuantity("1");
       setSearchQuery("");
-    }).catch(error => {
+    } catch (error: any) {
       console.error("Error adding item:", error);
-      toast({ title: "❌ Failed to add item", variant: "destructive" });
-    });
+      toast({ 
+        title: "❌ Failed to add item", 
+        description: error.message || "Please try again",
+        variant: "destructive" 
+      });
+    }
   };
 
   // Start Edit Mode
@@ -478,7 +504,7 @@ export default function BillPrint() {
     }
   };
 
-  // ✅ FULL PRODUCT LIST WITHOUT LIMIT
+  // ✅ FIXED: FULL PRODUCT LIST WITHOUT LIMIT
   const filteredColors = useMemo(() => {
     if (!searchQuery) return colors;
     const q = searchQuery.toLowerCase();
@@ -710,7 +736,7 @@ export default function BillPrint() {
         </DialogContent>
       </Dialog>
 
-      {/* ✅ IMPROVED ADD ITEM DIALOG WITH FULL PRODUCT LIST */}
+      {/* ✅ FIXED: ADD ITEM DIALOG WITH PROPER LAYOUT */}
       <Dialog open={addItemDialogOpen} onOpenChange={setAddItemDialogOpen}>
         <DialogContent className="max-w-4xl h-[80vh] flex flex-col">
           <DialogHeader>
@@ -728,17 +754,20 @@ export default function BillPrint() {
               className="h-12 text-lg"
             />
             
-            <div className="flex-1 overflow-y-auto border rounded-lg">
-              <div className="max-h-96 overflow-y-auto">
+            <div className="flex-1 overflow-y-auto border rounded-lg p-2">
+              <div className="space-y-2 max-h-96 overflow-y-auto">
                 {filteredColors.map(c => (
                   <Card
                     key={c.id}
-                    className={`m-2 p-4 cursor-pointer transition-all ${
+                    className={`p-4 cursor-pointer transition-all ${
                       selectedColor?.id === c.id 
                         ? "border-2 border-blue-500 bg-blue-50" 
                         : "hover:bg-gray-50"
                     }`}
-                    onClick={() => setSelectedColor(c)}
+                    onClick={() => {
+                      setSelectedColor(c);
+                      setQuantity("1");
+                    }}
                   >
                     <div className="flex justify-between items-center">
                       <div className="flex-1">
@@ -772,41 +801,77 @@ export default function BillPrint() {
               </div>
             </div>
 
+            {/* ✅ FIXED: QUANTITY INPUT AND ADD BUTTON - ALWAYS VISIBLE WHEN PRODUCT SELECTED */}
             {selectedColor && (
-              <div className="space-y-3 p-4 bg-gray-50 rounded-lg">
-                <Label className="text-lg font-semibold">Selected Product</Label>
-                <div className="flex items-center gap-4">
+              <div className="space-y-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <div className="flex items-center justify-between">
                   <div className="flex-1">
-                    <p className="font-semibold">
+                    <Label className="text-lg font-semibold block mb-2">Selected Product</Label>
+                    <p className="font-semibold text-gray-900">
                       {selectedColor.variant.product.productName} - {selectedColor.colorName}
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      {selectedColor.colorCode} • {selectedColor.variant.packingSize}
+                      {selectedColor.colorCode} • {selectedColor.variant.packingSize} • Rs. {Math.round(parseFloat(selectedColor.variant.rate))}
                     </p>
                   </div>
-                  <div className="w-32">
-                    <Label>Quantity</Label>
-                    <Input 
-                      type="number" 
-                      min="1" 
-                      value={quantity} 
-                      onChange={e => setQuantity(e.target.value)}
-                      className="text-center text-lg font-semibold"
-                    />
+                  
+                  <div className="flex items-center gap-4">
+                    <div className="w-32">
+                      <Label htmlFor="quantity-input" className="block mb-2 font-medium">Quantity</Label>
+                      <Input 
+                        id="quantity-input"
+                        type="number" 
+                        min="1" 
+                        value={quantity} 
+                        onChange={e => setQuantity(e.target.value)}
+                        className="text-center text-lg font-semibold h-12"
+                      />
+                    </div>
+                    
+                    <div className="w-32">
+                      <Label className="block mb-2 font-medium">Total</Label>
+                      <div className="h-12 flex items-center justify-center bg-white border border-gray-300 rounded-md text-lg font-bold text-blue-600">
+                        Rs. {Math.round(parseFloat(selectedColor.variant.rate) * parseInt(quantity || "1"))}
+                      </div>
+                    </div>
                   </div>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  ✅ Zero stock allowed - You can add items even if stock is zero
+                
+                <div className="flex justify-between items-center">
+                  <p className="text-xs text-muted-foreground">
+                    ✅ Zero stock allowed - You can add items even if stock is zero
+                  </p>
+                  
+                  <Button 
+                    onClick={handleAddItem} 
+                    className="bg-blue-600 hover:bg-blue-700 h-12 px-8"
+                    size="lg"
+                  >
+                    <Plus className="h-5 w-5 mr-2" />
+                    Add Item to Bill
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* ✅ SHOW MESSAGE WHEN NO PRODUCT SELECTED */}
+            {!selectedColor && (
+              <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-center">
+                <p className="text-yellow-700 font-medium">
+                  Please select a product from the list above to add to the bill
                 </p>
               </div>
             )}
           </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setAddItemDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleAddItem} disabled={!selectedColor}>
-              <Plus className="h-4 w-4 mr-2" />
-              Add Item to Bill
+          <DialogFooter className="border-t pt-4">
+            <Button variant="outline" onClick={() => {
+              setAddItemDialogOpen(false);
+              setSelectedColor(null);
+              setQuantity("1");
+              setSearchQuery("");
+            }}>
+              Cancel
             </Button>
           </DialogFooter>
         </DialogContent>
