@@ -265,6 +265,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ✅ NEW: Sale delete endpoint
+  app.delete("/api/sales/:id", async (req, res) => {
+    try {
+      await storage.deleteSale(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting sale:", error);
+      res.status(500).json({ error: "Failed to delete sale" });
+    }
+  });
+
   // Customer Suggestions - FIXED: Consistent endpoint naming
   app.get("/api/customers/suggestions", async (_req, res) => {
     try {
@@ -576,7 +587,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // ✅ FIXED: Complete the function properly with closing bracket
   const httpServer = createServer(app);
   return httpServer;
-} // ✅ YEH MISSING THA - CLOSING BRACKET
+}

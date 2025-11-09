@@ -62,6 +62,9 @@ export interface IStorage {
   addSaleItem(saleId: string, item: InsertSaleItem): Promise<SaleItem>;
   updateSaleItem(id: string, data: { quantity: number; rate: number; subtotal: number }): Promise<SaleItem>;
   deleteSaleItem(saleItemId: string): Promise<void>;
+  
+  // ✅ NEW: Complete sale delete
+  deleteSale(saleId: string): Promise<void>;
 
   // Dashboard Stats
   getDashboardStats(): Promise<{
@@ -258,7 +261,7 @@ export class DatabaseStorage implements IStorage {
     await db.delete(colors).where(eq(colors.id, id));
   }
 
-  // Sales (existing methods remain the same)
+  // Sales
   async getSales(): Promise<Sale[]> {
     return await db.select().from(sales).orderBy(desc(sales.createdAt));
   }
@@ -564,7 +567,33 @@ export class DatabaseStorage implements IStorage {
       .where(eq(sales.id, saleId));
   }
 
-  // Dashboard Stats (existing implementation remains the same)
+  // ✅ NEW: Complete sale delete with stock return
+  async deleteSale(saleId: string): Promise<void> {
+    return await db.transaction(async (tx) => {
+      // First return all stock from sale items
+      const saleItems = await tx
+        .select()
+        .from(saleItems)
+        .where(eq(saleItems.saleId, saleId));
+
+      for (const item of saleItems) {
+        await tx
+          .update(colors)
+          .set({
+            stockQuantity: sql`${colors.stockQuantity} + ${item.quantity}`,
+          })
+          .where(eq(colors.id, item.colorId));
+      }
+
+      // Delete all sale items
+      await tx.delete(saleItems).where(eq(saleItems.saleId, saleId));
+
+      // Finally delete the sale
+      await tx.delete(sales).where(eq(sales.id, saleId));
+    });
+  }
+
+  // Dashboard Stats
   async getDashboardStats() {
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());

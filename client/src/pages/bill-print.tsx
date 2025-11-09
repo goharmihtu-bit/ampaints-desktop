@@ -83,27 +83,23 @@ export default function BillPrint() {
     enabled: addItemDialogOpen,
   });
 
-  // ✅ COMPLETE BILL DELETE FUNCTION
+  // ✅ FIXED: COMPLETE BILL DELETE FUNCTION
   const deleteSale = async () => {
     if (!saleId) return;
     
     try {
-      // First delete all sale items to handle stock return
-      for (const item of sale?.saleItems || []) {
-        await apiRequest("DELETE", `/api/sale-items/${item.id}`);
-      }
-      
-      // Then delete the sale itself
+      // Use the new sale delete endpoint that handles everything
       await apiRequest("DELETE", `/api/sales/${saleId}`);
       
-      // Invalidate queries
+      // Invalidate all queries
       queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
       queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/customers/suggestions"] });
       
       toast({ 
         title: "✅ Bill completely deleted", 
-        description: "All items and payment records removed successfully" 
+        description: "All items, payments, and records removed successfully" 
       });
       
       // Redirect to POS
@@ -115,6 +111,7 @@ export default function BillPrint() {
       console.error("Error deleting bill:", error);
       toast({ 
         title: "❌ Failed to delete bill", 
+        description: "Please try again or check console for errors",
         variant: "destructive" 
       });
     }

@@ -1,4 +1,4 @@
-// pos-sales.tsx - Multi-tab POS with complete implementation
+// pos-sales.tsx - Fixed version with clean layout and search inside cart
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
@@ -441,29 +441,12 @@ export default function POSSales() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-6">
       <div className="max-w-7xl mx-auto">
-        {/* Header with Multi-tab Controls */}
-        <div className="mb-8 text-center">
-          {/* Instance Controls */}
-          <div className="flex justify-between items-center mb-4">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={openNewPOSInstance}
-              className="flex items-center gap-2 bg-white hover:bg-gray-50 border-gray-300"
-            >
-              <Plus className="h-4 w-4" />
-              New POS Instance (Ctrl+N)
-            </Button>
-            
-            <Badge variant="secondary" className="bg-blue-100 text-blue-700 font-medium px-3 py-1">
-              Instance: {activeInstance}
-            </Badge>
-          </div>
-
+        {/* Header - Clean without search bar */}
+        <div className="mb-6 text-center">
           <h1 className="text-3xl font-bold text-gray-900 mb-3 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
             POS Sales
           </h1>
-          <p className="text-sm text-gray-600 mb-6 flex items-center justify-center gap-4 flex-wrap">
+          <p className="text-sm text-gray-600 mb-4 flex items-center justify-center gap-4 flex-wrap">
             <span className="flex items-center gap-1">
               <Zap className="h-4 w-4 text-yellow-500" />
               Use <kbd className="bg-white border border-gray-300 px-2 py-1 rounded shadow-sm text-xs font-mono">F2</kbd> to search products
@@ -477,38 +460,41 @@ export default function POSSales() {
               <kbd className="bg-white border border-gray-300 px-2 py-1 rounded shadow-sm text-xs font-mono">Ctrl+N</kbd> for new POS instance
             </span>
           </p>
-          <div className="flex justify-center">
-            <div className="relative w-full max-w-lg">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-              <Input
-                ref={searchInputRef}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onFocus={() => setSearchOpen(true)}
-                placeholder="Search color code, name, or product..."
-                className="pl-10 h-12 shadow-sm border-gray-300 bg-white text-center text-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
-            </div>
-          </div>
         </div>
 
         {/* Layout */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Cart */}
-          <div className="lg:col-span-2 space-y-6">
+          {/* Cart - Search Button Inside Cart */}
+          <div className="lg:col-span-2 space-y-4">
             <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
-              <CardHeader className="bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-t-lg border-b-0">
-                <CardTitle className="flex items-center gap-3 text-lg font-semibold">
-                  <ShoppingCart className="h-6 w-6" /> 
-                  Shopping Cart ({cart.length})
-                </CardTitle>
+              <CardHeader className="bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-t-lg border-b-0 pb-3">
+                <div className="flex justify-between items-center">
+                  <CardTitle className="flex items-center gap-3 text-lg font-semibold">
+                    <ShoppingCart className="h-6 w-6" /> 
+                    Shopping Cart ({cart.length})
+                  </CardTitle>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      setSearchOpen(true);
+                      setTimeout(() => searchInputRef.current?.focus(), 60);
+                    }}
+                    className="bg-white/20 hover:bg-white/30 text-white border-0"
+                  >
+                    <Search className="h-4 w-4 mr-2" />
+                    Search Products (F2)
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent className="p-0 bg-white rounded-b-lg">
                 {cart.length === 0 ? (
                   <div className="py-16 text-center text-gray-500 bg-gradient-to-b from-white to-gray-50 rounded-b-lg">
                     <Package2 className="mx-auto mb-4 h-16 w-16 opacity-30" />
                     <p className="text-lg font-medium text-gray-400">Your cart is empty</p>
-                    <p className="text-sm text-gray-400 mt-2">Add products to get started</p>
+                    <p className="text-sm text-gray-400 mt-2">
+                      Click "Search Products" to add items
+                    </p>
                   </div>
                 ) : (
                   <div className="flex flex-col divide-y divide-gray-100">
