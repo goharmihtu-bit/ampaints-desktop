@@ -110,6 +110,7 @@ function createTables() {
       color_name TEXT NOT NULL,
       color_code TEXT NOT NULL,
       stock_quantity INTEGER NOT NULL DEFAULT 0,
+      rate_override TEXT,
       created_at INTEGER NOT NULL,
       FOREIGN KEY (variant_id) REFERENCES variants(id) ON DELETE CASCADE
     );
@@ -144,6 +145,35 @@ function createTables() {
       FOREIGN KEY (color_id) REFERENCES colors(id)
     );
   `);
+
+  // Create stock_in_history table
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS stock_in_history (
+      id TEXT PRIMARY KEY,
+      color_id TEXT NOT NULL,
+      quantity INTEGER NOT NULL,
+      previous_stock INTEGER NOT NULL,
+      new_stock INTEGER NOT NULL,
+      added_by TEXT NOT NULL DEFAULT 'System',
+      notes TEXT,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (color_id) REFERENCES colors(id) ON DELETE CASCADE
+    );
+  `);
+  
+  // Create settings table
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS settings (
+      id TEXT PRIMARY KEY DEFAULT 'default',
+      store_name TEXT NOT NULL DEFAULT 'PaintPulse',
+      card_border_style TEXT NOT NULL DEFAULT 'shadow',
+      card_shadow_size TEXT NOT NULL DEFAULT 'sm',
+      card_button_color TEXT NOT NULL DEFAULT 'gray-900',
+      card_price_color TEXT NOT NULL DEFAULT 'blue-600',
+      show_stock_badge_border INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL
+    );
+  `);
   
   // Create composite indexes for performance and duplicate handling
   sqlite.exec(`
@@ -169,6 +199,10 @@ function createTables() {
     
     -- Sale items indexes
     CREATE INDEX IF NOT EXISTS idx_sale_items_sale_color ON sale_items(sale_id, color_id);
+    
+    -- Stock in history indexes
+    CREATE INDEX IF NOT EXISTS idx_stock_history_color_created ON stock_in_history(color_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_stock_history_created ON stock_in_history(created_at);
   `);
   
     console.log('[Database] ✅ All tables and indexes created successfully');

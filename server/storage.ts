@@ -249,27 +249,60 @@ export class DatabaseStorage implements IStorage {
   }
 
   async stockIn(id: string, quantity: number): Promise<Color> {
-    // Get current stock
-    const [currentColor] = await db.select().from(colors).where(eq(colors.id, id));
-    if (!currentColor) throw new Error("Color not found");
-    
-    const previousStock = currentColor.stockQuantity;
-    const newStock = previousStock + quantity;
+    try {
+      console.log(`[Storage] Starting stock in for color ${id}, quantity: ${quantity}`);
+      
+      // Get current stock with proper error handling
+      const [currentColor] = await db.select().from(colors).where(eq(colors.id, id));
+      if (!currentColor) {
+        console.error(`[Storage] Color not found: ${id}`);
+        throw new Error("Color not found");
+      }
+      
+      const previousStock = currentColor.stockQuantity;
+      const newStock = previousStock + quantity;
 
-    // Update stock
-    await db
-      .update(colors)
-      .set({
-        stockQuantity: newStock,
-      })
-      .where(eq(colors.id, id));
+      console.log(`[Storage] Stock update: Previous: ${previousStock}, Adding: ${quantity}, New: ${newStock}`);
 
-    // Record in history
-    await this.recordStockIn(id, quantity, previousStock, newStock, "System", "Stock added");
+      // Update stock - use transaction for safety
+      await db.transaction(async (tx) => {
+        // Update color stock
+        await tx
+          .update(colors)
+          .set({
+            stockQuantity: newStock,
+          })
+          .where(eq(colors.id, id));
 
-    const [updatedColor] = await db.select().from(colors).where(eq(colors.id, id));
-    if (!updatedColor) throw new Error("Color not found after stock in");
-    return updatedColor;
+        // Record in history
+        const historyRecord = {
+          id: crypto.randomUUID(),
+          colorId: id,
+          quantity,
+          previousStock,
+          newStock,
+          addedBy: "System",
+          notes: "Stock added via stock management",
+          createdAt: new Date(),
+        };
+
+        console.log("[Storage] Recording stock history:", historyRecord);
+        await tx.insert(stockInHistory).values(historyRecord);
+      });
+
+      // Fetch and return updated color
+      const [updatedColor] = await db.select().from(colors).where(eq(colors.id, id));
+      if (!updatedColor) {
+        console.error(`[Storage] Color not found after update: ${id}`);
+        throw new Error("Color not found after stock update");
+      }
+      
+      console.log(`[Storage] Stock in successful: ${updatedColor.colorName} - New stock: ${updatedColor.stockQuantity}`);
+      return updatedColor;
+    } catch (error) {
+      console.error("[Storage] Error in stockIn:", error);
+      throw new Error(`Failed to add stock: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   async deleteColor(id: string): Promise<void> {
@@ -278,21 +311,35 @@ export class DatabaseStorage implements IStorage {
 
   // Stock In History
   async getStockInHistory(): Promise<StockInHistoryWithColor[]> {
-    const result = await db.query.stockInHistory.findMany({
-      with: {
-        color: {
-          with: {
-            variant: {
-              with: {
-                product: true,
+    try {
+      console.log("[Storage] Fetching stock in history");
+      
+      const result = await db.query.stockInHistory.findMany({
+        with: {
+          color: {
+            with: {
+              variant: {
+                with: {
+                  product: true,
+                },
               },
             },
           },
         },
-      },
-      orderBy: desc(stockInHistory.createdAt),
-    });
-    return result;
+        orderBy: desc(stockInHistory.createdAt),
+      });
+      
+      console.log(`[Storage] Found ${result.length} history records`);
+      return result;
+    } catch (error) {
+      console.error("[Storage] Error fetching stock in history:", error);
+      // If table doesn't exist yet, return empty array
+      if (error instanceof Error && error.message.includes("no such table")) {
+        console.log("[Storage] stock_in_history table doesn't exist yet");
+        return [];
+      }
+      throw error;
+    }
   }
 
   async recordStockIn(
@@ -303,36 +350,91 @@ export class DatabaseStorage implements IStorage {
     addedBy: string = "System", 
     notes?: string
   ): Promise<StockInHistoryWithColor> {
-    const historyRecord = {
-      id: crypto.randomUUID(),
-      colorId,
-      quantity,
-      previousStock,
-      newStock,
-      addedBy,
-      notes: notes || null,
-      createdAt: new Date(),
-    };
+    try {
+      const historyRecord = {
+        id: crypto.randomUUID(),
+        colorId,
+        quantity,
+        previousStock,
+        newStock,
+        addedBy,
+        notes: notes || null,
+        createdAt: new Date(),
+      };
 
-    await db.insert(stockInHistory).values(historyRecord);
+      console.log("Recording stock in history:", historyRecord);
 
-    // Return the created record with color details
-    const result = await db.query.stockInHistory.findFirst({
-      where: eq(stockInHistory.id, historyRecord.id),
-      with: {
-        color: {
-          with: {
-            variant: {
-              with: {
-                product: true,
+      await db.insert(stockInHistory).values(historyRecord);
+
+      // Return the created record with color details
+      const result = await db.query.stockInHistory.findFirst({
+        where: eq(stockInHistory.id, historyRecord.id),
+        with: {
+          color: {
+            with: {
+              variant: {
+                with: {
+                  product: true,
+                },
               },
             },
           },
         },
+      });
+
+      if (!result) throw new Error("Failed to create stock in history record");
+      return result;
+    } catch (error) {
+      console.error("Error recording stock in history:", error);
+      // If history recording fails, we still want the stock update to succeed
+      // So we'll create a minimal history record without the database relation
+      const color = await this.getColor(colorId);
+      if (!color) {
+        throw new Error("Color not found for history recording");
+      }
+      
+      // Create a fallback record
+      const fallbackRecord: any = {
+        id: crypto.randomUUID(),
+        colorId,
+        quantity,
+        previousStock,
+        newStock,
+        addedBy,
+        notes: notes || null,
+        createdAt: new Date(),
+        color: {
+          ...color,
+          variant: {
+            product: {
+              company: "Unknown",
+              productName: "Unknown"
+            },
+            packingSize: "Unknown"
+          }
+        }
+      };
+      return fallbackRecord;
+    }
+  }
+
+  // Helper method to get color with relations
+  private async getColor(id: string): Promise<ColorWithVariantAndProduct> {
+    const result = await db.query.colors.findFirst({
+      where: eq(colors.id, id),
+      with: {
+        variant: {
+          with: {
+            product: true,
+          },
+        },
       },
     });
-
-    if (!result) throw new Error("Failed to create stock in history record");
+    
+    if (!result) {
+      throw new Error(`Color with id ${id} not found`);
+    }
+    
     return result;
   }
 
