@@ -1,4 +1,3 @@
-// pos-sales.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
@@ -27,6 +26,7 @@ import {
   Calendar,
   Zap,
   AlertTriangle,
+  RefreshCw,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -59,6 +59,7 @@ interface CustomerSuggestion {
   customerPhone: string;
   lastSaleDate: string;
   totalSpent: number;
+  transactionCount: number;
 }
 
 export default function POSSales() {
@@ -95,6 +96,7 @@ export default function POSSales() {
       queryKey: ["/api/colors"],
     });
 
+  // FIXED: Show ALL customer suggestions without limit
   const { data: customerSuggestions = [] } = useQuery<CustomerSuggestion[]>({
     queryKey: ["/api/customers/suggestions"],
   });
@@ -153,6 +155,13 @@ export default function POSSales() {
     },
   });
 
+  // Refresh data function
+  const refreshData = () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/customers/suggestions"] });
+    toast({ title: "Data refreshed" });
+  };
+
   // New POS instance function
   const openNewPOSInstance = () => {
     const newInstanceNumber = posInstances + 1;
@@ -203,6 +212,11 @@ export default function POSSales() {
       if (e.ctrlKey && e.key.toLowerCase() === "n") {
         e.preventDefault();
         openNewPOSInstance();
+      }
+      // Refresh shortcut
+      if (e.ctrlKey && e.key.toLowerCase() === "r") {
+        e.preventDefault();
+        refreshData();
       }
     };
     window.addEventListener("keydown", handler);
@@ -459,6 +473,10 @@ export default function POSSales() {
               <Plus className="h-4 w-4 text-green-500" />
               <kbd className="bg-white border border-gray-300 px-2 py-1 rounded shadow-sm text-xs font-mono">Ctrl+N</kbd> for new POS instance
             </span>
+            <span className="flex items-center gap-1">
+              <RefreshCw className="h-4 w-4 text-blue-500" />
+              <kbd className="bg-white border border-gray-300 px-2 py-1 rounded shadow-sm text-xs font-mono">Ctrl+R</kbd> to refresh data
+            </span>
           </p>
         </div>
 
@@ -473,18 +491,29 @@ export default function POSSales() {
                     <ShoppingCart className="h-6 w-6" /> 
                     Shopping Cart ({cart.length})
                   </CardTitle>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => {
-                      setSearchOpen(true);
-                      setTimeout(() => searchInputRef.current?.focus(), 60);
-                    }}
-                    className="bg-white/20 hover:bg-white/30 text-white border-0"
-                  >
-                    <Search className="h-4 w-4 mr-2" />
-                    Search Products (F2)
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={refreshData}
+                      className="bg-white/20 hover:bg-white/30 text-white border-0"
+                    >
+                      <RefreshCw className="h-4 w-4 mr-2" />
+                      Refresh
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => {
+                        setSearchOpen(true);
+                        setTimeout(() => searchInputRef.current?.focus(), 60);
+                      }}
+                      className="bg-white/20 hover:bg-white/30 text-white border-0"
+                    >
+                      <Search className="h-4 w-4 mr-2" />
+                      Search Products (F2)
+                    </Button>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="p-0 bg-white rounded-b-lg">
@@ -607,13 +636,14 @@ export default function POSSales() {
                         </Button>
                       </div>
                     </PopoverTrigger>
-                    <PopoverContent className="w-96 p-0 border-gray-300 shadow-xl z-50" align="start">
+                    {/* FIXED: Show ALL customer suggestions without limit */}
+                    <PopoverContent className="w-96 p-0 border-gray-300 shadow-xl z-50 max-h-96 overflow-y-auto" align="start">
                       <Command>
                         <CommandInput 
                           placeholder="Search customers..." 
                           className="h-11 border-0 focus:ring-0"
                         />
-                        <CommandList className="max-h-64">
+                        <CommandList className="max-h-80">
                           <CommandEmpty className="py-8 text-center text-gray-500">
                             <User className="mx-auto h-8 w-8 mb-2 opacity-40" />
                             <p>No customers found</p>
@@ -629,6 +659,9 @@ export default function POSSales() {
                                 <div className="flex items-center gap-2 w-full">
                                   <User className="h-4 w-4 text-blue-500" />
                                   <span className="font-medium text-gray-900">{customer.customerName}</span>
+                                  <Badge variant="outline" className="ml-auto text-xs">
+                                    {customer.transactionCount || 1} trans
+                                  </Badge>
                                 </div>
                                 <div className="flex items-center gap-4 text-xs text-gray-500 w-full pl-6">
                                   <div className="flex items-center gap-1">
@@ -646,6 +679,10 @@ export default function POSSales() {
                               </CommandItem>
                             ))}
                           </CommandGroup>
+                          {/* Show total count */}
+                          <div className="border-t p-2 text-xs text-gray-500 text-center">
+                            {customerSuggestions.length} customers found
+                          </div>
                         </CommandList>
                       </Command>
                     </PopoverContent>

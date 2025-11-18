@@ -2,7 +2,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertProductSchema, insertVariantSchema, insertColorSchema, insertSaleSchema, insertSaleItemSchema } from "@shared/schema";
+import { insertProductSchema, insertVariantSchema, insertColorSchema, insertSaleSchema, insertSaleItemSchema, insertStockInHistorySchema } from "@shared/schema";
 import { z } from "zod";
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -231,6 +231,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Stock In History
+  app.get("/api/stock-in/history", async (_req, res) => {
+    try {
+      const history = await storage.getStockInHistory();
+      res.json(history);
+    } catch (error) {
+      console.error("Error fetching stock in history:", error);
+      res.status(500).json({ error: "Failed to fetch stock in history" });
+    }
+  });
+
+  // Stock In History PDF Export
+  app.get("/api/stock-in/history/export-pdf", async (req, res) => {
+    try {
+      const { startDate, endDate, company, product } = req.query;
+      
+      let history = await storage.getStockInHistory();
+      
+      // Apply filters if provided
+      if (startDate && endDate) {
+        const start = new Date(startDate as string);
+        const end = new Date(endDate as string);
+        end.setHours(23, 59, 59, 999);
+        
+        history = history.filter(record => {
+          const recordDate = new Date(record.createdAt);
+          return recordDate >= start && recordDate <= end;
+        });
+      }
+      
+      if (company && company !== 'all') {
+        history = history.filter(record => 
+          record.color.variant.product.company === company
+        );
+      }
+      
+      if (product && product !== 'all') {
+        history = history.filter(record => 
+          record.color.variant.product.productName === product
+        );
+      }
+
+      // Generate PDF content (simplified version - in real app, use a PDF library)
+      const pdfContent = generateStockHistoryPDF(history, {
+        startDate: startDate as string,
+        endDate: endDate as string,
+        company: company as string,
+        product: product as string
+      });
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="stock-history-${new Date().toISOString().split('T')[0]}.pdf"`);
+      res.send(Buffer.from(pdfContent));
+    } catch (error) {
+      console.error("Error exporting stock history PDF:", error);
+      res.status(500).json({ error: "Failed to export stock history PDF" });
+    }
+  });
+
   // Sales
   app.get("/api/sales", async (_req, res) => {
     try {
@@ -266,7 +325,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Customer Suggestions - FIXED: Consistent endpoint naming
+  // Customer Suggestions - FIXED: Show ALL customers, not just top 10
   app.get("/api/customers/suggestions", async (_req, res) => {
     try {
       const sales = await storage.getSales();
@@ -282,16 +341,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
             customerName: sale.customerName,
             customerPhone: sale.customerPhone,
             lastSaleDate: sale.createdAt,
-            totalSpent: (existing?.totalSpent || 0) + parseFloat(sale.totalAmount)
+            totalSpent: (existing?.totalSpent || 0) + parseFloat(sale.totalAmount),
+            transactionCount: (existing?.transactionCount || 0) + 1
           });
         } else {
           existing.totalSpent += parseFloat(sale.totalAmount);
+          existing.transactionCount += 1;
         }
       });
       
+      // FIXED: Remove the .slice(0, 10) to show ALL customers
       const suggestions = Array.from(customerMap.values())
-        .sort((a, b) => new Date(b.lastSaleDate).getTime() - new Date(a.lastSaleDate).getTime())
-        .slice(0, 10);
+        .sort((a, b) => new Date(b.lastSaleDate).getTime() - new Date(a.lastSaleDate).getTime());
       
       res.json(suggestions);
     } catch (error) {
@@ -562,4 +623,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   const httpServer = createServer(app);
   return httpServer;
+}
+
+// Helper function to generate PDF content for stock history
+function generateStockHistoryPDF(history: any[], filters: any): string {
+  // This is a simplified PDF generation. In a real app, use a PDF library like pdfkit, jspdf, etc.
+  const pdfContent = `
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>
+endobj
+
+4 0 obj
+<< /Length 1000 >>
+stream
+BT
+/F1 12 Tf
+50 750 Td
+(Stock In History Report) Tj
+0 -20 Td
+(Generated on: ${new Date().toLocaleDateString()}) Tj
+0 -20 Td
+(Total Records: ${history.length}) Tj
+0 -40 Td
+
+${history.map((record, index) => 
+  `[${index + 1}] ${new Date(record.createdAt).toLocaleDateString()} - ${record.color.colorCode} - ${record.color.colorName} - Qty: +${record.quantity}`
+).join('\n0 -15 Td\n')}
+
+ET
+endstream
+endobj
+
+xref
+0 5
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000234 00000 n 
+trailer
+<< /Size 5 /Root 1 0 R >>
+startxref
+${1000 + history.length * 50}
+%%EOF
+`.trim();
+
+  return pdfContent;
 }

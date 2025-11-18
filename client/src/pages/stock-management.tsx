@@ -44,6 +44,8 @@ import {
   Calendar,
   Filter,
   Download,
+  FileText,
+  RefreshCw,
 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -784,6 +786,82 @@ export default function StockManagement() {
     URL.revokeObjectURL(url);
 
     toast({ title: "History exported successfully" });
+  };
+
+  /* PDF Export for Stock In History */
+  const exportStockInHistoryPDF = async () => {
+    try {
+      // Build query parameters from current filters
+      const params = new URLSearchParams();
+      
+      if (historyCompanyFilter !== 'all') {
+        params.append('company', historyCompanyFilter);
+      }
+      
+      if (historyProductFilter !== 'all') {
+        params.append('product', historyProductFilter);
+      }
+      
+      if (historyDateFilter !== 'all') {
+        const now = new Date();
+        let startDate = new Date();
+        
+        switch (historyDateFilter) {
+          case 'today':
+            startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            break;
+          case 'yesterday':
+            startDate = new Date(now);
+            startDate.setDate(startDate.getDate() - 1);
+            break;
+          case 'week':
+            startDate = new Date(now);
+            startDate.setDate(startDate.getDate() - 7);
+            break;
+          case 'month':
+            startDate = new Date(now);
+            startDate.setDate(startDate.getDate() - 30);
+            break;
+        }
+        
+        if (historyDateFilter !== 'all') {
+          params.append('startDate', startDate.toISOString().split('T')[0]);
+          params.append('endDate', now.toISOString().split('T')[0]);
+        }
+      }
+
+      const url = `/api/stock-in/history/export-pdf?${params.toString()}`;
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        throw new Error('Failed to generate PDF');
+      }
+      
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = `stock-history-${new Date().toISOString().split('T')[0]}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(downloadUrl);
+      
+      toast({ title: "PDF exported successfully" });
+    } catch (error) {
+      console.error("Error exporting PDF:", error);
+      toast({ 
+        title: "Failed to export PDF", 
+        description: "Please try again later",
+        variant: "destructive" 
+      });
+    }
+  };
+
+  /* Refresh Stock In History */
+  const refreshStockInHistory = () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/stock-in/history"] });
+    toast({ title: "Stock history refreshed" });
   };
 
   /* -------------------------
@@ -1987,11 +2065,19 @@ export default function StockManagement() {
         <TabsContent value="stock-in-history" className="space-y-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between gap-4">
-              <CardTitle>Stock In History ({stockInHistory.length})</CardTitle>
+              <CardTitle>Stock In History ({filteredStockInHistory.length})</CardTitle>
               <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={refreshStockInHistory}>
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Refresh
+                </Button>
                 <Button variant="outline" size="sm" onClick={exportStockInHistory}>
                   <Download className="h-4 w-4 mr-2" />
                   Export CSV
+                </Button>
+                <Button variant="outline" size="sm" onClick={exportStockInHistoryPDF}>
+                  <FileText className="h-4 w-4 mr-2" />
+                  Export PDF
                 </Button>
               </div>
             </CardHeader>
@@ -2002,11 +2088,17 @@ export default function StockManagement() {
                   <Skeleton className="h-20 w-full" />
                   <Skeleton className="h-20 w-full" />
                 </div>
-              ) : stockInHistory.length === 0 ? (
+              ) : filteredStockInHistory.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <History className="h-12 w-12 mx-auto mb-4 opacity-50" />
                   <p>No stock in history found</p>
                   <p className="text-sm">Stock in history will appear here when you add stock to colors</p>
+                  <Button 
+                    className="mt-4" 
+                    onClick={refreshStockInHistory}
+                  >
+                    Refresh History
+                  </Button>
                 </div>
               ) : (
                 <div className="space-y-4">

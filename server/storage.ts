@@ -6,6 +6,7 @@ import {
   sales,
   saleItems,
   settings,
+  stockInHistory,
   type Product,
   type InsertProduct,
   type Variant,
@@ -21,6 +22,7 @@ import {
   type VariantWithProduct,
   type ColorWithVariantAndProduct,
   type SaleWithItems,
+  type StockInHistoryWithColor,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, gte, sql, and } from "drizzle-orm";
@@ -63,6 +65,10 @@ export interface IStorage {
   addSaleItem(saleId: string, item: InsertSaleItem): Promise<SaleItem>;
   updateSaleItem(id: string, data: { quantity: number; rate: number; subtotal: number }): Promise<SaleItem>;
   deleteSaleItem(saleItemId: string): Promise<void>;
+
+  // Stock In History
+  getStockInHistory(): Promise<StockInHistoryWithColor[]>;
+  recordStockIn(colorId: string, quantity: number, previousStock: number, newStock: number, addedBy?: string, notes?: string): Promise<StockInHistoryWithColor>;
 
   // Dashboard Stats
   getDashboardStats(): Promise<{
@@ -243,20 +249,91 @@ export class DatabaseStorage implements IStorage {
   }
 
   async stockIn(id: string, quantity: number): Promise<Color> {
+    // Get current stock
+    const [currentColor] = await db.select().from(colors).where(eq(colors.id, id));
+    if (!currentColor) throw new Error("Color not found");
+    
+    const previousStock = currentColor.stockQuantity;
+    const newStock = previousStock + quantity;
+
+    // Update stock
     await db
       .update(colors)
       .set({
-        stockQuantity: sql`${colors.stockQuantity} + ${quantity}`,
+        stockQuantity: newStock,
       })
       .where(eq(colors.id, id));
-    
-    const [color] = await db.select().from(colors).where(eq(colors.id, id));
-    if (!color) throw new Error("Color not found after stock in");
-    return color;
+
+    // Record in history
+    await this.recordStockIn(id, quantity, previousStock, newStock, "System", "Stock added");
+
+    const [updatedColor] = await db.select().from(colors).where(eq(colors.id, id));
+    if (!updatedColor) throw new Error("Color not found after stock in");
+    return updatedColor;
   }
 
   async deleteColor(id: string): Promise<void> {
     await db.delete(colors).where(eq(colors.id, id));
+  }
+
+  // Stock In History
+  async getStockInHistory(): Promise<StockInHistoryWithColor[]> {
+    const result = await db.query.stockInHistory.findMany({
+      with: {
+        color: {
+          with: {
+            variant: {
+              with: {
+                product: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: desc(stockInHistory.createdAt),
+    });
+    return result;
+  }
+
+  async recordStockIn(
+    colorId: string, 
+    quantity: number, 
+    previousStock: number, 
+    newStock: number, 
+    addedBy: string = "System", 
+    notes?: string
+  ): Promise<StockInHistoryWithColor> {
+    const historyRecord = {
+      id: crypto.randomUUID(),
+      colorId,
+      quantity,
+      previousStock,
+      newStock,
+      addedBy,
+      notes: notes || null,
+      createdAt: new Date(),
+    };
+
+    await db.insert(stockInHistory).values(historyRecord);
+
+    // Return the created record with color details
+    const result = await db.query.stockInHistory.findFirst({
+      where: eq(stockInHistory.id, historyRecord.id),
+      with: {
+        color: {
+          with: {
+            variant: {
+              with: {
+                product: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!result) throw new Error("Failed to create stock in history record");
+    return result;
   }
 
   // Sales

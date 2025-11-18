@@ -1,11 +1,13 @@
 import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Search, Receipt, Calendar } from "lucide-react";
+import { Search, Receipt, Calendar, RefreshCw } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
+import { useToast } from "@/hooks/use-toast";
 
 interface Sale {
   id: string;
@@ -23,9 +25,18 @@ export default function Sales() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
 
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
   const { data: sales = [], isLoading } = useQuery<Sale[]>({
     queryKey: ["/api/sales"],
   });
+
+  // Add refresh function
+  const refreshSales = () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
+    toast({ title: "Sales data refreshed" });
+  };
 
   const filteredSales = useMemo(() => {
     let filtered = sales;
@@ -137,9 +148,15 @@ export default function Sales() {
 
   return (
     <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight" data-testid="text-sales-title">Sales</h1>
-        <p className="text-sm text-muted-foreground">View all sales transactions</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight" data-testid="text-sales-title">Sales</h1>
+          <p className="text-sm text-muted-foreground">View all sales transactions</p>
+        </div>
+        <Button variant="outline" onClick={refreshSales}>
+          <RefreshCw className="h-4 w-4 mr-2" />
+          Refresh
+        </Button>
       </div>
 
       <Card>

@@ -59,6 +59,18 @@ export const saleItems = sqliteTable("sale_items", {
   subtotal: text("subtotal").notNull(), // stored as text to preserve decimal precision
 });
 
+// Stock In History table - tracks all stock additions
+export const stockInHistory = sqliteTable("stock_in_history", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  colorId: text("color_id").notNull().references(() => colors.id, { onDelete: "cascade" }),
+  quantity: integer("quantity").notNull(),
+  previousStock: integer("previous_stock").notNull(),
+  newStock: integer("new_stock").notNull(),
+  addedBy: text("added_by").notNull().default("System"),
+  notes: text("notes"),
+  createdAt: integer("created_at", { mode: 'timestamp' }).$defaultFn(() => new Date()).notNull(),
+});
+
 // Settings table - stores app preferences (single row)
 export const settings = sqliteTable("settings", {
   id: text("id").primaryKey().default("default"),
@@ -92,6 +104,7 @@ export const colorsRelations = relations(colors, ({ one, many }) => ({
     references: [variants.id],
   }),
   saleItems: many(saleItems),
+  stockInHistory: many(stockInHistory),
 }));
 
 export const salesRelations = relations(sales, ({ many }) => ({
@@ -105,6 +118,13 @@ export const saleItemsRelations = relations(saleItems, ({ one }) => ({
   }),
   color: one(colors, {
     fields: [saleItems.colorId],
+    references: [colors.id],
+  }),
+}));
+
+export const stockInHistoryRelations = relations(stockInHistory, ({ one }) => ({
+  color: one(colors, {
+    fields: [stockInHistory.colorId],
     references: [colors.id],
   }),
 }));
@@ -148,6 +168,11 @@ export const insertSaleItemSchema = createInsertSchema(saleItems).omit({
   subtotal: z.string().or(z.number()),
 });
 
+export const insertStockInHistorySchema = createInsertSchema(stockInHistory).omit({
+  id: true,
+  createdAt: true,
+});
+
 export const insertSettingsSchema = createInsertSchema(settings).omit({
   id: true,
   updatedAt: true,
@@ -161,6 +186,7 @@ export const selectVariantSchema = createSelectSchema(variants);
 export const selectColorSchema = createSelectSchema(colors);
 export const selectSaleSchema = createSelectSchema(sales);
 export const selectSaleItemSchema = createSelectSchema(saleItems);
+export const selectStockInHistorySchema = createSelectSchema(stockInHistory);
 export const selectSettingsSchema = createSelectSchema(settings);
 
 // Types
@@ -178,6 +204,9 @@ export type Sale = typeof sales.$inferSelect;
 
 export type InsertSaleItem = z.infer<typeof insertSaleItemSchema>;
 export type SaleItem = typeof saleItems.$inferSelect;
+
+export type InsertStockInHistory = z.infer<typeof insertStockInHistorySchema>;
+export type StockInHistory = typeof stockInHistory.$inferSelect;
 
 export type InsertSettings = z.infer<typeof insertSettingsSchema>;
 export type UpdateSettings = z.infer<typeof updateSettingsSchema>;
@@ -199,6 +228,10 @@ export type SaleWithItems = Sale & {
 };
 
 export type SaleItemWithDetails = SaleItem & {
+  color: ColorWithVariantAndProduct;
+};
+
+export type StockInHistoryWithColor = StockInHistory & {
   color: ColorWithVariantAndProduct;
 };
 
