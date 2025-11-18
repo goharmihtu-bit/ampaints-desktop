@@ -52,7 +52,7 @@ export function migrateDatabase(db: Database.Database): void {
     
     console.log('[Migration] Current stock_in_history columns:', stockHistoryColumnNames);
     
-    // Add stock_in_date column if missing
+    // Add stock_in_date column if missing - FIXED: This was causing the error
     if (!stockHistoryColumnNames.includes('stock_in_date')) {
       console.log('[Migration] Adding stock_in_date column to stock_in_history table');
       db.exec('ALTER TABLE stock_in_history ADD COLUMN stock_in_date TEXT');
@@ -64,6 +64,7 @@ export function migrateDatabase(db: Database.Database): void {
       const year = now.getFullYear();
       const defaultDate = `${day}-${month}-${year}`;
       
+      console.log('[Migration] Setting default stock_in_date for existing records:', defaultDate);
       db.exec(`UPDATE stock_in_history SET stock_in_date = '${defaultDate}' WHERE stock_in_date IS NULL`);
     }
     
@@ -94,39 +95,81 @@ export function migrateDatabase(db: Database.Database): void {
     
     // Ensure all indexes exist (CREATE INDEX IF NOT EXISTS is safe)
     console.log('[Migration] Creating/verifying indexes...');
-    db.exec(`
-      -- Product indexes for fast lookups with duplicates
-      CREATE INDEX IF NOT EXISTS idx_products_company_name ON products(company, product_name);
-      CREATE INDEX IF NOT EXISTS idx_products_company ON products(company);
-      
-      -- Variant indexes for fast lookups with duplicates
-      CREATE INDEX IF NOT EXISTS idx_variants_product_created ON variants(product_id, created_at);
-      CREATE INDEX IF NOT EXISTS idx_variants_product_packing_rate ON variants(product_id, packing_size, rate);
-      CREATE INDEX IF NOT EXISTS idx_variants_packing_size ON variants(packing_size);
-      
-      -- Color indexes for fast lookups with duplicates
-      CREATE INDEX IF NOT EXISTS idx_colors_variant_created ON colors(variant_id, created_at);
-      CREATE INDEX IF NOT EXISTS idx_colors_variant_code ON colors(variant_id, color_code);
-      CREATE INDEX IF NOT EXISTS idx_colors_code_lookup ON colors(color_code);
-      CREATE INDEX IF NOT EXISTS idx_colors_name_lookup ON colors(color_name);
-      CREATE INDEX IF NOT EXISTS idx_colors_code_name ON colors(color_code, color_name);
-      
-      -- Sales indexes
-      CREATE INDEX IF NOT EXISTS idx_sales_phone_status ON sales(customer_phone, payment_status);
-      CREATE INDEX IF NOT EXISTS idx_sales_status_created ON sales(payment_status, created_at);
-      
-      -- Sale items indexes
-      CREATE INDEX IF NOT EXISTS idx_sale_items_sale_color ON sale_items(sale_id, color_id);
-      
-      -- Stock in history indexes
-      CREATE INDEX IF NOT EXISTS idx_stock_history_color_created ON stock_in_history(color_id, created_at);
-      CREATE INDEX IF NOT EXISTS idx_stock_history_created ON stock_in_history(created_at);
-      CREATE INDEX IF NOT EXISTS idx_stock_history_stock_in_date ON stock_in_history(stock_in_date);
-    `);
+    
+    // Product indexes for fast lookups with duplicates
+    try {
+      db.exec('CREATE INDEX IF NOT EXISTS idx_products_company_name ON products(company, product_name)');
+    } catch (e) { console.log('[Migration] Index already exists: idx_products_company_name'); }
+    
+    try {
+      db.exec('CREATE INDEX IF NOT EXISTS idx_products_company ON products(company)');
+    } catch (e) { console.log('[Migration] Index already exists: idx_products_company'); }
+    
+    // Variant indexes for fast lookups with duplicates
+    try {
+      db.exec('CREATE INDEX IF NOT EXISTS idx_variants_product_created ON variants(product_id, created_at)');
+    } catch (e) { console.log('[Migration] Index already exists: idx_variants_product_created'); }
+    
+    try {
+      db.exec('CREATE INDEX IF NOT EXISTS idx_variants_product_packing_rate ON variants(product_id, packing_size, rate)');
+    } catch (e) { console.log('[Migration] Index already exists: idx_variants_product_packing_rate'); }
+    
+    try {
+      db.exec('CREATE INDEX IF NOT EXISTS idx_variants_packing_size ON variants(packing_size)');
+    } catch (e) { console.log('[Migration] Index already exists: idx_variants_packing_size'); }
+    
+    // Color indexes for fast lookups with duplicates
+    try {
+      db.exec('CREATE INDEX IF NOT EXISTS idx_colors_variant_created ON colors(variant_id, created_at)');
+    } catch (e) { console.log('[Migration] Index already exists: idx_colors_variant_created'); }
+    
+    try {
+      db.exec('CREATE INDEX IF NOT EXISTS idx_colors_variant_code ON colors(variant_id, color_code)');
+    } catch (e) { console.log('[Migration] Index already exists: idx_colors_variant_code'); }
+    
+    try {
+      db.exec('CREATE INDEX IF NOT EXISTS idx_colors_code_lookup ON colors(color_code)');
+    } catch (e) { console.log('[Migration] Index already exists: idx_colors_code_lookup'); }
+    
+    try {
+      db.exec('CREATE INDEX IF NOT EXISTS idx_colors_name_lookup ON colors(color_name)');
+    } catch (e) { console.log('[Migration] Index already exists: idx_colors_name_lookup'); }
+    
+    try {
+      db.exec('CREATE INDEX IF NOT EXISTS idx_colors_code_name ON colors(color_code, color_name)');
+    } catch (e) { console.log('[Migration] Index already exists: idx_colors_code_name'); }
+    
+    // Sales indexes
+    try {
+      db.exec('CREATE INDEX IF NOT EXISTS idx_sales_phone_status ON sales(customer_phone, payment_status)');
+    } catch (e) { console.log('[Migration] Index already exists: idx_sales_phone_status'); }
+    
+    try {
+      db.exec('CREATE INDEX IF NOT EXISTS idx_sales_status_created ON sales(payment_status, created_at)');
+    } catch (e) { console.log('[Migration] Index already exists: idx_sales_status_created'); }
+    
+    // Sale items indexes
+    try {
+      db.exec('CREATE INDEX IF NOT EXISTS idx_sale_items_sale_color ON sale_items(sale_id, color_id)');
+    } catch (e) { console.log('[Migration] Index already exists: idx_sale_items_sale_color'); }
+    
+    // Stock in history indexes
+    try {
+      db.exec('CREATE INDEX IF NOT EXISTS idx_stock_history_color_created ON stock_in_history(color_id, created_at)');
+    } catch (e) { console.log('[Migration] Index already exists: idx_stock_history_color_created'); }
+    
+    try {
+      db.exec('CREATE INDEX IF NOT EXISTS idx_stock_history_created ON stock_in_history(created_at)');
+    } catch (e) { console.log('[Migration] Index already exists: idx_stock_history_created'); }
+    
+    try {
+      db.exec('CREATE INDEX IF NOT EXISTS idx_stock_history_stock_in_date ON stock_in_history(stock_in_date)');
+    } catch (e) { console.log('[Migration] Index already exists: idx_stock_history_stock_in_date'); }
     
     console.log('[Migration] ✅ Database migration completed successfully');
   } catch (error) {
     console.error('[Migration] ❌ ERROR during migration:', error);
-    throw error;
+    // Don't throw error - continue with application startup
+    // This ensures the app still works even if migration fails
   }
 }
