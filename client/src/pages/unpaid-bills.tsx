@@ -14,14 +14,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
   Popover,
   PopoverContent,
   PopoverTrigger,
@@ -40,7 +32,6 @@ import {
   User, 
   Phone, 
   Plus, 
-  Trash2, 
   Eye, 
   Search, 
   Banknote, 
@@ -55,7 +46,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { Sale, SaleWithItems, ColorWithVariantAndProduct, PaymentHistoryWithSale } from "@shared/schema";
+import type { Sale, ColorWithVariantAndProduct, PaymentHistoryWithSale } from "@shared/schema";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
 import {
@@ -63,9 +54,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 
+// Interfaces defined outside component to avoid circular dependencies
 interface CustomerSuggestion {
   customerName: string;
   customerPhone: string;
@@ -73,7 +64,7 @@ interface CustomerSuggestion {
   totalSpent: number;
 }
 
-type ConsolidatedCustomer = {
+interface ConsolidatedCustomer {
   customerPhone: string;
   customerName: string;
   bills: Sale[];
@@ -82,9 +73,9 @@ type ConsolidatedCustomer = {
   totalOutstanding: number;
   oldestBillDate: Date;
   daysOverdue: number;
-};
+}
 
-type FilterType = {
+interface FilterType {
   search: string;
   amountRange: {
     min: string;
@@ -96,18 +87,37 @@ type FilterType = {
     to: string;
   };
   sortBy: "oldest" | "newest" | "highest" | "lowest" | "name";
+}
+
+// Helper functions outside component
+const getPaymentStatusBadge = (status: string) => {
+  switch (status) {
+    case "paid":
+      return <Badge variant="default">Paid</Badge>;
+    case "partial":
+      return <Badge variant="secondary">Partial</Badge>;
+    case "unpaid":
+      return <Badge variant="outline">Unpaid</Badge>;
+    default:
+      return <Badge variant="outline">{status}</Badge>;
+  }
+};
+
+const getDaysOverdue = (createdAt: string | Date) => {
+  const created = typeof createdAt === 'string' ? new Date(createdAt) : createdAt;
+  const now = new Date();
+  const diffTime = Math.abs(now.getTime() - created.getTime());
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  return diffDays;
 };
 
 export default function UnpaidBills() {
-  const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
+  const [selectedCustomerPhone, setSelectedCustomerPhone] = useState<string | null>(null);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("cash");
   const [paymentNotes, setPaymentNotes] = useState("");
-  const [addProductDialogOpen, setAddProductDialogOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedColor, setSelectedColor] = useState<ColorWithVariantAndProduct | null>(null);
-  const [quantity, setQuantity] = useState("1");
+  const [showPaymentHistory, setShowPaymentHistory] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
   
   // Manual balance state
@@ -121,24 +131,9 @@ export default function UnpaidBills() {
   });
   const [customerSuggestionsOpen, setCustomerSuggestionsOpen] = useState(false);
   
-  // Due date edit state
-  const [dueDateDialogOpen, setDueDateDialogOpen] = useState(false);
-  const [editingSaleId, setEditingSaleId] = useState<string | null>(null);
-  const [dueDateForm, setDueDateForm] = useState({
-    dueDate: "",
-    notes: ""
-  });
-  
-  // Payment history state
-  const [showPaymentHistory, setShowPaymentHistory] = useState(false);
-  
   const { toast } = useToast();
 
-  // FIXED: Correct endpoint path
-  const { data: customerSuggestions = [] } = useQuery<CustomerSuggestion[]>({
-    queryKey: ["/api/customers/suggestions"],
-  });
-
+  // Initialize filters
   const [filters, setFilters] = useState<FilterType>({
     search: "",
     amountRange: {
@@ -153,18 +148,13 @@ export default function UnpaidBills() {
     sortBy: "oldest"
   });
 
+  // Queries
+  const { data: customerSuggestions = [] } = useQuery<CustomerSuggestion[]>({
+    queryKey: ["/api/customers/suggestions"],
+  });
+
   const { data: unpaidSales = [], isLoading } = useQuery<Sale[]>({
     queryKey: ["/api/sales/unpaid"],
-  });
-
-  const { data: saleDetails, isLoading: isLoadingDetails } = useQuery<SaleWithItems>({
-    queryKey: [`/api/sales/${selectedSaleId}`],
-    enabled: !!selectedSaleId,
-  });
-
-  const { data: colors = [] } = useQuery<ColorWithVariantAndProduct[]>({
-    queryKey: ["/api/colors"],
-    enabled: addProductDialogOpen,
   });
 
   const { data: customerPaymentHistory = [] } = useQuery<PaymentHistoryWithSale[]>({
@@ -172,6 +162,7 @@ export default function UnpaidBills() {
     enabled: !!selectedCustomerPhone && showPaymentHistory,
   });
 
+  // Mutations
   const recordPaymentMutation = useMutation({
     mutationFn: async (data: { saleId: string; amount: number; paymentMethod?: string; notes?: string }) => {
       return await apiRequest("POST", `/api/sales/${data.saleId}/payment`, { 
@@ -182,9 +173,6 @@ export default function UnpaidBills() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
-      if (selectedSaleId) {
-        queryClient.invalidateQueries({ queryKey: [`/api/sales/${selectedSaleId}`] });
-      }
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
       queryClient.invalidateQueries({ queryKey: [`/api/payment-history/customer/${selectedCustomerPhone}`] });
       toast({ title: "Payment recorded successfully" });
@@ -196,51 +184,6 @@ export default function UnpaidBills() {
     onError: (error: Error) => {
       console.error("Payment recording error:", error);
       toast({ title: "Failed to record payment", variant: "destructive" });
-    },
-  });
-
-  const addItemMutation = useMutation({
-    mutationFn: async (data: { saleId: string; colorId: string; quantity: number; rate: number; subtotal: number }) => {
-      return await apiRequest("POST", `/api/sales/${data.saleId}/items`, {
-        colorId: data.colorId,
-        quantity: data.quantity,
-        rate: data.rate,
-        subtotal: data.subtotal,
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
-      if (selectedSaleId) {
-        queryClient.invalidateQueries({ queryKey: [`/api/sales/${selectedSaleId}`] });
-      }
-      queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
-      toast({ title: "Product added to bill" });
-      setAddProductDialogOpen(false);
-      setSelectedColor(null);
-      setQuantity("1");
-      setSearchQuery("");
-    },
-    onError: (error: Error) => {
-      console.error("Add product error:", error);
-      toast({ title: "Failed to add product", variant: "destructive" });
-    },
-  });
-
-  const deleteItemMutation = useMutation({
-    mutationFn: async (saleItemId: string) => {
-      return await apiRequest("DELETE", `/api/sale-items/${saleItemId}`);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
-      if (selectedSaleId) {
-        queryClient.invalidateQueries({ queryKey: [`/api/sales/${selectedSaleId}`] });
-      }
-      queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
-      toast({ title: "Product removed from bill" });
-    },
-    onError: (error: Error) => {
-      console.error("Delete item error:", error);
-      toast({ title: "Failed to remove product", variant: "destructive" });
     },
   });
 
@@ -270,196 +213,7 @@ export default function UnpaidBills() {
     },
   });
 
-  const updateDueDateMutation = useMutation({
-    mutationFn: async (data: { saleId: string; dueDate?: string; notes?: string }) => {
-      return await apiRequest("PATCH", `/api/sales/${data.saleId}/due-date`, {
-        dueDate: data.dueDate || null,
-        notes: data.notes
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
-      if (selectedSaleId) {
-        queryClient.invalidateQueries({ queryKey: [`/api/sales/${selectedSaleId}`] });
-      }
-      toast({ title: "Due date updated successfully" });
-      setDueDateDialogOpen(false);
-      setEditingSaleId(null);
-      setDueDateForm({ dueDate: "", notes: "" });
-    },
-    onError: (error: Error) => {
-      console.error("Update due date error:", error);
-      toast({ title: "Failed to update due date", variant: "destructive" });
-    },
-  });
-
-  const handleRecordPayment = async () => {
-    if (!selectedCustomer || !paymentAmount) {
-      toast({ title: "Please enter payment amount", variant: "destructive" });
-      return;
-    }
-
-    const amount = parseFloat(paymentAmount);
-    if (amount <= 0) {
-      toast({ title: "Payment amount must be positive", variant: "destructive" });
-      return;
-    }
-
-    // Check if payment exceeds outstanding
-    if (amount > selectedCustomer.totalOutstanding) {
-      toast({ 
-        title: `Payment amount (Rs. ${Math.round(amount).toLocaleString()}) exceeds outstanding balance (Rs. ${Math.round(selectedCustomer.totalOutstanding).toLocaleString()})`, 
-        variant: "destructive" 
-      });
-      return;
-    }
-
-    // Sort bills by date (oldest first) and apply payment
-    const sortedBills = [...selectedCustomer.bills].sort((a, b) => 
-      new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-    );
-
-    let remainingPayment = amount;
-    const paymentsToApply: { saleId: string; amount: number }[] = [];
-
-    for (const bill of sortedBills) {
-      if (remainingPayment <= 0) break;
-      
-      const billTotal = parseFloat(bill.totalAmount);
-      const billPaid = parseFloat(bill.amountPaid);
-      const billOutstanding = billTotal - billPaid;
-      
-      if (billOutstanding > 0) {
-        const paymentForThisBill = Math.min(remainingPayment, billOutstanding);
-        paymentsToApply.push({ saleId: bill.id, amount: paymentForThisBill });
-        remainingPayment -= paymentForThisBill;
-      }
-    }
-
-    // Apply all payments
-    try {
-      for (const payment of paymentsToApply) {
-        await recordPaymentMutation.mutateAsync({
-          saleId: payment.saleId,
-          amount: payment.amount,
-          paymentMethod,
-          notes: paymentNotes
-        });
-      }
-      
-      toast({ 
-        title: `Payment of Rs. ${Math.round(amount).toLocaleString()} recorded successfully`,
-        description: `Method: ${paymentMethod}${paymentNotes ? ` - ${paymentNotes}` : ''}`
-      });
-      
-      setPaymentDialogOpen(false);
-      setPaymentAmount("");
-      setPaymentMethod("cash");
-      setPaymentNotes("");
-      setSelectedCustomerPhone(null);
-    } catch (error) {
-      console.error("Payment processing error:", error);
-      toast({ title: "Failed to record payment", variant: "destructive" });
-    }
-  };
-
-  const handleAddProduct = () => {
-    if (!selectedColor || !selectedSaleId) {
-      toast({ title: "Please select a product", variant: "destructive" });
-      return;
-    }
-
-    const qty = parseInt(quantity);
-    if (qty <= 0) {
-      toast({ title: "Quantity must be positive", variant: "destructive" });
-      return;
-    }
-
-    if (qty > selectedColor.stockQuantity) {
-      toast({ title: "Not enough stock available", variant: "destructive" });
-      return;
-    }
-
-    const rate = parseFloat(selectedColor.variant.rate);
-    const subtotal = rate * qty;
-
-    addItemMutation.mutate({
-      saleId: selectedSaleId,
-      colorId: selectedColor.id,
-      quantity: qty,
-      rate,
-      subtotal,
-    });
-  };
-
-  const getPaymentStatusBadge = (status: string) => {
-    switch (status) {
-      case "paid":
-        return <Badge variant="default">Paid</Badge>;
-      case "partial":
-        return <Badge variant="secondary">Partial</Badge>;
-      case "unpaid":
-        return <Badge variant="outline">Unpaid</Badge>;
-      default:
-        return <Badge variant="outline">{status}</Badge>;
-    }
-  };
-
-  const getDaysOverdue = (createdAt: string | Date) => {
-    const created = typeof createdAt === 'string' ? new Date(createdAt) : createdAt;
-    const now = new Date();
-    const diffTime = Math.abs(now.getTime() - created.getTime());
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return diffDays;
-  };
-
-  const filteredColors = useMemo(() => {
-    if (!searchQuery) return colors;
-
-    const query = searchQuery.toLowerCase();
-    
-    return colors
-      .map((color) => {
-        let score = 0;
-        
-        // Exact color code match (highest priority)
-        if (color.colorCode.toLowerCase() === query) {
-          score += 1000;
-        } else if (color.colorCode.toLowerCase().startsWith(query)) {
-          score += 500;
-        } else if (color.colorCode.toLowerCase().includes(query)) {
-          score += 100;
-        }
-        
-        // Color name matching
-        if (color.colorName.toLowerCase() === query) {
-          score += 200;
-        } else if (color.colorName.toLowerCase().includes(query)) {
-          score += 50;
-        }
-        
-        // Company and product matching
-        if (color.variant.product.company.toLowerCase().includes(query)) {
-          score += 30;
-        }
-        if (color.variant.product.productName.toLowerCase().includes(query)) {
-          score += 30;
-        }
-        
-        // Packing size matching
-        if (color.variant.packingSize.toLowerCase().includes(query)) {
-          score += 20;
-        }
-        
-        return { color, score };
-      })
-      .filter(({ score }) => score > 0)
-      .sort((a, b) => b.score - a.score)
-      .map(({ color }) => color);
-  }, [colors, searchQuery]);
-
-  const currentSale = unpaidSales.find(s => s.id === selectedSaleId);
-
+  // Memoized computations
   const consolidatedCustomers = useMemo(() => {
     const customerMap = new Map<string, ConsolidatedCustomer>();
     
@@ -533,7 +287,6 @@ export default function UnpaidBills() {
       const toDate = filters.dueDate.to ? new Date(filters.dueDate.to) : null;
       
       filtered = filtered.filter(customer => {
-        // Check if any bill has a due date in the range
         return customer.bills.some(bill => {
           if (!bill.dueDate) return false;
           const dueDate = new Date(bill.dueDate);
@@ -573,7 +326,73 @@ export default function UnpaidBills() {
     return filtered;
   }, [consolidatedCustomers, filters]);
 
+  const selectedCustomer = consolidatedCustomers.find(c => c.customerPhone === selectedCustomerPhone);
   const hasActiveFilters = filters.search || filters.amountRange.min || filters.amountRange.max || filters.daysOverdue || filters.dueDate.from || filters.dueDate.to;
+
+  // Event handlers
+  const handleRecordPayment = async () => {
+    if (!selectedCustomer || !paymentAmount) {
+      toast({ title: "Please enter payment amount", variant: "destructive" });
+      return;
+    }
+
+    const amount = parseFloat(paymentAmount);
+    if (amount <= 0) {
+      toast({ title: "Payment amount must be positive", variant: "destructive" });
+      return;
+    }
+
+    if (amount > selectedCustomer.totalOutstanding) {
+      toast({ 
+        title: `Payment amount exceeds outstanding balance`, 
+        variant: "destructive" 
+      });
+      return;
+    }
+
+    // Sort bills by date (oldest first) and apply payment
+    const sortedBills = [...selectedCustomer.bills].sort((a, b) => 
+      new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    );
+
+    let remainingPayment = amount;
+    const paymentsToApply: { saleId: string; amount: number }[] = [];
+
+    for (const bill of sortedBills) {
+      if (remainingPayment <= 0) break;
+      
+      const billTotal = parseFloat(bill.totalAmount);
+      const billPaid = parseFloat(bill.amountPaid);
+      const billOutstanding = billTotal - billPaid;
+      
+      if (billOutstanding > 0) {
+        const paymentForThisBill = Math.min(remainingPayment, billOutstanding);
+        paymentsToApply.push({ saleId: bill.id, amount: paymentForThisBill });
+        remainingPayment -= paymentForThisBill;
+      }
+    }
+
+    try {
+      for (const payment of paymentsToApply) {
+        await recordPaymentMutation.mutateAsync({
+          saleId: payment.saleId,
+          amount: payment.amount,
+          paymentMethod,
+          notes: paymentNotes
+        });
+      }
+      
+      toast({ 
+        title: `Payment of Rs. ${Math.round(amount).toLocaleString()} recorded successfully`,
+        description: `Method: ${paymentMethod}${paymentNotes ? ` - ${paymentNotes}` : ''}`
+      });
+      
+      setSelectedCustomerPhone(null);
+    } catch (error) {
+      console.error("Payment processing error:", error);
+      toast({ title: "Failed to record payment", variant: "destructive" });
+    }
+  };
 
   const clearFilters = () => {
     setFilters({
@@ -614,7 +433,6 @@ export default function UnpaidBills() {
           table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
           th { background: #f3f4f6; text-align: left; padding: 10px; font-size: 12px; border-bottom: 2px solid #ddd; }
           td { padding: 8px 10px; font-size: 11px; border-bottom: 1px solid #eee; }
-          tr:hover { background: #f9fafb; }
           .amount { text-align: right; font-family: monospace; font-weight: 600; }
           .total-row { background: #fef3c7; font-weight: bold; border-top: 2px solid #2563eb; }
           .badge { display: inline-block; padding: 3px 8px; border-radius: 12px; font-size: 10px; font-weight: 600; }
@@ -625,7 +443,6 @@ export default function UnpaidBills() {
           .summary-box { display: inline-block; border: 2px solid #e5e7eb; padding: 15px; margin: 10px; border-radius: 8px; min-width: 180px; }
           .summary-box h3 { margin: 0 0 5px 0; font-size: 12px; color: #666; }
           .summary-box p { margin: 0; font-size: 20px; font-weight: bold; color: #2563eb; }
-          .notes { background: #f8fafc; padding: 8px 12px; border-radius: 6px; margin: 5px 0; font-size: 11px; border-left: 3px solid #2563eb; }
         </style>
       </head>
       <body>
@@ -635,7 +452,7 @@ export default function UnpaidBills() {
         </div>
     `;
 
-    // Section 1: Upcoming Dues (bills with due dates that are approaching or overdue)
+    // Section 1: Upcoming Dues
     const upcomingDues = filteredAndSortedCustomers.filter(customer => 
       customer.bills.some(bill => bill.dueDate)
     );
@@ -663,7 +480,6 @@ export default function UnpaidBills() {
       upcomingDues.forEach(customer => {
         const bill = customer.bills.find(b => b.dueDate) || customer.bills[0];
         
-        // Calculate days based on due date, not creation date
         let daysValue = '';
         let statusClass = 'badge-success';
         let status = 'Upcoming';
@@ -678,7 +494,6 @@ export default function UnpaidBills() {
           const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
           
           if (diffDays < 0) {
-            // Overdue
             const overdueDays = Math.abs(diffDays);
             daysValue = `${overdueDays} days overdue`;
             statusClass = overdueDays > 30 ? 'badge-danger' : 'badge-warning';
@@ -805,16 +620,13 @@ export default function UnpaidBills() {
     toast({ title: "PDF Statement opened for printing" });
   };
 
-  const [selectedCustomerPhone, setSelectedCustomerPhone] = useState<string | null>(null);
-  const selectedCustomer = consolidatedCustomers.find(c => c.customerPhone === selectedCustomerPhone);
-
   return (
     <div className="p-6 space-y-6">
       {/* Header with Title */}
       <div className="flex flex-col gap-4">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight" data-testid="text-unpaid-bills-title">
+            <h1 className="text-2xl font-semibold tracking-tight">
               Unpaid Bills
             </h1>
             <p className="text-sm text-muted-foreground">Track and manage outstanding payments</p>
@@ -1066,7 +878,7 @@ export default function UnpaidBills() {
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {filteredAndSortedCustomers.map((customer) => {
             return (
-              <Card key={customer.customerPhone} className="hover-elevate" data-testid={`unpaid-bill-customer-${customer.customerPhone}`}>
+              <Card key={customer.customerPhone} className="hover-elevate">
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
                     <CardTitle className="text-base">{customer.customerName}</CardTitle>
@@ -1104,9 +916,7 @@ export default function UnpaidBills() {
                     </div>
                     <div className="flex justify-between font-semibold text-base text-destructive">
                       <span>Outstanding:</span>
-                      <span data-testid={`text-outstanding-${customer.customerPhone}`}>
-                        Rs. {Math.round(customer.totalOutstanding).toLocaleString()}
-                      </span>
+                      <span>Rs. {Math.round(customer.totalOutstanding).toLocaleString()}</span>
                     </div>
                   </div>
 
@@ -1115,7 +925,6 @@ export default function UnpaidBills() {
                       className="w-full"
                       variant="outline"
                       onClick={() => setSelectedCustomerPhone(customer.customerPhone)}
-                      data-testid={`button-view-details-${customer.customerPhone}`}
                     >
                       <Eye className="h-4 w-4 mr-2" />
                       View Details
@@ -1128,7 +937,6 @@ export default function UnpaidBills() {
                         setPaymentDialogOpen(true);
                         setPaymentAmount(Math.round(customer.totalOutstanding).toString());
                       }}
-                      data-testid={`button-record-payment-${customer.customerPhone}`}
                     >
                       <Banknote className="h-4 w-4 mr-2" />
                       Payment
@@ -1181,7 +989,7 @@ export default function UnpaidBills() {
                   const billOutstanding = Math.round(billTotal - billPaid);
                   
                   return (
-                    <Card key={bill.id} data-testid={`bill-card-${bill.id}`}>
+                    <Card key={bill.id}>
                       <CardContent className="p-4">
                         <div className="flex items-center justify-between gap-4">
                           <div className="flex-1 space-y-2">
@@ -1230,7 +1038,7 @@ export default function UnpaidBills() {
                           </div>
                           <div className="flex gap-2">
                             <Link href={`/bill/${bill.id}`}>
-                              <Button variant="outline" size="sm" data-testid={`button-view-bill-${bill.id}`}>
+                              <Button variant="outline" size="sm">
                                 <Printer className="h-4 w-4 mr-1" />
                                 Print
                               </Button>
@@ -1328,7 +1136,6 @@ export default function UnpaidBills() {
                     setPaymentDialogOpen(true);
                     setPaymentAmount(Math.round(selectedCustomer.totalOutstanding).toString());
                   }}
-                  data-testid="button-record-payment-dialog"
                 >
                   <Banknote className="h-4 w-4 mr-2" />
                   Record Payment
@@ -1376,7 +1183,6 @@ export default function UnpaidBills() {
                   placeholder="0"
                   value={paymentAmount}
                   onChange={(e) => setPaymentAmount(e.target.value)}
-                  data-testid="input-payment-amount"
                 />
                 <p className="text-xs text-muted-foreground">
                   Payment will be applied to oldest bills first
@@ -1415,126 +1221,12 @@ export default function UnpaidBills() {
                 <Button
                   onClick={handleRecordPayment}
                   disabled={recordPaymentMutation.isPending}
-                  data-testid="button-submit-payment"
                 >
                   {recordPaymentMutation.isPending ? "Recording..." : "Record Payment"}
                 </Button>
               </div>
             </div>
           )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Add Product Dialog */}
-      <Dialog open={addProductDialogOpen} onOpenChange={setAddProductDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Add Product to Bill</DialogTitle>
-            <DialogDescription>
-              Search and select a product to add to the bill
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            {/* Search */}
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search by color code, name, company, or product..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                data-testid="input-search-colors"
-                className="pl-9"
-              />
-            </div>
-
-            {/* Color Selection */}
-            <div className="space-y-2 max-h-60 overflow-y-auto">
-              {filteredColors.length === 0 ? (
-                <p className="text-center text-muted-foreground py-8">
-                  {searchQuery ? "No colors found matching your search" : "Start typing to search for colors"}
-                </p>
-              ) : (
-                filteredColors.slice(0, 20).map((color) => (
-                  <Card
-                    key={color.id}
-                    className={`hover-elevate cursor-pointer ${selectedColor?.id === color.id ? "border-primary" : ""}`}
-                    onClick={() => setSelectedColor(color)}
-                    data-testid={`color-option-${color.id}`}
-                  >
-                    <CardContent className="p-3">
-                      <div className="flex items-center justify-between">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <Badge variant="outline">{color.variant.product.company}</Badge>
-                            <span className="font-medium">{color.variant.product.productName}</span>
-                            <Badge variant="outline">{color.variant.packingSize}</Badge>
-                          </div>
-                          <div className="flex items-center gap-2 text-sm">
-                            <span className="text-muted-foreground">{color.colorName}</span>
-                            <Badge variant="secondary">{color.colorCode}</Badge>
-                            <Badge variant={color.stockQuantity > 0 ? "default" : "destructive"}>
-                              Stock: {color.stockQuantity}
-                            </Badge>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <p className="font-mono font-medium">Rs. {Math.round(parseFloat(color.variant.rate))}</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))
-              )}
-            </div>
-
-            {/* Quantity */}
-            {selectedColor && (
-              <div className="space-y-2">
-                <Label htmlFor="quantity">Quantity</Label>
-                <Input
-                  id="quantity"
-                  type="number"
-                  min="1"
-                  max={selectedColor.stockQuantity}
-                  value={quantity}
-                  onChange={(e) => setQuantity(e.target.value)}
-                  data-testid="input-quantity"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Available stock: {selectedColor.stockQuantity} units
-                </p>
-                {selectedColor && (
-                  <div className="p-3 bg-muted rounded-md">
-                    <div className="flex justify-between font-mono">
-                      <span>Subtotal:</span>
-                      <span>Rs. {Math.round(parseFloat(selectedColor.variant.rate) * parseInt(quantity || "0"))}</span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setAddProductDialogOpen(false);
-                  setSelectedColor(null);
-                  setQuantity("1");
-                  setSearchQuery("");
-                }}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handleAddProduct}
-                disabled={!selectedColor || addItemMutation.isPending}
-                data-testid="button-confirm-add-product"
-              >
-                {addItemMutation.isPending ? "Adding..." : "Add Product"}
-              </Button>
-            </div>
-          </div>
         </DialogContent>
       </Dialog>
 
@@ -1666,63 +1358,6 @@ export default function UnpaidBills() {
                 disabled={createManualBalanceMutation.isPending}
               >
                 {createManualBalanceMutation.isPending ? "Adding..." : "Add Balance"}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Due Date Edit Dialog */}
-      <Dialog open={dueDateDialogOpen} onOpenChange={setDueDateDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Edit Due Date</DialogTitle>
-            <DialogDescription>
-              Set or update the payment due date for this bill
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="editDueDate">Due Date</Label>
-              <Input
-                id="editDueDate"
-                type="date"
-                value={dueDateForm.dueDate}
-                onChange={(e) => setDueDateForm(prev => ({ ...prev, dueDate: e.target.value }))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="editNotes">Notes (Optional)</Label>
-              <Input
-                id="editNotes"
-                placeholder="Add notes about the due date"
-                value={dueDateForm.notes}
-                onChange={(e) => setDueDateForm(prev => ({ ...prev, notes: e.target.value }))}
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setDueDateDialogOpen(false);
-                  setEditingSaleId(null);
-                  setDueDateForm({ dueDate: "", notes: "" });
-                }}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={() => {
-                  if (!editingSaleId) return;
-                  updateDueDateMutation.mutate({
-                    saleId: editingSaleId,
-                    dueDate: dueDateForm.dueDate || undefined,
-                    notes: dueDateForm.notes || undefined
-                  });
-                }}
-                disabled={updateDueDateMutation.isPending}
-              >
-                {updateDueDateMutation.isPending ? "Updating..." : "Update Due Date"}
               </Button>
             </div>
           </div>
