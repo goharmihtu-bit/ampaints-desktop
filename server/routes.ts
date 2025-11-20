@@ -1,4 +1,4 @@
-// routes.ts
+// routes.ts - Complete Updated Version
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
@@ -447,6 +447,71 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Customer Notes routes
+  app.get("/api/customer/:phone/notes", async (req, res) => {
+    try {
+      const { phone } = req.params;
+      const sales = await storage.getSales();
+      
+      // Get all notes from manual balance sales for this customer
+      const customerNotes = sales
+        .filter(sale => sale.customerPhone === phone && sale.isManualBalance && sale.notes)
+        .map(sale => ({
+          id: sale.id,
+          saleId: sale.id,
+          note: sale.notes!,
+          createdBy: "System",
+          createdAt: sale.createdAt
+        }));
+      
+      res.json(customerNotes);
+    } catch (error) {
+      console.error("Error fetching customer notes:", error);
+      res.status(500).json({ error: "Failed to fetch customer notes" });
+    }
+  });
+
+  // Add customer note
+  app.post("/api/customer/:phone/notes", async (req, res) => {
+    try {
+      const { phone } = req.params;
+      const { note } = req.body;
+      
+      if (!note) {
+        res.status(400).json({ error: "Note is required" });
+        return;
+      }
+      
+      // Get customer name from existing sales
+      const sales = await storage.getSales();
+      const customerSale = sales.find(sale => sale.customerPhone === phone);
+      const customerName = customerSale?.customerName || "Customer";
+      
+      // Create a manual balance sale with the note
+      const sale = await storage.createManualBalance({
+        customerName: customerName,
+        customerPhone: phone,
+        totalAmount: "0",
+        dueDate: null,
+        notes: note
+      });
+      
+      res.json({ 
+        success: true, 
+        note: {
+          id: sale.id,
+          saleId: sale.id,
+          note: sale.notes!,
+          createdBy: "System",
+          createdAt: sale.createdAt
+        }
+      });
+    } catch (error) {
+      console.error("Error adding customer note:", error);
+      res.status(500).json({ error: "Failed to add customer note" });
+    }
+  });
+
   // Sales
   app.get("/api/sales", async (_req, res) => {
     try {
@@ -775,6 +840,114 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error updating settings:", error);
       res.status(500).json({ error: "Failed to update settings" });
+    }
+  });
+
+  // Customer Balance Summary API
+  app.get("/api/customer/:phone/balance-summary", async (req, res) => {
+    try {
+      const { phone } = req.params;
+      const unpaidSales = await storage.getUnpaidSales();
+      
+      const customerBills = unpaidSales.filter(sale => sale.customerPhone === phone);
+      
+      if (customerBills.length === 0) {
+        res.status(404).json({ error: "No unpaid bills found for this customer" });
+        return;
+      }
+      
+      const totalAmount = customerBills.reduce((sum, sale) => sum + parseFloat(sale.totalAmount), 0);
+      const totalPaid = customerBills.reduce((sum, sale) => sum + parseFloat(sale.amountPaid), 0);
+      const totalOutstanding = totalAmount - totalPaid;
+      
+      const oldestBill = customerBills.reduce((oldest, sale) => {
+        return new Date(sale.createdAt) < new Date(oldest.createdAt) ? sale : oldest;
+      });
+      
+      const daysOverdue = Math.ceil((new Date().getTime() - new Date(oldestBill.createdAt).getTime()) / (1000 * 60 * 60 * 24));
+      
+      const summary = {
+        customerName: customerBills[0].customerName,
+        customerPhone: phone,
+        totalBills: customerBills.length,
+        totalAmount,
+        totalPaid,
+        totalOutstanding,
+        oldestBillDate: oldestBill.createdAt,
+        daysOverdue,
+        bills: customerBills
+      };
+      
+      res.json(summary);
+    } catch (error) {
+      console.error("Error fetching customer balance summary:", error);
+      res.status(500).json({ error: "Failed to fetch customer balance summary" });
+    }
+  });
+
+  // Customer Statements API
+  app.get("/api/customer/:phone/statement", async (req, res) => {
+    try {
+      const { phone } = req.params;
+      const { format = 'html' } = req.query;
+      
+      const unpaidSales = await storage.getUnpaidSales();
+      const paymentHistory = await storage.getPaymentHistoryByCustomer(phone);
+      const allSales = await storage.getSales();
+      
+      const customerBills = unpaidSales.filter(sale => sale.customerPhone === phone);
+      const customerNotes = allSales
+        .filter(sale => sale.customerPhone === phone && sale.isManualBalance && sale.notes)
+        .map(sale => ({
+          id: sale.id,
+          saleId: sale.id,
+          note: sale.notes!,
+          createdBy: "System",
+          createdAt: sale.createdAt
+        }));
+      
+      if (customerBills.length === 0) {
+        res.status(404).json({ error: "No bills found for this customer" });
+        return;
+      }
+      
+      const totalAmount = customerBills.reduce((sum, sale) => sum + parseFloat(sale.totalAmount), 0);
+      const totalPaid = customerBills.reduce((sum, sale) => sum + parseFloat(sale.amountPaid), 0);
+      const totalOutstanding = totalAmount - totalPaid;
+      
+      const oldestBill = customerBills.reduce((oldest, sale) => {
+        return new Date(sale.createdAt) < new Date(oldest.createdAt) ? sale : oldest;
+      });
+      
+      const daysOverdue = Math.ceil((new Date().getTime() - new Date(oldestBill.createdAt).getTime()) / (1000 * 60 * 60 * 24));
+      
+      const statement = {
+        customerName: customerBills[0].customerName,
+        customerPhone: phone,
+        totalBills: customerBills.length,
+        totalAmount,
+        totalPaid,
+        totalOutstanding,
+        oldestBillDate: oldestBill.createdAt,
+        daysOverdue,
+        bills: customerBills,
+        paymentHistory,
+        notes: customerNotes,
+        generatedAt: new Date().toISOString()
+      };
+      
+      if (format === 'pdf') {
+        // Generate PDF statement (you can implement PDF generation here)
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="statement-${phone}-${new Date().toISOString().split('T')[0]}.pdf"`);
+        // For now, return JSON as we'll handle PDF generation in the frontend
+        res.json(statement);
+      } else {
+        res.json(statement);
+      }
+    } catch (error) {
+      console.error("Error generating customer statement:", error);
+      res.status(500).json({ error: "Failed to generate customer statement" });
     }
   });
 

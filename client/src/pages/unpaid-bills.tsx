@@ -1,4 +1,4 @@
-// unpaid-bills.tsx - Complete Updated Version
+// unpaid-bills.tsx - Complete Premium Version
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,6 +11,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -57,11 +58,18 @@ import {
   Clock,
   AlertTriangle,
   CheckCircle,
-  MoreHorizontal
+  MoreHorizontal,
+  Sparkles,
+  TrendingUp,
+  BarChart3,
+  Wallet,
+  IndianRupee,
+  SortAsc,
+  SortDesc
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { Sale, SaleWithItems, ColorWithVariantAndProduct, PaymentHistory } from "@shared/schema";
+import type { Sale } from "@shared/schema";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
 import {
@@ -71,6 +79,7 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface CustomerSuggestion {
   customerName: string;
@@ -130,11 +139,7 @@ export default function UnpaidBills() {
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentNotes, setPaymentNotes] = useState("");
-  const [addProductDialogOpen, setAddProductDialogOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedColor, setSelectedColor] = useState<ColorWithVariantAndProduct | null>(null);
-  const [quantity, setQuantity] = useState("1");
-  const [filterOpen, setFilterOpen] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState("cash");
   
   // Manual balance state
   const [manualBalanceDialogOpen, setManualBalanceDialogOpen] = useState(false);
@@ -158,11 +163,15 @@ export default function UnpaidBills() {
   // Notes state
   const [notesDialogOpen, setNotesDialogOpen] = useState(false);
   const [newNote, setNewNote] = useState("");
-  const [viewingNotesSaleId, setViewingNotesSaleId] = useState<string | null>(null);
+  const [viewingNotesCustomerPhone, setViewingNotesCustomerPhone] = useState<string | null>(null);
 
   // Payment history state
   const [paymentHistoryDialogOpen, setPaymentHistoryDialogOpen] = useState(false);
-  const [viewingPaymentHistorySaleId, setViewingPaymentHistorySaleId] = useState<string | null>(null);
+  const [viewingPaymentHistoryCustomerPhone, setViewingPaymentHistoryCustomerPhone] = useState<string | null>(null);
+  
+  // Filter state
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
   
   const { toast } = useToast();
 
@@ -189,32 +198,23 @@ export default function UnpaidBills() {
     queryKey: ["/api/sales/unpaid"],
   });
 
-  const { data: saleDetails, isLoading: isLoadingDetails } = useQuery<SaleWithItems>({
-    queryKey: [`/api/sales/${selectedSaleId}`],
-    enabled: !!selectedSaleId,
-  });
-
-  const { data: colors = [] } = useQuery<ColorWithVariantAndProduct[]>({
-    queryKey: ["/api/colors"],
-    enabled: addProductDialogOpen,
-  });
-
-  // Fetch payment history for a specific sale
+  // Fetch payment history for a specific customer
   const { data: paymentHistory = [] } = useQuery<PaymentRecord[]>({
-    queryKey: [`/api/sales/${viewingPaymentHistorySaleId}/payments`],
-    enabled: !!viewingPaymentHistorySaleId,
+    queryKey: [`/api/payment-history/customer/${viewingPaymentHistoryCustomerPhone}`],
+    enabled: !!viewingPaymentHistoryCustomerPhone,
   });
 
-  // Fetch balance notes for a specific sale
+  // Fetch balance notes for all sales of a customer
   const { data: balanceNotes = [] } = useQuery<BalanceNote[]>({
-    queryKey: [`/api/sales/${viewingNotesSaleId}/notes`],
-    enabled: !!viewingNotesSaleId,
+    queryKey: [`/api/customer/${viewingNotesCustomerPhone}/notes`],
+    enabled: !!viewingNotesCustomerPhone,
   });
 
   const recordPaymentMutation = useMutation({
-    mutationFn: async (data: { saleId: string; amount: number; notes?: string }) => {
+    mutationFn: async (data: { saleId: string; amount: number; paymentMethod: string; notes?: string }) => {
       return await apiRequest("POST", `/api/sales/${data.saleId}/payment`, { 
         amount: data.amount,
+        paymentMethod: data.paymentMethod,
         notes: data.notes 
       });
     },
@@ -223,31 +223,39 @@ export default function UnpaidBills() {
       if (selectedSaleId) {
         queryClient.invalidateQueries({ queryKey: [`/api/sales/${selectedSaleId}`] });
       }
-      if (viewingPaymentHistorySaleId) {
-        queryClient.invalidateQueries({ queryKey: [`/api/sales/${viewingPaymentHistorySaleId}/payments`] });
+      if (viewingPaymentHistoryCustomerPhone) {
+        queryClient.invalidateQueries({ queryKey: [`/api/payment-history/customer/${viewingPaymentHistoryCustomerPhone}`] });
       }
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
-      toast({ title: "Payment recorded successfully" });
+      toast({ 
+        title: "Payment recorded successfully",
+        description: `Payment of Rs. ${parseFloat(paymentAmount).toLocaleString()} has been recorded.`
+      });
       setPaymentDialogOpen(false);
       setPaymentAmount("");
       setPaymentNotes("");
+      setPaymentMethod("cash");
     },
     onError: (error: Error) => {
       console.error("Payment recording error:", error);
-      toast({ title: "Failed to record payment", variant: "destructive" });
+      toast({ 
+        title: "Failed to record payment", 
+        description: error.message,
+        variant: "destructive" 
+      });
     },
   });
 
   const addNoteMutation = useMutation({
-    mutationFn: async (data: { saleId: string; note: string }) => {
-      return await apiRequest("POST", `/api/sales/${data.saleId}/notes`, {
+    mutationFn: async (data: { customerPhone: string; note: string }) => {
+      return await apiRequest("POST", `/api/customer/${data.customerPhone}/notes`, {
         note: data.note
       });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
-      if (viewingNotesSaleId) {
-        queryClient.invalidateQueries({ queryKey: [`/api/sales/${viewingNotesSaleId}/notes`] });
+      if (viewingNotesCustomerPhone) {
+        queryClient.invalidateQueries({ queryKey: [`/api/customer/${viewingNotesCustomerPhone}/notes`] });
       }
       toast({ title: "Note added successfully" });
       setNotesDialogOpen(false);
@@ -323,7 +331,8 @@ export default function UnpaidBills() {
     // Check if payment exceeds outstanding
     if (amount > selectedCustomer.totalOutstanding) {
       toast({ 
-        title: `Payment amount (Rs. ${Math.round(amount).toLocaleString()}) exceeds outstanding balance (Rs. ${Math.round(selectedCustomer.totalOutstanding).toLocaleString()})`, 
+        title: `Payment amount exceeds outstanding balance`, 
+        description: `Payment: Rs. ${Math.round(amount).toLocaleString()} | Outstanding: Rs. ${Math.round(selectedCustomer.totalOutstanding).toLocaleString()}`,
         variant: "destructive" 
       });
       return;
@@ -356,19 +365,24 @@ export default function UnpaidBills() {
       for (const payment of paymentsToApply) {
         await apiRequest("POST", `/api/sales/${payment.saleId}/payment`, { 
           amount: payment.amount,
+          paymentMethod: paymentMethod,
           notes: paymentNotes 
         });
       }
       
       queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
-      if (viewingPaymentHistorySaleId) {
-        queryClient.invalidateQueries({ queryKey: [`/api/sales/${viewingPaymentHistorySaleId}/payments`] });
+      if (viewingPaymentHistoryCustomerPhone) {
+        queryClient.invalidateQueries({ queryKey: [`/api/payment-history/customer/${viewingPaymentHistoryCustomerPhone}`] });
       }
-      toast({ title: `Payment of Rs. ${Math.round(amount).toLocaleString()} recorded successfully` });
+      toast({ 
+        title: `Payment recorded successfully`,
+        description: `Payment of Rs. ${Math.round(amount).toLocaleString()} has been applied to ${paymentsToApply.length} bill(s).`
+      });
       setPaymentDialogOpen(false);
       setPaymentAmount("");
       setPaymentNotes("");
+      setPaymentMethod("cash");
       setSelectedCustomerPhone(null);
     } catch (error) {
       console.error("Payment processing error:", error);
@@ -377,25 +391,15 @@ export default function UnpaidBills() {
   };
 
   const handleAddNote = () => {
-    if (!viewingNotesSaleId || !newNote.trim()) {
+    if (!viewingNotesCustomerPhone || !newNote.trim()) {
       toast({ title: "Please enter a note", variant: "destructive" });
       return;
     }
 
     addNoteMutation.mutate({
-      saleId: viewingNotesSaleId,
+      customerPhone: viewingNotesCustomerPhone,
       note: newNote.trim()
     });
-  };
-
-  const getPaymentStatus = (bill: Sale) => {
-    const total = parseFloat(bill.totalAmount);
-    const paid = parseFloat(bill.amountPaid);
-    const outstanding = total - paid;
-    
-    if (outstanding <= 0) return "paid";
-    if (paid > 0) return "partial";
-    return "unpaid";
   };
 
   const getDueDateStatus = (dueDate: string | null) => {
@@ -419,22 +423,22 @@ export default function UnpaidBills() {
     
     switch (status) {
       case "overdue":
-        return <Badge variant="destructive" className="flex items-center gap-1">
+        return <Badge variant="destructive" className="flex items-center gap-1 glass-destructive">
           <AlertTriangle className="h-3 w-3" />
           Overdue
         </Badge>;
       case "due_soon":
-        return <Badge variant="secondary" className="flex items-center gap-1">
+        return <Badge variant="secondary" className="flex items-center gap-1 glass-warning">
           <Clock className="h-3 w-3" />
           Due Soon
         </Badge>;
       case "future":
-        return <Badge variant="outline" className="flex items-center gap-1">
+        return <Badge variant="outline" className="flex items-center gap-1 glass-success">
           <Calendar className="h-3 w-3" />
           Upcoming
         </Badge>;
       default:
-        return <Badge variant="outline">No Due Date</Badge>;
+        return <Badge variant="outline" className="glass-outline">No Due Date</Badge>;
     }
   };
 
@@ -580,8 +584,11 @@ export default function UnpaidBills() {
   const [selectedCustomerPhone, setSelectedCustomerPhone] = useState<string | null>(null);
   const selectedCustomer = consolidatedCustomers.find(c => c.customerPhone === selectedCustomerPhone);
 
+  // Generate PDF Statement with Download functionality
   const generateDetailedPDFStatement = (customer: ConsolidatedCustomer) => {
-    const currentDate = new Date().toLocaleDateString('en-PK');
+    const currentDate = new Date();
+    const formattedDate = `${String(currentDate.getDate()).padStart(2, '0')}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${currentDate.getFullYear()}`;
+    
     let pdfHTML = `
       <!DOCTYPE html>
       <html>
@@ -590,95 +597,86 @@ export default function UnpaidBills() {
         <title>Customer Account Statement - ${customer.customerName}</title>
         <style>
           @page { size: A4; margin: 15mm; }
-          body { font-family: Arial, sans-serif; color: #333; margin: 0; padding: 0; line-height: 1.4; }
-          .header { text-align: center; border-bottom: 3px solid #2563eb; padding-bottom: 15px; margin-bottom: 25px; }
-          .header h1 { margin: 0; color: #2563eb; font-size: 24px; }
-          .header p { margin: 5px 0; color: #666; font-size: 14px; }
-          .customer-info { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 25px; padding: 15px; background: #f8fafc; border-radius: 8px; }
-          .section { margin-bottom: 30px; page-break-inside: avoid; }
-          .section-title { background: #2563eb; color: white; padding: 10px 15px; font-size: 16px; font-weight: bold; margin-bottom: 15px; border-radius: 4px; }
-          table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 12px; }
-          th { background: #f3f4f6; text-align: left; padding: 10px; border-bottom: 2px solid #ddd; font-weight: 600; }
-          td { padding: 8px 10px; border-bottom: 1px solid #eee; vertical-align: top; }
-          .amount { text-align: right; font-family: monospace; font-weight: 600; }
-          .total-row { background: #fef3c7; font-weight: bold; border-top: 2px solid #2563eb; }
-          .badge { display: inline-block; padding: 3px 8px; border-radius: 12px; font-size: 10px; font-weight: 600; }
-          .badge-danger { background: #fee2e2; color: #991b1b; }
-          .badge-warning { background: #fef3c7; color: #92400e; }
-          .badge-success { background: #d1fae5; color: #065f46; }
-          .badge-info { background: #dbeafe; color: #1e40af; }
-          .footer { margin-top: 30px; text-align: center; font-size: 11px; color: #666; border-top: 1px solid #ddd; padding-top: 15px; }
-          .summary-box { display: inline-block; border: 2px solid #e5e7eb; padding: 15px; margin: 10px; border-radius: 8px; min-width: 180px; text-align: center; }
-          .summary-box h3 { margin: 0 0 5px 0; font-size: 12px; color: #666; }
-          .summary-box p { margin: 0; font-size: 20px; font-weight: bold; color: #2563eb; }
-          .notes-section { background: #fffbeb; padding: 15px; border-radius: 6px; margin: 15px 0; }
-          .note-item { padding: 8px 0; border-bottom: 1px solid #fef3c7; }
-          .note-date { font-size: 10px; color: #666; }
-          .payment-history { background: #f0fdf4; padding: 15px; border-radius: 6px; margin: 15px 0; }
-          .payment-item { padding: 8px 0; border-bottom: 1px solid #dcfce7; }
+          body { font-family: 'Segoe UI', system-ui, sans-serif; color: #1f2937; margin: 0; padding: 0; line-height: 1.6; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+          .container { background: white; border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,0.1); overflow: hidden; }
+          .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; }
+          .header h1 { margin: 0; font-size: 28px; font-weight: 600; letter-spacing: -0.5px; }
+          .header p { margin: 8px 0 0; opacity: 0.9; font-size: 14px; }
+          .customer-info { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin: 30px; padding: 24px; background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0; }
+          .section { margin: 30px; page-break-inside: avoid; }
+          .section-title { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 16px 20px; font-size: 16px; font-weight: 600; margin-bottom: 20px; border-radius: 8px; }
+          table { width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 13px; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+          th { background: #f8fafc; text-align: left; padding: 14px 16px; border-bottom: 2px solid #e2e8f0; font-weight: 600; color: #475569; }
+          td { padding: 12px 16px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+          .amount { text-align: right; font-family: 'SF Mono', monospace; font-weight: 600; }
+          .total-row { background: #fff7ed; font-weight: 600; border-top: 2px solid #fdba74; }
+          .badge { display: inline-block; padding: 4px 10px; border-radius: 16px; font-size: 11px; font-weight: 600; }
+          .badge-danger { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+          .badge-warning { background: #fffbeb; color: #d97706; border: 1px solid #fed7aa; }
+          .badge-success { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
+          .badge-info { background: #f0f9ff; color: #0284c7; border: 1px solid #bae6fd; }
+          .footer { margin: 30px; text-align: center; font-size: 12px; color: #64748b; border-top: 1px solid #e2e8f0; padding-top: 20px; }
+          .summary-box { display: inline-block; background: white; border: 1px solid #e2e8f0; padding: 20px; margin: 8px; border-radius: 12px; min-width: 160px; text-align: center; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+          .summary-box h3 { margin: 0 0 8px 0; font-size: 12px; color: #64748b; font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; }
+          .summary-box p { margin: 0; font-size: 20px; font-weight: 700; color: #1e40af; }
         </style>
       </head>
       <body>
-        <div class="header">
-          <h1>🏪 PaintPulse - Customer Account Statement</h1>
-          <p>Generated on ${currentDate}</p>
-        </div>
-        
-        <div class="customer-info">
-          <div>
-            <strong>Customer Name:</strong> ${customer.customerName}<br>
-            <strong>Phone:</strong> ${customer.customerPhone}<br>
-            <strong>Total Bills:</strong> ${customer.bills.length}
+        <div class="container">
+          <div class="header">
+            <h1>🏪 PaintPulse - Customer Account Statement</h1>
+            <p>Generated on ${formattedDate}</p>
           </div>
-          <div>
-            <strong>Statement Period:</strong> ${customer.oldestBillDate.toLocaleDateString()} to ${currentDate}<br>
-            <strong>Days Outstanding:</strong> ${customer.daysOverdue} days<br>
-            <strong>Status:</strong> ${customer.totalOutstanding > 0 ? 'Pending' : 'Cleared'}
+          
+          <div class="customer-info">
+            <div>
+              <strong>Customer Name:</strong> ${customer.customerName}<br>
+              <strong>Phone:</strong> ${customer.customerPhone}<br>
+              <strong>Total Bills:</strong> ${customer.bills.length}
+            </div>
+            <div>
+              <strong>Statement Period:</strong> ${customer.oldestBillDate.toLocaleDateString('en-PK')} to ${formattedDate}<br>
+              <strong>Days Outstanding:</strong> ${customer.daysOverdue} days<br>
+              <strong>Status:</strong> ${customer.totalOutstanding > 0 ? 'Pending' : 'Cleared'}
+            </div>
           </div>
-        </div>
-    `;
 
-    // Summary Section
-    pdfHTML += `
-      <div class="section">
-        <div class="section-title">💰 Account Summary</div>
-        <div style="text-align: center;">
-          <div class="summary-box">
-            <h3>Total Amount</h3>
-            <p>Rs. ${customer.totalAmount.toFixed(2)}</p>
+          <div class="section">
+            <div class="section-title">💰 Account Summary</div>
+            <div style="text-align: center;">
+              <div class="summary-box">
+                <h3>Total Amount</h3>
+                <p>Rs. ${customer.totalAmount.toFixed(2)}</p>
+              </div>
+              <div class="summary-box">
+                <h3>Amount Paid</h3>
+                <p>Rs. ${customer.totalPaid.toFixed(2)}</p>
+              </div>
+              <div class="summary-box">
+                <h3>Outstanding</h3>
+                <p style="color: ${customer.totalOutstanding > 0 ? '#dc2626' : '#16a34a'};">Rs. ${customer.totalOutstanding.toFixed(2)}</p>
+              </div>
+            </div>
           </div>
-          <div class="summary-box">
-            <h3>Amount Paid</h3>
-            <p>Rs. ${customer.totalPaid.toFixed(2)}</p>
-          </div>
-          <div class="summary-box">
-            <h3>Outstanding</h3>
-            <p style="color: ${customer.totalOutstanding > 0 ? '#dc2626' : '#2563eb'};">Rs. ${customer.totalOutstanding.toFixed(2)}</p>
-          </div>
-        </div>
-      </div>
-    `;
 
-    // Bills Details Section
-    pdfHTML += `
-      <div class="section">
-        <div class="section-title">🧾 Bill Details</div>
-        <table>
-          <thead>
-            <tr>
-              <th>Bill Date</th>
-              <th>Bill No</th>
-              <th>Due Date</th>
-              <th class="amount">Total</th>
-              <th class="amount">Paid</th>
-              <th class="amount">Due</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
+          <div class="section">
+            <div class="section-title">🧾 Bill Details</div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Bill Date</th>
+                  <th>Bill No</th>
+                  <th>Due Date</th>
+                  <th class="amount">Total</th>
+                  <th class="amount">Paid</th>
+                  <th class="amount">Due</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
     `;
     
-    customer.bills.forEach((bill, index) => {
+    customer.bills.forEach((bill) => {
       const billTotal = parseFloat(bill.totalAmount);
       const billPaid = parseFloat(bill.amountPaid);
       const billDue = billTotal - billPaid;
@@ -699,303 +697,333 @@ export default function UnpaidBills() {
           statusBadge = '<span class="badge">No Due Date</span>';
       }
       
+      const billDate = new Date(bill.createdAt);
+      const formattedBillDate = `${String(billDate.getDate()).padStart(2, '0')}-${String(billDate.getMonth() + 1).padStart(2, '0')}-${billDate.getFullYear()}`;
+      const formattedDueDate = bill.dueDate ? 
+        `${String(new Date(bill.dueDate).getDate()).padStart(2, '0')}-${String(new Date(bill.dueDate).getMonth() + 1).padStart(2, '0')}-${new Date(bill.dueDate).getFullYear()}` : 
+        '-';
+      
       pdfHTML += `
-            <tr>
-              <td>${new Date(bill.createdAt).toLocaleDateString()}</td>
-              <td>${bill.id.slice(-8)}</td>
-              <td>${bill.dueDate ? new Date(bill.dueDate).toLocaleDateString() : '-'}</td>
-              <td class="amount">Rs. ${billTotal.toFixed(2)}</td>
-              <td class="amount">Rs. ${billPaid.toFixed(2)}</td>
-              <td class="amount">Rs. ${billDue.toFixed(2)}</td>
-              <td>${statusBadge}</td>
-            </tr>
+                <tr>
+                  <td>${formattedBillDate}</td>
+                  <td>${bill.id.slice(-8)}</td>
+                  <td>${formattedDueDate}</td>
+                  <td class="amount">Rs. ${billTotal.toFixed(2)}</td>
+                  <td class="amount">Rs. ${billPaid.toFixed(2)}</td>
+                  <td class="amount">Rs. ${billDue.toFixed(2)}</td>
+                  <td>${statusBadge}</td>
+                </tr>
       `;
     });
     
     pdfHTML += `
-            <tr class="total-row">
-              <td colspan="3"><strong>Totals</strong></td>
-              <td class="amount"><strong>Rs. ${customer.totalAmount.toFixed(2)}</strong></td>
-              <td class="amount"><strong>Rs. ${customer.totalPaid.toFixed(2)}</strong></td>
-              <td class="amount"><strong>Rs. ${customer.totalOutstanding.toFixed(2)}</strong></td>
-              <td></td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    `;
-
-    // Payment History Section (if available)
-    if (customer.paymentHistory && customer.paymentHistory.length > 0) {
-      pdfHTML += `
-        <div class="section">
-          <div class="section-title">💳 Payment History</div>
-          <div class="payment-history">
-      `;
-      
-      customer.paymentHistory.forEach(payment => {
-        pdfHTML += `
-            <div class="payment-item">
-              <strong>Rs. ${payment.amount.toFixed(2)}</strong> - 
-              ${new Date(payment.paymentDate).toLocaleDateString()} - 
-              ${payment.paymentMethod}
-              ${payment.notes ? `<br><em>${payment.notes}</em>` : ''}
-            </div>
-        `;
-      });
-      
-      pdfHTML += `
+                <tr class="total-row">
+                  <td colspan="3"><strong>Totals</strong></td>
+                  <td class="amount"><strong>Rs. ${customer.totalAmount.toFixed(2)}</strong></td>
+                  <td class="amount"><strong>Rs. ${customer.totalPaid.toFixed(2)}</strong></td>
+                  <td class="amount"><strong>Rs. ${customer.totalOutstanding.toFixed(2)}</strong></td>
+                  <td></td>
+                </tr>
+              </tbody>
+            </table>
           </div>
-        </div>
-      `;
-    }
 
-    // Notes Section (if available)
-    if (customer.balanceNotes && customer.balanceNotes.length > 0) {
-      pdfHTML += `
-        <div class="section">
-          <div class="section-title">📝 Account Notes</div>
-          <div class="notes-section">
-      `;
-      
-      customer.balanceNotes.forEach(note => {
-        pdfHTML += `
-            <div class="note-item">
-              <div><strong>${new Date(note.createdAt).toLocaleDateString()}:</strong> ${note.note}</div>
-              <div class="note-date">By: ${note.createdBy}</div>
-            </div>
-        `;
-      });
-      
-      pdfHTML += `
+          <div class="footer">
+            <p>PaintPulse POS System • Customer Account Statement • ${formattedDate}</p>
+            <p>This is a system-generated report. For any queries, contact support.</p>
           </div>
-        </div>
-      `;
-    }
-
-    pdfHTML += `
-        <div class="footer">
-          <p>PaintPulse POS System • Customer Account Statement • ${currentDate}</p>
-          <p>This is a system-generated report. For any queries, contact support.</p>
         </div>
       </body>
       </html>
     `;
 
-    // Create blob and download
+    // Create blob and download without opening print dialog
     const blob = new Blob([pdfHTML], { type: 'text/html' });
-    const url = window.URL.createObjectURL(blob);
-    const printWindow = window.open(url, '_blank');
-    if (printWindow) {
-      printWindow.onload = () => {
-        printWindow.print();
-      };
-    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `statement-${customer.customerName}-${formattedDate}.html`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
     
-    toast({ title: "PDF Statement generated successfully" });
+    toast({ 
+      title: "Statement downloaded successfully",
+      description: `Statement for ${customer.customerName} has been downloaded`
+    });
   };
 
+  // Add CSS for glass effect
+  const glassStyles = `
+    .glass-card {
+      background: rgba(255, 255, 255, 0.8);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    }
+    .glass-destructive {
+      background: rgba(239, 68, 68, 0.1);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(239, 68, 68, 0.2);
+    }
+    .glass-warning {
+      background: rgba(245, 158, 11, 0.1);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(245, 158, 11, 0.2);
+    }
+    .glass-success {
+      background: rgba(34, 197, 94, 0.1);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(34, 197, 94, 0.2);
+    }
+    .glass-outline {
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+    }
+    .hover-elevate {
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .hover-elevate:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+    }
+    .gradient-bg {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    .premium-border {
+      border: 1px solid;
+      border-image: linear-gradient(135deg, #667eea 0%, #764ba2 100%) 1;
+    }
+  `;
+
+  const totalOutstanding = consolidatedCustomers.reduce((sum, customer) => sum + customer.totalOutstanding, 0);
+  const totalCustomers = consolidatedCustomers.length;
+  const averageOutstanding = totalCustomers > 0 ? totalOutstanding / totalCustomers : 0;
+
   return (
-    <div className="p-6 space-y-6">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50 p-6 space-y-6">
+      <style>{glassStyles}</style>
+      
       {/* Header Section */}
-      <div className="flex flex-col gap-4">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Unpaid Bills & Account Statements</h1>
-            <p className="text-sm text-muted-foreground">Track pending balances, payment history, and generate statements</p>
+      <div className="glass-card rounded-2xl p-6 border border-white/20 shadow-xl">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <div className="gradient-bg p-2 rounded-xl">
+                <Wallet className="h-6 w-6 text-white" />
+              </div>
+              <div>
+                <h1 className="text-3xl font-bold bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent">
+                  Account Statements
+                </h1>
+                <p className="text-sm text-slate-600 mt-1">
+                  Track pending balances, payment history, and generate premium statements
+                </p>
+              </div>
+            </div>
+            
+            {/* Stats Overview */}
+            <div className="flex items-center gap-6 flex-wrap">
+              <div className="flex items-center gap-2 text-sm">
+                <div className="w-2 h-2 bg-emerald-500 rounded-full"></div>
+                <span className="text-slate-700">
+                  <strong>{totalCustomers}</strong> Customers
+                </span>
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                <div className="w-2 h-2 bg-amber-500 rounded-full"></div>
+                <span className="text-slate-700">
+                  Total: <strong>Rs. {Math.round(totalOutstanding).toLocaleString()}</strong>
+                </span>
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                <span className="text-slate-700">
+                  Avg: <strong>Rs. {Math.round(averageOutstanding).toLocaleString()}</strong>
+                </span>
+              </div>
+            </div>
           </div>
           
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-3 flex-wrap">
             <Button 
-              variant="default" 
+              variant="outline" 
               onClick={() => setManualBalanceDialogOpen(true)}
-              className="flex items-center gap-2"
+              className="flex items-center gap-2 glass-card border-white/20 hover:border-purple-300 transition-all duration-300"
             >
               <Plus className="h-4 w-4" />
-              Add Pending Balance
+              Add Balance
             </Button>
 
             <Button 
-              variant="outline" 
-              onClick={() => generateDetailedPDFStatement(consolidatedCustomers[0])}
-              className="flex items-center gap-2"
+              className="flex items-center gap-2 gradient-bg text-white hover:shadow-lg transition-all duration-300"
+              onClick={() => consolidatedCustomers.length > 0 && generateDetailedPDFStatement(consolidatedCustomers[0])}
               disabled={consolidatedCustomers.length === 0}
             >
-              <FileText className="h-4 w-4" />
-              PDF Statement
+              <Download className="h-4 w-4" />
+              Download Statement
             </Button>
           </div>
         </div>
 
         {/* Search and Filter Row */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="relative flex-1 min-w-[200px] max-w-sm">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <div className="flex items-center gap-3 mt-6 flex-wrap">
+          <div className="relative flex-1 min-w-[280px]">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
             <Input
-              placeholder="Search customers..."
+              placeholder="Search customers by name or phone..."
               value={filters.search}
               onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
-              className="pl-9"
+              className="pl-10 glass-card border-white/20 focus:border-purple-300 transition-colors"
             />
           </div>
 
+          {/* Sort Dropdown */}
+          <Select
+            value={filters.sortBy}
+            onValueChange={(value: any) => setFilters(prev => ({ ...prev, sortBy: value }))}
+          >
+            <SelectTrigger className="w-[180px] glass-card border-white/20">
+              <SelectValue placeholder="Sort by" />
+            </SelectTrigger>
+            <SelectContent className="glass-card border-white/20">
+              <SelectItem value="oldest">Oldest First</SelectItem>
+              <SelectItem value="newest">Newest First</SelectItem>
+              <SelectItem value="highest">Highest Amount</SelectItem>
+              <SelectItem value="lowest">Lowest Amount</SelectItem>
+              <SelectItem value="name">Customer Name</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {/* Filter Button */}
           <DropdownMenu open={filterOpen} onOpenChange={setFilterOpen}>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" className="flex items-center gap-2">
+              <Button variant="outline" className="flex items-center gap-2 glass-card border-white/20 hover:border-purple-300">
                 <Filter className="h-4 w-4" />
-                Filter
-                <ChevronDown className="h-4 w-4" />
+                Filters
+                {hasActiveFilters && (
+                  <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                )}
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-80 p-4">
-              <div className="space-y-4">
-                <div>
-                  <h4 className="font-medium mb-2">Filters</h4>
-                  
-                  {/* Payment Status Filter */}
-                  <div className="space-y-2">
-                    <Label className="text-sm">Payment Status</Label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <Button
-                        variant={filters.paymentStatus === "all" ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => setFilters(prev => ({ ...prev, paymentStatus: "all" }))}
-                      >
-                        All
-                      </Button>
-                      <Button
-                        variant={filters.paymentStatus === "overdue" ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => setFilters(prev => ({ ...prev, paymentStatus: "overdue" }))}
-                      >
-                        Overdue
-                      </Button>
-                      <Button
-                        variant={filters.paymentStatus === "due_soon" ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => setFilters(prev => ({ ...prev, paymentStatus: "due_soon" }))}
-                      >
-                        Due Soon
-                      </Button>
-                      <Button
-                        variant={filters.paymentStatus === "no_due_date" ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => setFilters(prev => ({ ...prev, paymentStatus: "no_due_date" }))}
-                      >
-                        No Due Date
-                      </Button>
-                    </div>
-                  </div>
-
-                  {/* Amount Range */}
-                  <div className="space-y-2">
-                    <Label className="text-sm">Amount Range</Label>
-                    <div className="flex gap-2">
-                      <Input
-                        placeholder="Min"
-                        value={filters.amountRange.min}
-                        onChange={(e) => setFilters(prev => ({
-                          ...prev,
-                          amountRange: { ...prev.amountRange, min: e.target.value }
-                        }))}
-                        type="number"
-                      />
-                      <Input
-                        placeholder="Max"
-                        value={filters.amountRange.max}
-                        onChange={(e) => setFilters(prev => ({
-                          ...prev,
-                          amountRange: { ...prev.amountRange, max: e.target.value }
-                        }))}
-                        type="number"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Days Overdue */}
-                  <div className="space-y-2">
-                    <Label className="text-sm">Minimum Days Overdue</Label>
-                    <Input
-                      placeholder="e.g., 30"
-                      value={filters.daysOverdue}
-                      onChange={(e) => setFilters(prev => ({ ...prev, daysOverdue: e.target.value }))}
-                      type="number"
-                    />
-                  </div>
-
-                  {/* Due Date Range */}
-                  <div className="space-y-2">
-                    <Label className="text-sm">Due Date Range</Label>
-                    <div className="flex gap-2">
-                      <Input
-                        placeholder="From"
-                        value={filters.dueDate.from}
-                        onChange={(e) => setFilters(prev => ({
-                          ...prev,
-                          dueDate: { ...prev.dueDate, from: e.target.value }
-                        }))}
-                        type="date"
-                      />
-                      <Input
-                        placeholder="To"
-                        value={filters.dueDate.to}
-                        onChange={(e) => setFilters(prev => ({
-                          ...prev,
-                          dueDate: { ...prev.dueDate, to: e.target.value }
-                        }))}
-                        type="date"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Sort By */}
-                  <div className="space-y-2">
-                    <Label className="text-sm">Sort By</Label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <Button
-                        variant={filters.sortBy === "oldest" ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => setFilters(prev => ({ ...prev, sortBy: "oldest" }))}
-                      >
-                        Oldest First
-                      </Button>
-                      <Button
-                        variant={filters.sortBy === "newest" ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => setFilters(prev => ({ ...prev, sortBy: "newest" }))}
-                      >
-                        Newest First
-                      </Button>
-                      <Button
-                        variant={filters.sortBy === "highest" ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => setFilters(prev => ({ ...prev, sortBy: "highest" }))}
-                      >
-                        Highest Amount
-                      </Button>
-                      <Button
-                        variant={filters.sortBy === "lowest" ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => setFilters(prev => ({ ...prev, sortBy: "lowest" }))}
-                      >
-                        Lowest Amount
-                      </Button>
-                    </div>
-                  </div>
-
-                  {hasActiveFilters && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={clearFilters}
-                      className="w-full mt-2"
-                    >
-                      <X className="h-4 w-4 mr-2" />
-                      Clear Filters
-                    </Button>
-                  )}
+            <DropdownMenuContent align="end" className="w-80 glass-card border-white/20 p-0">
+              <div className="p-4 border-b border-white/20">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-purple-500" />
+                  <h4 className="font-semibold text-slate-800">Advanced Filters</h4>
                 </div>
               </div>
+              
+              <div className="p-4 space-y-4 max-h-96 overflow-y-auto">
+                {/* Payment Status Filter */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium text-slate-700">Payment Status</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { value: "all", label: "All" },
+                      { value: "overdue", label: "Overdue" },
+                      { value: "due_soon", label: "Due Soon" },
+                      { value: "no_due_date", label: "No Due Date" }
+                    ].map((status) => (
+                      <Button
+                        key={status.value}
+                        variant={filters.paymentStatus === status.value ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setFilters(prev => ({ ...prev, paymentStatus: status.value as any }))}
+                        className={`text-xs ${
+                          filters.paymentStatus === status.value 
+                            ? 'gradient-bg text-white' 
+                            : 'glass-card border-white/20'
+                        }`}
+                      >
+                        {status.label}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Amount Range */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium text-slate-700">Amount Range (Rs.)</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Min"
+                      value={filters.amountRange.min}
+                      onChange={(e) => setFilters(prev => ({
+                        ...prev,
+                        amountRange: { ...prev.amountRange, min: e.target.value }
+                      }))}
+                      type="number"
+                      className="glass-card border-white/20"
+                    />
+                    <Input
+                      placeholder="Max"
+                      value={filters.amountRange.max}
+                      onChange={(e) => setFilters(prev => ({
+                        ...prev,
+                        amountRange: { ...prev.amountRange, max: e.target.value }
+                      }))}
+                      type="number"
+                      className="glass-card border-white/20"
+                    />
+                  </div>
+                </div>
+
+                {/* Days Overdue */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium text-slate-700">Minimum Days Overdue</Label>
+                  <Input
+                    placeholder="e.g., 30"
+                    value={filters.daysOverdue}
+                    onChange={(e) => setFilters(prev => ({ ...prev, daysOverdue: e.target.value }))}
+                    type="number"
+                    className="glass-card border-white/20"
+                  />
+                </div>
+
+                {/* Due Date Range */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium text-slate-700">Due Date Range</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input
+                      placeholder="From"
+                      value={filters.dueDate.from}
+                      onChange={(e) => setFilters(prev => ({
+                        ...prev,
+                        dueDate: { ...prev.dueDate, from: e.target.value }
+                      }))}
+                      type="date"
+                      className="glass-card border-white/20"
+                    />
+                    <Input
+                      placeholder="To"
+                      value={filters.dueDate.to}
+                      onChange={(e) => setFilters(prev => ({
+                        ...prev,
+                        dueDate: { ...prev.dueDate, to: e.target.value }
+                      }))}
+                      type="date"
+                      className="glass-card border-white/20"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {hasActiveFilters && (
+                <div className="p-4 border-t border-white/20">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={clearFilters}
+                    className="w-full glass-card border-white/20 text-slate-600 hover:text-slate-800"
+                  >
+                    <X className="h-4 w-4 mr-2" />
+                    Clear All Filters
+                  </Button>
+                </div>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -1003,196 +1031,250 @@ export default function UnpaidBills() {
 
       {/* Filter Summary */}
       {hasActiveFilters && (
-        <div className="flex items-center gap-2 p-3 bg-muted rounded-md flex-wrap">
-          <Badge variant="secondary" className="flex items-center gap-1">
-            <Filter className="h-3 w-3" />
-            Filters Applied
-          </Badge>
-          {filters.search && (
-            <Badge variant="outline">
-              Search: "{filters.search}"
+        <div className="glass-card rounded-xl p-4 border border-white/20">
+          <div className="flex items-center gap-3 flex-wrap">
+            <Badge variant="secondary" className="glass-card border-white/20">
+              <Filter className="h-3 w-3 mr-1" />
+              Active Filters
             </Badge>
-          )}
-          {filters.paymentStatus !== "all" && (
-            <Badge variant="outline">
-              Status: {filters.paymentStatus.replace('_', ' ')}
-            </Badge>
-          )}
-          {filters.amountRange.min && (
-            <Badge variant="outline">
-              Min: Rs. {parseFloat(filters.amountRange.min).toLocaleString()}
-            </Badge>
-          )}
-          {filters.amountRange.max && (
-            <Badge variant="outline">
-              Max: Rs. {parseFloat(filters.amountRange.max).toLocaleString()}
-            </Badge>
-          )}
-          {filters.daysOverdue && (
-            <Badge variant="outline">
-              {filters.daysOverdue}+ Days Overdue
-            </Badge>
-          )}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={clearFilters}
-            className="ml-auto h-6 px-2"
-          >
-            <X className="h-3 w-3 mr-1" />
-            Clear
-          </Button>
+            {filters.search && (
+              <Badge variant="outline" className="glass-card border-white/20">
+                Search: "{filters.search}"
+              </Badge>
+            )}
+            {filters.paymentStatus !== "all" && (
+              <Badge variant="outline" className="glass-card border-white/20">
+                Status: {filters.paymentStatus.replace('_', ' ')}
+              </Badge>
+            )}
+            {filters.amountRange.min && (
+              <Badge variant="outline" className="glass-card border-white/20">
+                Min: Rs. {parseFloat(filters.amountRange.min).toLocaleString()}
+              </Badge>
+            )}
+            {filters.amountRange.max && (
+              <Badge variant="outline" className="glass-card border-white/20">
+                Max: Rs. {parseFloat(filters.amountRange.max).toLocaleString()}
+              </Badge>
+            )}
+            {filters.daysOverdue && (
+              <Badge variant="outline" className="glass-card border-white/20">
+                {filters.daysOverdue}+ Days Overdue
+              </Badge>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={clearFilters}
+              className="ml-auto glass-card border-white/20 text-slate-600 hover:text-slate-800"
+            >
+              <X className="h-3 w-3 mr-1" />
+              Clear All
+            </Button>
+          </div>
         </div>
       )}
 
       {/* Results Count */}
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">
-          Showing {filteredAndSortedCustomers.length} of {consolidatedCustomers.length} customers
+      <div className="flex items-center justify-between px-2">
+        <p className="text-sm text-slate-600">
+          Showing <span className="font-semibold text-slate-800">{filteredAndSortedCustomers.length}</span> of {consolidatedCustomers.length} customers
         </p>
         {hasActiveFilters && (
-          <p className="text-sm text-muted-foreground">
-            Total Outstanding: Rs. {Math.round(filteredAndSortedCustomers.reduce((sum, customer) => sum + customer.totalOutstanding, 0)).toLocaleString()}
+          <p className="text-sm text-slate-600">
+            Filtered Outstanding: <span className="font-semibold text-amber-600">
+              Rs. {Math.round(filteredAndSortedCustomers.reduce((sum, customer) => sum + customer.totalOutstanding, 0)).toLocaleString()}
+            </span>
           </p>
         )}
       </div>
 
-      {/* Customer Cards */}
+      {/* Customer Cards Grid */}
       {isLoading ? (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {[1, 2, 3].map((i) => (
-            <Card key={i}>
-              <CardContent className="p-6">
-                <Skeleton className="h-20 w-full" />
-              </CardContent>
-            </Card>
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <div key={i} className="glass-card rounded-2xl p-6 border border-white/20">
+              <Skeleton className="h-6 w-3/4 mb-4 rounded-lg" />
+              <Skeleton className="h-4 w-full mb-2 rounded-lg" />
+              <Skeleton className="h-4 w-2/3 mb-4 rounded-lg" />
+              <Skeleton className="h-20 w-full rounded-xl mb-4" />
+              <Skeleton className="h-10 w-full rounded-lg" />
+            </div>
           ))}
         </div>
       ) : filteredAndSortedCustomers.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-            <CreditCard className="h-12 w-12 text-muted-foreground mb-4 opacity-50" />
-            <h3 className="text-lg font-medium mb-1">
-              {hasActiveFilters ? "No customers match your filters" : "No unpaid bills"}
+        <div className="glass-card rounded-2xl p-12 text-center border border-white/20">
+          <div className="max-w-md mx-auto">
+            <div className="gradient-bg w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <CreditCard className="h-8 w-8 text-white" />
+            </div>
+            <h3 className="text-xl font-semibold text-slate-800 mb-2">
+              {hasActiveFilters ? "No customers match your filters" : "All clear! No unpaid bills"}
             </h3>
-            <p className="text-sm text-muted-foreground">
-              {hasActiveFilters ? "Try adjusting your filters" : "All payments are up to date"}
+            <p className="text-slate-600 mb-6">
+              {hasActiveFilters ? "Try adjusting your filter criteria" : "All customer payments are up to date and accounted for"}
             </p>
             {hasActiveFilters && (
-              <Button variant="outline" onClick={clearFilters} className="mt-4">
+              <Button 
+                onClick={clearFilters}
+                className="gradient-bg text-white hover:shadow-lg transition-all duration-300"
+              >
                 Clear Filters
               </Button>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {filteredAndSortedCustomers.map((customer) => {
             const hasOverdue = customer.bills.some(bill => getDueDateStatus(bill.dueDate) === 'overdue');
             const hasDueSoon = customer.bills.some(bill => getDueDateStatus(bill.dueDate) === 'due_soon');
+            const hasManualBalance = customer.bills.some(bill => bill.isManualBalance);
             
             return (
-              <Card key={customer.customerPhone} className={`hover-elevate ${hasOverdue ? 'border-destructive/20' : ''}`}>
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between">
-                    <CardTitle className="text-base flex items-center gap-2">
-                      {customer.customerName}
-                      {hasOverdue && <AlertTriangle className="h-4 w-4 text-destructive" />}
-                      {hasDueSoon && !hasOverdue && <Clock className="h-4 w-4 text-amber-500" />}
-                    </CardTitle>
-                    <div className="flex items-center gap-1">
-                      {customer.bills.length > 1 && (
-                        <Badge variant="secondary">{customer.bills.length} Bills</Badge>
-                      )}
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="sm">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => generateDetailedPDFStatement(customer)}>
-                            <FileText className="h-4 w-4 mr-2" />
-                            Generate Statement
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => {
-                            setSelectedCustomerPhone(customer.customerPhone);
-                            setViewingPaymentHistorySaleId(customer.bills[0]?.id);
-                            setPaymentHistoryDialogOpen(true);
-                          }}>
-                            <History className="h-4 w-4 mr-2" />
-                            Payment History
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => {
-                            setSelectedCustomerPhone(customer.customerPhone);
-                            setViewingNotesSaleId(customer.bills[0]?.id);
-                            setNotesDialogOpen(true);
-                          }}>
-                            <MessageSquare className="h-4 w-4 mr-2" />
-                            View Notes
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+              <div 
+                key={customer.customerPhone} 
+                className="glass-card rounded-2xl p-6 border border-white/20 hover-elevate group cursor-pointer"
+                onClick={() => setSelectedCustomerPhone(customer.customerPhone)}
+              >
+                {/* Header */}
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-xl ${
+                      hasOverdue ? 'bg-red-100 text-red-600' : 
+                      hasDueSoon ? 'bg-amber-100 text-amber-600' : 
+                      'bg-emerald-100 text-emerald-600'
+                    }`}>
+                      <User className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-slate-800 group-hover:text-purple-600 transition-colors">
+                        {customer.customerName}
+                      </h3>
+                      <p className="text-sm text-slate-600 flex items-center gap-1">
+                        <Phone className="h-3 w-3" />
+                        {customer.customerPhone}
+                      </p>
                     </div>
                   </div>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="space-y-2 text-sm">
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <Phone className="h-4 w-4" />
-                      <span>{customer.customerPhone}</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <Calendar className="h-4 w-4" />
-                      <span>{customer.oldestBillDate.toLocaleDateString()}</span>
-                      <Badge 
-                        variant={customer.daysOverdue > 30 ? "destructive" : "secondary"} 
-                        className="ml-auto"
-                      >
-                        {customer.daysOverdue} days
+                  <div className="flex items-center gap-1">
+                    {customer.bills.length > 1 && (
+                      <Badge variant="secondary" className="glass-card border-white/20">
+                        {customer.bills.length} bills
                       </Badge>
-                    </div>
+                    )}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                        <Button variant="ghost" size="sm" className="opacity-0 group-hover:opacity-100 transition-opacity">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="glass-card border-white/20">
+                        <DropdownMenuItem onClick={(e) => {
+                          e.stopPropagation();
+                          generateDetailedPDFStatement(customer);
+                        }}>
+                          <Download className="h-4 w-4 mr-2" />
+                          Download Statement
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={(e) => {
+                          e.stopPropagation();
+                          setViewingPaymentHistoryCustomerPhone(customer.customerPhone);
+                          setPaymentHistoryDialogOpen(true);
+                        }}>
+                          <History className="h-4 w-4 mr-2" />
+                          Payment History
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={(e) => {
+                          e.stopPropagation();
+                          setViewingNotesCustomerPhone(customer.customerPhone);
+                          setNotesDialogOpen(true);
+                        }}>
+                          <MessageSquare className="h-4 w-4 mr-2" />
+                          View Notes
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
+                </div>
 
-                  <div className="pt-3 border-t border-border space-y-1 font-mono text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Total:</span>
-                      <span>Rs. {Math.round(customer.totalAmount).toLocaleString()}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Paid:</span>
-                      <span>Rs. {Math.round(customer.totalPaid).toLocaleString()}</span>
-                    </div>
-                    <div className="flex justify-between font-semibold text-base text-destructive">
-                      <span>Outstanding:</span>
-                      <span>Rs. {Math.round(customer.totalOutstanding).toLocaleString()}</span>
-                    </div>
+                {/* Status Badges */}
+                <div className="flex items-center gap-2 mb-4 flex-wrap">
+                  <div className="flex items-center gap-2 text-sm text-slate-600">
+                    <Calendar className="h-3 w-3" />
+                    {customer.oldestBillDate.toLocaleDateString()}
                   </div>
+                  <Badge 
+                    variant={customer.daysOverdue > 30 ? "destructive" : "secondary"} 
+                    className="glass-card border-white/20 ml-auto"
+                  >
+                    {customer.daysOverdue} days
+                  </Badge>
+                  {hasOverdue && (
+                    <Badge variant="destructive" className="glass-destructive">
+                      <AlertTriangle className="h-3 w-3 mr-1" />
+                      Overdue
+                    </Badge>
+                  )}
+                  {hasManualBalance && (
+                    <Badge variant="outline" className="glass-outline text-blue-600">
+                      <Plus className="h-3 w-3 mr-1" />
+                      Manual
+                    </Badge>
+                  )}
+                </div>
 
-                  <div className="flex flex-col gap-2">
-                    <Button
-                      className="w-full"
-                      variant="outline"
-                      onClick={() => setSelectedCustomerPhone(customer.customerPhone)}
-                    >
-                      <Eye className="h-4 w-4 mr-2" />
-                      View Details
-                    </Button>
-                    <Button
-                      className="w-full"
-                      variant="default"
-                      onClick={() => {
-                        setSelectedCustomerPhone(customer.customerPhone);
-                        setPaymentDialogOpen(true);
-                        setPaymentAmount(Math.round(customer.totalOutstanding).toString());
-                      }}
-                    >
-                      <Banknote className="h-4 w-4 mr-2" />
-                      Record Payment
-                    </Button>
+                {/* Amount Summary */}
+                <div className="space-y-3 mb-4">
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-slate-600">Total Amount</span>
+                    <span className="font-mono font-semibold text-slate-800">
+                      Rs. {Math.round(customer.totalAmount).toLocaleString()}
+                    </span>
                   </div>
-                </CardContent>
-              </Card>
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-slate-600">Amount Paid</span>
+                    <span className="font-mono font-semibold text-emerald-600">
+                      Rs. {Math.round(customer.totalPaid).toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-base border-t border-slate-200 pt-2">
+                    <span className="font-semibold text-slate-800">Outstanding</span>
+                    <span className="font-mono font-bold text-red-600">
+                      Rs. {Math.round(customer.totalOutstanding).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex gap-2">
+                  <Button
+                    className="flex-1 glass-card border-white/20 text-slate-700 hover:border-purple-300 transition-all"
+                    variant="outline"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedCustomerPhone(customer.customerPhone);
+                    }}
+                  >
+                    <Eye className="h-4 w-4 mr-2" />
+                    Details
+                  </Button>
+                  <Button
+                    className="flex-1 gradient-bg text-white hover:shadow-lg transition-all"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedCustomerPhone(customer.customerPhone);
+                      setPaymentDialogOpen(true);
+                      setPaymentAmount(Math.round(customer.totalOutstanding).toString());
+                    }}
+                  >
+                    <Banknote className="h-4 w-4 mr-2" />
+                    Pay
+                  </Button>
+                </div>
+              </div>
             );
           })}
         </div>
@@ -1200,31 +1282,34 @@ export default function UnpaidBills() {
 
       {/* Customer Bills Details Dialog */}
       <Dialog open={!!selectedCustomerPhone && !paymentDialogOpen} onOpenChange={(open) => !open && setSelectedCustomerPhone(null)}>
-        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto glass-card border-white/20">
           <DialogHeader>
-            <DialogTitle>Customer Bills - {selectedCustomer?.customerName}</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <User className="h-5 w-5" />
+              Customer Bills - {selectedCustomer?.customerName}
+            </DialogTitle>
             <DialogDescription>
-              All unpaid bills, payment history, and account notes
+              Comprehensive view of all bills, payment history, and account notes
             </DialogDescription>
           </DialogHeader>
           {selectedCustomer && (
             <div className="space-y-6">
               {/* Customer Info */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-muted rounded-md text-sm">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-slate-50 rounded-lg text-sm">
                 <div>
-                  <p className="text-muted-foreground">Customer</p>
+                  <p className="text-slate-600">Customer</p>
                   <p className="font-medium">{selectedCustomer.customerName}</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground">Phone</p>
+                  <p className="text-slate-600">Phone</p>
                   <p className="font-medium">{selectedCustomer.customerPhone}</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground">Total Bills</p>
+                  <p className="text-slate-600">Total Bills</p>
                   <p className="font-medium">{selectedCustomer.bills.length}</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground">Oldest Bill</p>
+                  <p className="text-slate-600">Oldest Bill</p>
                   <p className="font-medium">{selectedCustomer.oldestBillDate.toLocaleDateString()}</p>
                 </div>
               </div>
@@ -1234,10 +1319,10 @@ export default function UnpaidBills() {
                 <Button
                   variant="outline"
                   onClick={() => {
-                    setViewingPaymentHistorySaleId(selectedCustomer.bills[0]?.id);
+                    setViewingPaymentHistoryCustomerPhone(selectedCustomer.customerPhone);
                     setPaymentHistoryDialogOpen(true);
                   }}
-                  className="flex items-center gap-2"
+                  className="flex items-center gap-2 glass-card border-white/20"
                 >
                   <History className="h-4 w-4" />
                   Payment History
@@ -1245,10 +1330,10 @@ export default function UnpaidBills() {
                 <Button
                   variant="outline"
                   onClick={() => {
-                    setViewingNotesSaleId(selectedCustomer.bills[0]?.id);
+                    setViewingNotesCustomerPhone(selectedCustomer.customerPhone);
                     setNotesDialogOpen(true);
                   }}
-                  className="flex items-center gap-2"
+                  className="flex items-center gap-2 glass-card border-white/20"
                 >
                   <MessageSquare className="h-4 w-4" />
                   View Notes
@@ -1256,57 +1341,70 @@ export default function UnpaidBills() {
                 <Button
                   variant="outline"
                   onClick={() => generateDetailedPDFStatement(selectedCustomer)}
-                  className="flex items-center gap-2"
+                  className="flex items-center gap-2 glass-card border-white/20"
                 >
-                  <FileText className="h-4 w-4" />
-                  Generate Statement
+                  <Download className="h-4 w-4" />
+                  Download Statement
                 </Button>
               </div>
 
               {/* Bills List */}
               <div className="space-y-3">
-                <h3 className="font-medium">Bills</h3>
+                <h3 className="font-medium text-slate-800">Bills</h3>
                 {selectedCustomer.bills.map((bill) => {
                   const billTotal = parseFloat(bill.totalAmount);
                   const billPaid = parseFloat(bill.amountPaid);
                   const billOutstanding = Math.round(billTotal - billPaid);
+                  const isManual = bill.isManualBalance;
                   
                   return (
-                    <Card key={bill.id}>
+                    <Card key={bill.id} className={isManual ? "border-blue-200 bg-blue-50" : "glass-card border-white/20"}>
                       <CardContent className="p-4">
                         <div className="flex items-center justify-between gap-4">
                           <div className="flex-1 space-y-2">
                             <div className="flex items-center gap-2">
-                              <Receipt className="h-4 w-4 text-muted-foreground" />
+                              <Receipt className="h-4 w-4 text-slate-600" />
                               <span className="text-sm font-medium">
                                 {new Date(bill.createdAt).toLocaleDateString()} - {new Date(bill.createdAt).toLocaleTimeString()}
                               </span>
                               {getDueDateBadge(bill.dueDate)}
+                              {isManual && (
+                                <Badge variant="outline" className="glass-outline text-blue-600">
+                                  Manual Balance
+                                </Badge>
+                              )}
                             </div>
+                            {bill.notes && isManual && (
+                              <div className="text-sm text-slate-600 bg-white p-2 rounded-md">
+                                <strong>Notes:</strong> {bill.notes}
+                              </div>
+                            )}
                             <div className="grid grid-cols-3 gap-2 text-xs font-mono">
                               <div>
-                                <span className="text-muted-foreground">Total: </span>
+                                <span className="text-slate-600">Total: </span>
                                 <span>Rs. {Math.round(billTotal).toLocaleString()}</span>
                               </div>
                               <div>
-                                <span className="text-muted-foreground">Paid: </span>
+                                <span className="text-slate-600">Paid: </span>
                                 <span>Rs. {Math.round(billPaid).toLocaleString()}</span>
                               </div>
                               {billOutstanding > 0 && (
                                 <div>
-                                  <span className="text-muted-foreground">Due: </span>
-                                  <span className="text-destructive font-semibold">Rs. {billOutstanding.toLocaleString()}</span>
+                                  <span className="text-slate-600">Due: </span>
+                                  <span className="text-red-600 font-semibold">Rs. {billOutstanding.toLocaleString()}</span>
                                 </div>
                               )}
                             </div>
                           </div>
                           <div className="flex gap-2">
-                            <Link href={`/bill/${bill.id}`}>
-                              <Button variant="outline" size="sm">
-                                <Printer className="h-4 w-4 mr-1" />
-                                Print
-                              </Button>
-                            </Link>
+                            {!isManual && (
+                              <Link href={`/bill/${bill.id}`}>
+                                <Button variant="outline" size="sm" className="glass-card border-white/20">
+                                  <Printer className="h-4 w-4 mr-1" />
+                                  Print
+                                </Button>
+                              </Link>
+                            )}
                           </div>
                         </div>
                       </CardContent>
@@ -1316,23 +1414,23 @@ export default function UnpaidBills() {
               </div>
 
               {/* Consolidated Totals */}
-              <div className="p-4 bg-muted rounded-md space-y-2 text-sm font-mono">
+              <div className="p-4 bg-slate-50 rounded-lg space-y-2 text-sm font-mono">
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Total Amount:</span>
+                  <span className="text-slate-600">Total Amount:</span>
                   <span>Rs. {Math.round(selectedCustomer.totalAmount).toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Amount Paid:</span>
+                  <span className="text-slate-600">Amount Paid:</span>
                   <span>Rs. {Math.round(selectedCustomer.totalPaid).toLocaleString()}</span>
                 </div>
-                <div className="flex justify-between font-semibold text-base text-destructive border-t border-border pt-2">
+                <div className="flex justify-between font-semibold text-base text-red-600 border-t border-slate-300 pt-2">
                   <span>Total Outstanding:</span>
                   <span>Rs. {Math.round(selectedCustomer.totalOutstanding).toLocaleString()}</span>
                 </div>
               </div>
 
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setSelectedCustomerPhone(null)}>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setSelectedCustomerPhone(null)} className="glass-card border-white/20">
                   Close
                 </Button>
                 <Button
@@ -1340,11 +1438,12 @@ export default function UnpaidBills() {
                     setPaymentDialogOpen(true);
                     setPaymentAmount(Math.round(selectedCustomer.totalOutstanding).toString());
                   }}
+                  className="gradient-bg text-white"
                 >
                   <Banknote className="h-4 w-4 mr-2" />
                   Record Payment
                 </Button>
-              </div>
+              </DialogFooter>
             </div>
           )}
         </DialogContent>
@@ -1352,34 +1451,37 @@ export default function UnpaidBills() {
 
       {/* Record Payment Dialog */}
       <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
-        <DialogContent>
+        <DialogContent className="glass-card border-white/20">
           <DialogHeader>
-            <DialogTitle>Record Payment</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <Banknote className="h-5 w-5" />
+              Record Payment
+            </DialogTitle>
             <DialogDescription>
-              Update payment for {selectedCustomer?.customerName}
+              Process payment for {selectedCustomer?.customerName}
             </DialogDescription>
           </DialogHeader>
           {selectedCustomer && (
             <div className="space-y-4">
-              <div className="p-4 bg-muted rounded-md space-y-2 text-sm">
+              <div className="p-4 bg-slate-50 rounded-lg space-y-2 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Total Bills:</span>
+                  <span className="text-slate-600">Total Bills:</span>
                   <span className="font-mono">Rs. {Math.round(selectedCustomer.totalAmount).toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Already Paid:</span>
+                  <span className="text-slate-600">Already Paid:</span>
                   <span className="font-mono">Rs. {Math.round(selectedCustomer.totalPaid).toLocaleString()}</span>
                 </div>
-                <div className="flex justify-between font-semibold">
+                <div className="flex justify-between font-semibold border-t border-slate-300 pt-2">
                   <span>Total Outstanding:</span>
-                  <span className="font-mono">
+                  <span className="font-mono text-red-600">
                     Rs. {Math.round(selectedCustomer.totalOutstanding).toLocaleString()}
                   </span>
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="paymentAmount">Payment Amount</Label>
+                <Label htmlFor="paymentAmount">Payment Amount (Rs.)</Label>
                 <Input
                   id="paymentAmount"
                   type="number"
@@ -1387,10 +1489,27 @@ export default function UnpaidBills() {
                   placeholder="0"
                   value={paymentAmount}
                   onChange={(e) => setPaymentAmount(e.target.value)}
+                  className="glass-card border-white/20"
                 />
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-slate-600">
                   Payment will be applied to oldest bills first
                 </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="paymentMethod">Payment Method</Label>
+                <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+                  <SelectTrigger className="glass-card border-white/20">
+                    <SelectValue placeholder="Select payment method" />
+                  </SelectTrigger>
+                  <SelectContent className="glass-card border-white/20">
+                    <SelectItem value="cash">Cash</SelectItem>
+                    <SelectItem value="card">Card</SelectItem>
+                    <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                    <SelectItem value="upi">UPI</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="space-y-2">
@@ -1401,20 +1520,26 @@ export default function UnpaidBills() {
                   value={paymentNotes}
                   onChange={(e) => setPaymentNotes(e.target.value)}
                   rows={3}
+                  className="glass-card border-white/20"
                 />
               </div>
 
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setPaymentDialogOpen(false)}>
+              <DialogFooter>
+                <Button 
+                  variant="outline" 
+                  onClick={() => setPaymentDialogOpen(false)}
+                  className="glass-card border-white/20"
+                >
                   Cancel
                 </Button>
                 <Button
                   onClick={handleRecordPayment}
                   disabled={recordPaymentMutation.isPending}
+                  className="gradient-bg text-white"
                 >
-                  {recordPaymentMutation.isPending ? "Recording..." : "Record Payment"}
+                  {recordPaymentMutation.isPending ? "Processing..." : "Record Payment"}
                 </Button>
-              </div>
+              </DialogFooter>
             </div>
           )}
         </DialogContent>
@@ -1422,36 +1547,39 @@ export default function UnpaidBills() {
 
       {/* Payment History Dialog */}
       <Dialog open={paymentHistoryDialogOpen} onOpenChange={setPaymentHistoryDialogOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl glass-card border-white/20">
           <DialogHeader>
-            <DialogTitle>Payment History</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <History className="h-5 w-5" />
+              Payment History
+            </DialogTitle>
             <DialogDescription>
               All payment records for this customer
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             {paymentHistory.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
+              <div className="text-center py-8 text-slate-600">
                 <History className="h-12 w-12 mx-auto mb-4 opacity-50" />
                 <p>No payment history found</p>
               </div>
             ) : (
               <div className="space-y-3 max-h-96 overflow-y-auto">
                 {paymentHistory.map((payment) => (
-                  <Card key={payment.id}>
+                  <Card key={payment.id} className="glass-card border-white/20">
                     <CardContent className="p-4">
                       <div className="flex items-center justify-between">
                         <div className="space-y-1">
                           <div className="flex items-center gap-2">
                             <CheckCircle className="h-4 w-4 text-green-500" />
-                            <span className="font-medium">Rs. {payment.amount.toFixed(2)}</span>
-                            <Badge variant="outline">{payment.paymentMethod}</Badge>
+                            <span className="font-medium">Rs. {parseFloat(payment.amount).toFixed(2)}</span>
+                            <Badge variant="outline" className="glass-card border-white/20">{payment.paymentMethod}</Badge>
                           </div>
-                          <div className="text-sm text-muted-foreground">
-                            {new Date(payment.paymentDate).toLocaleDateString()} at {new Date(payment.paymentDate).toLocaleTimeString()}
+                          <div className="text-sm text-slate-600">
+                            {new Date(payment.createdAt).toLocaleDateString()} at {new Date(payment.createdAt).toLocaleTimeString()}
                           </div>
                           {payment.notes && (
-                            <div className="text-sm bg-muted p-2 rounded-md mt-2">
+                            <div className="text-sm bg-slate-50 p-2 rounded-md mt-2">
                               {payment.notes}
                             </div>
                           )}
@@ -1463,7 +1591,11 @@ export default function UnpaidBills() {
               </div>
             )}
             <div className="flex justify-end">
-              <Button variant="outline" onClick={() => setPaymentHistoryDialogOpen(false)}>
+              <Button 
+                variant="outline" 
+                onClick={() => setPaymentHistoryDialogOpen(false)}
+                className="glass-card border-white/20"
+              >
                 Close
               </Button>
             </div>
@@ -1473,9 +1605,12 @@ export default function UnpaidBills() {
 
       {/* Notes Dialog */}
       <Dialog open={notesDialogOpen} onOpenChange={setNotesDialogOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl glass-card border-white/20">
           <DialogHeader>
-            <DialogTitle>Balance Notes</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <MessageSquare className="h-5 w-5" />
+              Balance Notes
+            </DialogTitle>
             <DialogDescription>
               Add and view notes for this customer's balance
             </DialogDescription>
@@ -1490,11 +1625,12 @@ export default function UnpaidBills() {
                 value={newNote}
                 onChange={(e) => setNewNote(e.target.value)}
                 rows={3}
+                className="glass-card border-white/20"
               />
               <Button
                 onClick={handleAddNote}
                 disabled={addNoteMutation.isPending || !newNote.trim()}
-                className="w-full"
+                className="w-full gradient-bg text-white"
               >
                 {addNoteMutation.isPending ? "Adding..." : "Add Note"}
               </Button>
@@ -1502,19 +1638,19 @@ export default function UnpaidBills() {
 
             {/* Existing Notes */}
             <div className="space-y-3 max-h-96 overflow-y-auto">
-              <h4 className="font-medium">Previous Notes</h4>
+              <h4 className="font-medium text-slate-800">Previous Notes</h4>
               {balanceNotes.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
+                <div className="text-center py-8 text-slate-600">
                   <MessageSquare className="h-12 w-12 mx-auto mb-4 opacity-50" />
                   <p>No notes found</p>
                 </div>
               ) : (
                 balanceNotes.map((note) => (
-                  <Card key={note.id}>
+                  <Card key={note.id} className="glass-card border-white/20">
                     <CardContent className="p-4">
                       <div className="space-y-2">
                         <p className="text-sm">{note.note}</p>
-                        <div className="flex justify-between text-xs text-muted-foreground">
+                        <div className="flex justify-between text-xs text-slate-600">
                           <span>By: {note.createdBy}</span>
                           <span>{new Date(note.createdAt).toLocaleDateString()}</span>
                         </div>
@@ -1526,7 +1662,11 @@ export default function UnpaidBills() {
             </div>
 
             <div className="flex justify-end">
-              <Button variant="outline" onClick={() => setNotesDialogOpen(false)}>
+              <Button 
+                variant="outline" 
+                onClick={() => setNotesDialogOpen(false)}
+                className="glass-card border-white/20"
+              >
                 Close
               </Button>
             </div>
@@ -1536,11 +1676,14 @@ export default function UnpaidBills() {
 
       {/* Manual Balance Dialog */}
       <Dialog open={manualBalanceDialogOpen} onOpenChange={setManualBalanceDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md glass-card border-white/20">
           <DialogHeader>
-            <DialogTitle>Add Pending Balance</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <Plus className="h-5 w-5" />
+              Add Pending Balance
+            </DialogTitle>
             <DialogDescription>
-              Add a pending balance for a customer without creating a sale from POS
+              Create a pending balance entry without POS sale
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -1550,7 +1693,7 @@ export default function UnpaidBills() {
                 <Input
                   value={manualBalanceForm.customerName}
                   onChange={(e) => setManualBalanceForm(prev => ({ ...prev, customerName: e.target.value }))}
-                  className="pr-12"
+                  className="pr-12 glass-card border-white/20"
                   placeholder="Type or select customer"
                 />
                 <Popover open={customerSuggestionsOpen} onOpenChange={setCustomerSuggestionsOpen}>
@@ -1560,10 +1703,10 @@ export default function UnpaidBills() {
                       size="sm"
                       className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
                     >
-                      <Search className="h-4 w-4 text-muted-foreground" />
+                      <Search className="h-4 w-4 text-slate-400" />
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-80 p-0" align="start">
+                  <PopoverContent className="w-80 p-0 glass-card border-white/20" align="start">
                     <Command>
                       <CommandInput placeholder="Search customers..." />
                       <CommandList>
@@ -1586,7 +1729,7 @@ export default function UnpaidBills() {
                                 <User className="h-4 w-4 text-blue-500" />
                                 <span className="font-medium">{customer.customerName}</span>
                               </div>
-                              <div className="flex items-center gap-4 text-xs text-muted-foreground w-full pl-6">
+                              <div className="flex items-center gap-4 text-xs text-slate-600 w-full pl-6">
                                 <div className="flex items-center gap-1">
                                   <Phone className="h-3 w-3" />
                                   {customer.customerPhone}
@@ -1612,16 +1755,18 @@ export default function UnpaidBills() {
                 placeholder="Enter phone number"
                 value={manualBalanceForm.customerPhone}
                 onChange={(e) => setManualBalanceForm(prev => ({ ...prev, customerPhone: e.target.value }))}
+                className="glass-card border-white/20"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="totalAmount">Amount</Label>
+              <Label htmlFor="totalAmount">Amount (Rs.)</Label>
               <Input
                 id="totalAmount"
                 type="number"
                 placeholder="Enter amount"
                 value={manualBalanceForm.totalAmount}
                 onChange={(e) => setManualBalanceForm(prev => ({ ...prev, totalAmount: e.target.value }))}
+                className="glass-card border-white/20"
               />
             </div>
             <div className="space-y-2">
@@ -1631,18 +1776,21 @@ export default function UnpaidBills() {
                 type="date"
                 value={manualBalanceForm.dueDate}
                 onChange={(e) => setManualBalanceForm(prev => ({ ...prev, dueDate: e.target.value }))}
+                className="glass-card border-white/20"
               />
             </div>
             <div className="space-y-2">
               <Label htmlFor="notes">Notes (Optional)</Label>
-              <Input
+              <Textarea
                 id="notes"
                 placeholder="Add notes about this balance"
                 value={manualBalanceForm.notes}
                 onChange={(e) => setManualBalanceForm(prev => ({ ...prev, notes: e.target.value }))}
+                rows={3}
+                className="glass-card border-white/20"
               />
             </div>
-            <div className="flex justify-end gap-2">
+            <DialogFooter>
               <Button
                 variant="outline"
                 onClick={() => {
@@ -1655,6 +1803,7 @@ export default function UnpaidBills() {
                     notes: ""
                   });
                 }}
+                className="glass-card border-white/20"
               >
                 Cancel
               </Button>
@@ -1667,10 +1816,11 @@ export default function UnpaidBills() {
                   createManualBalanceMutation.mutate(manualBalanceForm);
                 }}
                 disabled={createManualBalanceMutation.isPending}
+                className="gradient-bg text-white"
               >
                 {createManualBalanceMutation.isPending ? "Adding..." : "Add Balance"}
               </Button>
-            </div>
+            </DialogFooter>
           </div>
         </DialogContent>
       </Dialog>
