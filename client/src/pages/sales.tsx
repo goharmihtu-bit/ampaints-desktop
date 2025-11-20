@@ -1,5 +1,5 @@
-// sales.tsx - Updated with detailed bill items and payment history
-import { useState, useMemo } from "react";
+// sales.tsx - Updated with auto-update and clean PDF features
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -84,15 +84,29 @@ const formatDate = (date: Date | string) => {
   return `${day}-${month}-${year}`;
 };
 
-// Format time to hh:mm:ss
+// Format time to hh:mm
 const formatTime = (date: Date | string) => {
   const d = new Date(date);
   return d.toLocaleTimeString('en-PK', { 
     hour: '2-digit', 
     minute: '2-digit',
-    second: '2-digit',
     hour12: false 
   });
+};
+
+// Format phone number for WhatsApp
+const formatPhoneForWhatsApp = (phone: string): string => {
+  let cleaned = phone.replace(/\D/g, '');
+  
+  if (cleaned.startsWith('0')) {
+    cleaned = '92' + cleaned.substring(1);
+  }
+  
+  if (!cleaned.startsWith('92')) {
+    cleaned = '92' + cleaned;
+  }
+  
+  return '+' + cleaned;
 };
 
 // Get receipt settings from localStorage
@@ -121,11 +135,12 @@ const getReceiptSettings = () => {
 };
 
 // Sale Card Actions Component
-const SaleCardActions = ({ sale, onView, onDownload, onShare }: { 
+const SaleCardActions = ({ sale, onView, onDownload, onShare, onPrint }: { 
   sale: SaleWithItems;
   onView: (sale: SaleWithItems) => void;
   onDownload: (sale: SaleWithItems) => void;
   onShare: (sale: SaleWithItems) => void;
+  onPrint: (sale: SaleWithItems) => void;
 }) => (
   <DropdownMenu>
     <DropdownMenuTrigger asChild>
@@ -136,7 +151,7 @@ const SaleCardActions = ({ sale, onView, onDownload, onShare }: {
     <DropdownMenuContent align="end">
       <DropdownMenuItem onClick={() => onView(sale)}>
         <Eye className="h-4 w-4 mr-2" />
-        View Details
+        View Bill
       </DropdownMenuItem>
       <DropdownMenuItem onClick={() => onView(sale)}>
         <FileText className="h-4 w-4 mr-2" />
@@ -150,11 +165,9 @@ const SaleCardActions = ({ sale, onView, onDownload, onShare }: {
         <Share2 className="h-4 w-4 mr-2" />
         Share via WhatsApp
       </DropdownMenuItem>
-      <DropdownMenuItem asChild>
-        <Link href={`/bill/${sale.id}`}>
-          <Printer className="h-4 w-4 mr-2" />
-          Print Bill
-        </Link>
+      <DropdownMenuItem onClick={() => onPrint(sale)}>
+        <Printer className="h-4 w-4 mr-2" />
+        Print Bill
       </DropdownMenuItem>
     </DropdownMenuContent>
   </DropdownMenu>
@@ -172,8 +185,18 @@ export default function Sales() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: sales = [], isLoading } = useQuery<Sale[]>({
+  // Auto-refresh sales data every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [queryClient]);
+
+  const { data: sales = [], isLoading, refetch } = useQuery<Sale[]>({
     queryKey: ["/api/sales"],
+    refetchInterval: 30000, // Auto-refresh every 30 seconds
   });
 
   // Fetch detailed sale data when a sale is selected
@@ -184,13 +207,13 @@ export default function Sales() {
 
   // Add refresh function
   const refreshSales = () => {
-    queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
+    refetch();
     queryClient.invalidateQueries({ queryKey: ["/api/sales", selectedSale?.id] });
     toast({ title: "Sales data refreshed" });
   };
 
-  // Generate detailed sale bill PDF with glassy design
-  const generateDetailedSalePDF = (sale: SaleWithItems) => {
+  // Generate clean sale bill PDF
+  const generateSalePDF = (sale: SaleWithItems) => {
     const receiptSettings = getReceiptSettings();
     const saleDate = new Date(sale.createdAt);
     const formattedDate = formatDate(saleDate);
@@ -203,322 +226,309 @@ export default function Sales() {
         <meta charset="UTF-8">
         <title>Sale Bill - ${sale.id.slice(-8)}</title>
         <style>
-          @page { size: A4; margin: 15mm; }
+          @page { 
+            size: A4; 
+            margin: 20mm;
+            @top-left {
+              content: "${receiptSettings.businessName}";
+              font-size: 10px;
+              color: #666;
+            }
+            @bottom-center {
+              content: "Page " counter(page) " of " counter(pages);
+              font-size: 10px;
+              color: #666;
+            }
+          }
+          
           body { 
-            font-family: 'Segoe UI', system-ui, sans-serif; 
-            color: #2d3748; 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            color: #333; 
             margin: 0; 
             padding: 0;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
+            line-height: 1.4;
           }
-          .container {
-            max-width: 100%;
-            margin: 0 auto;
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(20px);
-            border-radius: 24px;
-            box-shadow: 
-              0 20px 40px rgba(0, 0, 0, 0.1),
-              0 0 0 1px rgba(255, 255, 255, 0.2);
-            overflow: hidden;
-            margin: 20px;
-          }
+          
           .header {
-            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
-            color: white;
-            padding: 30px;
             text-align: center;
-            position: relative;
-            overflow: hidden;
+            padding: 25px 0;
+            border-bottom: 2px solid #e5e7eb;
+            margin-bottom: 30px;
           }
-          .header::before {
-            content: '';
-            position: absolute;
-            top: -50%;
-            left: -50%;
-            width: 200%;
-            height: 200%;
-            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0) 70%);
-          }
+          
           .header h1 {
-            margin: 0;
-            font-size: 32px;
-            font-weight: 700;
-            letter-spacing: -0.5px;
-            position: relative;
-          }
-          .header p {
-            margin: 8px 0 0 0;
-            font-size: 16px;
-            opacity: 0.9;
-            position: relative;
-          }
-          .store-info {
-            background: rgba(255, 255, 255, 0.8);
-            backdrop-filter: blur(10px);
-            padding: 20px;
-            margin: 20px;
-            border-radius: 16px;
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-            text-align: center;
-          }
-          .store-info h2 {
-            margin: 0 0 12px 0;
-            color: #1a202c;
-            font-size: 20px;
+            margin: 0 0 8px 0;
+            color: #1f2937;
+            font-size: 28px;
             font-weight: 600;
           }
+          
+          .header .subtitle {
+            color: #6b7280;
+            font-size: 14px;
+            margin: 0;
+          }
+          
+          .store-info {
+            text-align: center;
+            margin-bottom: 25px;
+            padding: 20px;
+            background: #f8fafc;
+            border-radius: 8px;
+            border: 1px solid #e5e7eb;
+          }
+          
+          .store-info h2 {
+            margin: 0 0 8px 0;
+            color: #1f2937;
+            font-size: 18px;
+            font-weight: 600;
+          }
+          
+          .store-info p {
+            margin: 4px 0;
+            color: #6b7280;
+            font-size: 13px;
+          }
+          
           .info-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 20px;
-            margin: 20px;
+            margin: 20px 0;
           }
+          
           .info-card {
-            background: linear-gradient(135deg, #0ea5e9 0%, #3b82f6 100%);
-            color: white;
+            background: #ffffff;
             padding: 20px;
-            border-radius: 16px;
-            box-shadow: 0 8px 32px rgba(59, 130, 246, 0.3);
+            border-radius: 8px;
+            border: 1px solid #e5e7eb;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
           }
+          
           .info-card h3 {
-            margin: 0 0 16px 0;
+            margin: 0 0 15px 0;
+            color: #1f2937;
             font-size: 16px;
             font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 8px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #e5e7eb;
           }
+          
           .info-item {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 8px 0;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 6px 0;
+            border-bottom: 1px solid #f3f4f6;
           }
+          
           .info-label {
+            color: #6b7280;
             font-weight: 500;
-            opacity: 0.9;
           }
+          
           .info-value {
+            color: #1f2937;
             font-weight: 600;
           }
-          .amount-section {
-            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-            color: white;
-            padding: 24px;
-            margin: 20px;
-            border-radius: 16px;
-            box-shadow: 0 8px 32px rgba(245, 158, 11, 0.3);
+          
+          .section {
+            margin-bottom: 30px;
+            page-break-inside: avoid;
           }
+          
+          .section-title {
+            background: #1f2937;
+            color: white;
+            padding: 12px 16px;
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 15px;
+            border-radius: 6px;
+          }
+          
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+            font-size: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+          }
+          
+          th {
+            background: #f8fafc;
+            text-align: left;
+            padding: 12px 10px;
+            font-weight: 600;
+            color: #374151;
+            border-bottom: 2px solid #e5e7eb;
+          }
+          
+          td {
+            padding: 10px;
+            border-bottom: 1px solid #f3f4f6;
+            vertical-align: top;
+          }
+          
+          .amount {
+            text-align: right;
+            font-family: 'Courier New', monospace;
+            font-weight: 600;
+          }
+          
+          .total-row {
+            background: #fefce8;
+            font-weight: 700;
+          }
+          
+          .total-row td {
+            border-bottom: none;
+            border-top: 2px solid #f59e0b;
+            color: #92400e;
+          }
+          
+          .status {
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 10px;
+            font-weight: 600;
+            text-align: center;
+          }
+          
+          .status-paid {
+            background: #d1fae5;
+            color: #065f46;
+          }
+          
+          .status-partial {
+            background: #fef3c7;
+            color: #92400e;
+          }
+          
+          .status-unpaid {
+            background: #fee2e2;
+            color: #991b1b;
+          }
+          
+          .amount-section {
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+          }
+          
           .amount-grid {
             display: grid;
             grid-template-columns: 1fr 1fr 1fr;
             gap: 20px;
             text-align: center;
           }
+          
           .amount-item {
-            padding: 16px;
+            padding: 15px;
           }
+          
           .amount-label {
             font-size: 14px;
-            opacity: 0.9;
+            color: #6b7280;
             margin-bottom: 8px;
+            font-weight: 500;
           }
+          
           .amount-value {
-            font-size: 20px;
+            font-size: 18px;
             font-weight: 700;
-            font-family: 'SF Mono', Monaco, monospace;
+            font-family: 'Courier New', monospace;
+            color: #1f2937;
           }
-          .payment-status {
-            display: inline-block;
-            padding: 10px 20px;
-            border-radius: 25px;
-            font-weight: 600;
-            font-size: 14px;
-            margin: 16px 0 0 0;
-            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
-          }
-          .status-paid {
-            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-          }
-          .status-partial {
-            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-          }
-          .status-unpaid {
-            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-          }
-          .section {
-            margin: 20px;
-          }
-          .section-title {
-            background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
-            color: white;
-            padding: 16px 20px;
-            font-size: 16px;
-            font-weight: 600;
-            margin-bottom: 20px;
-            border-radius: 12px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            box-shadow: 0 4px 16px rgba(107, 114, 128, 0.3);
-          }
-          .items-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 20px;
-            background: rgba(255, 255, 255, 0.9);
-            backdrop-filter: blur(10px);
-            border-radius: 12px;
-            overflow: hidden;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-          }
-          .items-table th {
-            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
-            color: white;
-            text-align: left;
-            padding: 14px 16px;
-            font-size: 12px;
-            font-weight: 600;
-          }
-          .items-table td {
-            padding: 12px 16px;
-            font-size: 11px;
-            border-bottom: 1px solid rgba(0, 0, 0, 0.1);
-          }
-          .items-table .amount {
-            text-align: right;
-            font-family: 'SF Mono', Monaco, monospace;
-            font-weight: 600;
-          }
-          .total-row {
-            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
-            font-weight: 700;
-          }
-          .total-row td {
-            border-bottom: none;
-            color: #92400e;
-          }
+          
           .footer {
-            background: linear-gradient(135deg, #1f2937 0%, #374151 100%);
-            color: white;
-            padding: 24px;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 2px solid #e5e7eb;
             text-align: center;
-            margin-top: 30px;
-          }
-          .footer p {
-            margin: 4px 0;
-            font-size: 12px;
-            opacity: 0.8;
-          }
-          .barcode {
-            text-align: center;
-            margin: 20px 0;
-            font-family: monospace;
-            letter-spacing: 2px;
             color: #6b7280;
-          }
-          .thank-you {
-            text-align: center;
-            margin: 20px 0;
-            font-style: italic;
-            color: #6b7280;
-            font-size: 14px;
-          }
-          .payment-history {
-            background: rgba(255, 255, 255, 0.9);
-            backdrop-filter: blur(10px);
-            border-radius: 12px;
-            padding: 20px;
-            margin: 20px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-          }
-          .payment-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 12px 0;
-            border-bottom: 1px solid rgba(0, 0, 0, 0.1);
-          }
-          .payment-item:last-child {
-            border-bottom: none;
-          }
-          .payment-method {
-            background: #e5e7eb;
-            padding: 4px 8px;
-            border-radius: 6px;
-            font-size: 10px;
-            font-weight: 600;
-          }
-          .notes-section {
-            background: rgba(56, 189, 248, 0.1);
-            padding: 12px 16px;
-            border-radius: 8px;
-            border-left: 4px solid #0ea5e9;
-            margin: 8px 0;
             font-size: 11px;
+          }
+          
+          .notes-section {
+            background: #eff6ff;
+            padding: 12px 16px;
+            border-radius: 6px;
+            border-left: 4px solid #3b82f6;
+            margin: 15px 0;
+            font-size: 12px;
+            color: #1e40af;
+          }
+          
+          .payment-history {
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
           }
         </style>
       </head>
       <body>
-        <div class="container">
-          <div class="header">
-            <h1>🛍️ Sale Bill</h1>
-            <p>Professional Invoice • ${formattedDate} at ${formattedTime}</p>
-          </div>
+        <div class="header">
+          <h1>Sale Bill</h1>
+          <p class="subtitle">Generated on ${formattedDate} at ${formattedTime}</p>
+        </div>
 
-          <div class="store-info">
-            <h2>${receiptSettings.businessName}</h2>
-            <p>${receiptSettings.address}</p>
-            <p><strong>${receiptSettings.dealerText}</strong> ${receiptSettings.dealerBrands}</p>
-          </div>
+        <div class="store-info">
+          <h2>${receiptSettings.businessName}</h2>
+          <p>${receiptSettings.address}</p>
+          <p><strong>${receiptSettings.dealerText}</strong> ${receiptSettings.dealerBrands}</p>
+        </div>
 
-          <div class="info-grid">
-            <div class="info-card">
-              <h3>📄 Bill Information</h3>
-              <div class="info-item">
-                <span class="info-label">Bill ID:</span>
-                <span class="info-value">${sale.id.slice(-8).toUpperCase()}</span>
-              </div>
-              <div class="info-item">
-                <span class="info-label">Date:</span>
-                <span class="info-value">${formattedDate}</span>
-              </div>
-              <div class="info-item">
-                <span class="info-label">Time:</span>
-                <span class="info-value">${formattedTime}</span>
-              </div>
-              ${sale.dueDate ? `
-              <div class="info-item">
-                <span class="info-label">Due Date:</span>
-                <span class="info-value">${formatDate(sale.dueDate)}</span>
-              </div>
-              ` : ''}
+        <div class="info-grid">
+          <div class="info-card">
+            <h3>Bill Information</h3>
+            <div class="info-item">
+              <span class="info-label">Bill ID:</span>
+              <span class="info-value">${sale.id.slice(-8).toUpperCase()}</span>
             </div>
+            <div class="info-item">
+              <span class="info-label">Date:</span>
+              <span class="info-value">${formattedDate}</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Time:</span>
+              <span class="info-value">${formattedTime}</span>
+            </div>
+            ${sale.dueDate ? `
+            <div class="info-item">
+              <span class="info-label">Due Date:</span>
+              <span class="info-value">${formatDate(sale.dueDate)}</span>
+            </div>
+            ` : ''}
+          </div>
 
-            <div class="info-card">
-              <h3>👤 Customer Information</h3>
-              <div class="info-item">
-                <span class="info-label">Name:</span>
-                <span class="info-value">${sale.customerName}</span>
-              </div>
-              <div class="info-item">
-                <span class="info-label">Phone:</span>
-                <span class="info-value">${sale.customerPhone}</span>
-              </div>
+          <div class="info-card">
+            <h3>Customer Information</h3>
+            <div class="info-item">
+              <span class="info-label">Name:</span>
+              <span class="info-value">${sale.customerName}</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Phone:</span>
+              <span class="info-value">${sale.customerPhone}</span>
             </div>
           </div>
+        </div>
     `;
 
     // Notes Section
     if (sale.notes) {
       pdfHTML += `
-          <div class="notes-section">
-            <strong>📝 Additional Notes:</strong> ${sale.notes}
-          </div>
+        <div class="notes-section">
+          <strong>Additional Notes:</strong> ${sale.notes}
+        </div>
       `;
     }
 
@@ -526,28 +536,28 @@ export default function Sales() {
     if (sale.saleItems && sale.saleItems.length > 0) {
       pdfHTML += `
         <div class="section">
-          <div class="section-title">🛒 Items Details • ${sale.saleItems.length} Items</div>
-          <table class="items-table">
+          <div class="section-title">Items Details • ${sale.saleItems.length} Items</div>
+          <table>
             <thead>
               <tr>
                 <th>Product Description</th>
                 <th>Qty</th>
-                <th>Rate</th>
-                <th>Amount</th>
+                <th class="amount">Rate</th>
+                <th class="amount">Amount</th>
               </tr>
             </thead>
             <tbody>
       `;
       
-      sale.saleItems.forEach((item, index) => {
+      sale.saleItems.forEach((item) => {
         const productLine = `${item.color.variant.product.productName} - ${item.color.colorName} ${item.color.colorCode} - ${item.color.variant.packingSize}`;
         
         pdfHTML += `
               <tr>
                 <td>${productLine}</td>
                 <td>${item.quantity}</td>
-                <td class="amount">Rs. ${Math.round(parseFloat(item.rate)).toLocaleString()}</td>
-                <td class="amount">Rs. ${Math.round(parseFloat(item.subtotal)).toLocaleString()}</td>
+                <td class="amount">Rs. ${parseFloat(item.rate).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td class="amount">Rs. ${parseFloat(item.subtotal).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
               </tr>
         `;
       });
@@ -555,7 +565,7 @@ export default function Sales() {
       pdfHTML += `
               <tr class="total-row">
                 <td colspan="3"><strong>GRAND TOTAL</strong></td>
-                <td class="amount"><strong>Rs. ${Math.round(parseFloat(sale.totalAmount)).toLocaleString()}</strong></td>
+                <td class="amount"><strong>Rs. ${parseFloat(sale.totalAmount).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></td>
               </tr>
             </tbody>
           </table>
@@ -567,27 +577,29 @@ export default function Sales() {
     if (sale.paymentHistory && sale.paymentHistory.length > 0) {
       pdfHTML += `
         <div class="section">
-          <div class="section-title">💳 Payment History • ${sale.paymentHistory.length} Payments</div>
-          <table class="items-table">
+          <div class="section-title">Payment History • ${sale.paymentHistory.length} Payments</div>
+          <table>
             <thead>
               <tr>
                 <th>Payment Date</th>
+                <th>Time</th>
                 <th>Method</th>
-                <th>Amount Paid</th>
-                <th>New Balance</th>
+                <th class="amount">Amount Paid</th>
+                <th class="amount">New Balance</th>
                 <th>Notes</th>
               </tr>
             </thead>
             <tbody>
       `;
       
-      sale.paymentHistory.forEach((payment, index) => {
+      sale.paymentHistory.forEach((payment) => {
         pdfHTML += `
               <tr>
                 <td>${formatDate(payment.createdAt)}</td>
+                <td>${formatTime(payment.createdAt)}</td>
                 <td>${payment.paymentMethod}</td>
-                <td class="amount">Rs. ${Math.round(parseFloat(payment.amount)).toLocaleString()}</td>
-                <td class="amount">Rs. ${Math.round(parseFloat(payment.newBalance)).toLocaleString()}</td>
+                <td class="amount">Rs. ${parseFloat(payment.amount).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td class="amount">Rs. ${parseFloat(payment.newBalance).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                 <td>${payment.notes || '-'}</td>
               </tr>
         `;
@@ -602,50 +614,38 @@ export default function Sales() {
 
     // Amount Summary
     const outstanding = parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid);
+    const statusClass = sale.paymentStatus === 'paid' ? 'status-paid' : 
+                       sale.paymentStatus === 'partial' ? 'status-partial' : 'status-unpaid';
     
     pdfHTML += `
       <div class="amount-section">
         <div class="amount-grid">
           <div class="amount-item">
             <div class="amount-label">Total Amount</div>
-            <div class="amount-value">Rs. ${Math.round(parseFloat(sale.totalAmount)).toLocaleString()}</div>
+            <div class="amount-value">Rs. ${parseFloat(sale.totalAmount).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
           </div>
           <div class="amount-item">
             <div class="amount-label">Amount Paid</div>
-            <div class="amount-value">Rs. ${Math.round(parseFloat(sale.amountPaid)).toLocaleString()}</div>
+            <div class="amount-value">Rs. ${parseFloat(sale.amountPaid).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
           </div>
           <div class="amount-item">
             <div class="amount-label">Balance Due</div>
-            <div class="amount-value">
-              Rs. ${Math.round(outstanding).toLocaleString()}
-            </div>
+            <div class="amount-value">Rs. ${outstanding.toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
           </div>
         </div>
         
-        <div style="text-align: center;">
-          <div class="payment-status ${
-            sale.paymentStatus === 'paid' ? 'status-paid' : 
-            sale.paymentStatus === 'partial' ? 'status-partial' : 'status-unpaid'
-          }">
+        <div style="text-align: center; margin-top: 15px;">
+          <span class="status ${statusClass}">
             ${sale.paymentStatus.toUpperCase()} 
             ${sale.paymentStatus === 'partial' ? 'PAYMENT' : ''}
-          </div>
+          </span>
         </div>
-      </div>
-
-      <div class="barcode">
-        ▮▮ ▮ ▮▮▮ ▮ ▮▮▮ ▮ ▮▮ ▮▮▮<br/>
-        <small>Bill ID: ${sale.id.slice(-8).toUpperCase()}</small>
-      </div>
-
-      <div class="thank-you">
-        ${receiptSettings.thankYou}! 🎨<br/>
-        We appreciate your trust in ${receiptSettings.businessName}
       </div>
 
       <div class="footer">
         <p>${receiptSettings.businessName} • ${receiptSettings.address}</p>
         <p>Generated on ${formatDate(new Date())} • This is a computer-generated bill</p>
+        <p><strong>${receiptSettings.thankYou}</strong></p>
       </div>
     </body>
     </html>
@@ -656,7 +656,7 @@ export default function Sales() {
 
   // Download PDF for individual sale
   const downloadSalePDF = (sale: SaleWithItems) => {
-    const pdfHTML = generateDetailedSalePDF(sale);
+    const pdfHTML = generateSalePDF(sale);
     const blob = new Blob([pdfHTML], { type: 'text/html' });
     const url = window.URL.createObjectURL(blob);
     
@@ -669,14 +669,14 @@ export default function Sales() {
     window.URL.revokeObjectURL(url);
     
     toast({ 
-      title: "Bill Downloaded", 
+      title: "PDF Downloaded", 
       description: `Bill for ${sale.customerName} has been downloaded` 
     });
   };
 
   // View PDF for individual sale
   const viewSalePDF = (sale: SaleWithItems) => {
-    const pdfHTML = generateDetailedSalePDF(sale);
+    const pdfHTML = generateSalePDF(sale);
     const blob = new Blob([pdfHTML], { type: 'text/html' });
     const url = window.URL.createObjectURL(blob);
     const printWindow = window.open(url, '_blank');
@@ -688,68 +688,76 @@ export default function Sales() {
     }
     
     toast({ 
-      title: "Bill Opened", 
-      description: `Bill for ${sale.customerName} is ready for viewing/printing` 
+      title: "PDF Opened", 
+      description: `Bill for ${sale.customerName} is ready for viewing` 
     });
   };
 
-  // Share bill via WhatsApp with PDF
-  const shareBillViaWhatsApp = async (sale: SaleWithItems) => {
-    try {
-      // Generate PDF
-      const pdfHTML = generateDetailedSalePDF(sale);
-      const blob = new Blob([pdfHTML], { type: 'text/html' });
-      
-      // Create FormData to send to a service that can convert HTML to PDF
-      const formData = new FormData();
-      formData.append('html', pdfHTML);
-      formData.append('filename', `Bill_${sale.customerName}_${sale.id.slice(-8)}.pdf`);
-      
-      // For now, we'll share the text version with a link to generate PDF
-      const totalAmount = Math.round(parseFloat(sale.totalAmount));
-      const amountPaid = Math.round(parseFloat(sale.amountPaid));
-      const amountDue = totalAmount - amountPaid;
-      
-      const message = `🛍️ *${getReceiptSettings().businessName} - Sale Bill*
+  // Print bill directly
+  const printSaleBill = (sale: SaleWithItems) => {
+    const pdfHTML = generateSalePDF(sale);
+    const blob = new Blob([pdfHTML], { type: 'text/html' });
+    const url = window.URL.createObjectURL(blob);
+    const printWindow = window.open(url, '_blank');
+    
+    if (printWindow) {
+      printWindow.onload = () => {
+        printWindow.print();
+      };
+    }
+  };
 
-*Bill ID:* ${sale.id.slice(-8).toUpperCase()}
-*Customer:* ${sale.customerName}
-*Phone:* ${sale.customerPhone}
-*Date:* ${formatDate(sale.createdAt)}
-*Time:* ${formatTime(sale.createdAt)}
+  // Share bill via WhatsApp with PDF
+  const shareBillViaWhatsApp = (sale: SaleWithItems) => {
+    // Generate and download PDF first
+    const pdfHTML = generateSalePDF(sale);
+    const blob = new Blob([pdfHTML], { type: 'text/html' });
+    const url = window.URL.createObjectURL(blob);
+    
+    const a = document.createElement('a');
+    const fileName = `Bill_${sale.customerName}_${sale.id.slice(-8)}.html`;
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    
+    // Format phone number for WhatsApp
+    const formattedPhone = formatPhoneForWhatsApp(sale.customerPhone);
+    
+    const message = `🛍️ *Sale Bill - ${receiptSettings.businessName}*
+
+I've generated your sale bill PDF. The file "${fileName}" has been downloaded and is ready to be shared.
+
+*Bill Summary:*
+📄 Bill ID: ${sale.id.slice(-8).toUpperCase()}
+👤 Customer: ${sale.customerName}
+📞 Phone: ${sale.customerPhone}
+📅 Date: ${formatDate(sale.createdAt)}
+⏰ Time: ${formatTime(sale.createdAt)}
 
 *Amount Details:*
-💰 Total: Rs. ${totalAmount.toLocaleString()}
-💳 Paid: Rs. ${amountPaid.toLocaleString()}
-⚖️ Due: Rs. ${amountDue.toLocaleString()}
+💰 Total Amount: Rs. ${parseFloat(sale.totalAmount).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+💳 Amount Paid: Rs. ${parseFloat(sale.amountPaid).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+⚖️ Balance Due: Rs. ${(parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid)).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+📊 Status: ${sale.paymentStatus.toUpperCase()}
 
-*Status:* ${sale.paymentStatus.toUpperCase()}
+The PDF contains complete details of all items and payment history. Please check your downloads folder for the file.`;
 
-*Payment History:* ${sale.paymentHistory?.length || 0} payment(s) recorded
+    const encodedMessage = encodeURIComponent(message);
+    const whatsappUrl = `https://wa.me/${formattedPhone.replace('+', '')}?text=${encodedMessage}`;
+    
+    window.open(whatsappUrl, '_blank');
+    
+    toast({ 
+      title: "PDF Shared via WhatsApp", 
+      description: `Bill sent to ${formattedPhone}` 
+    });
 
-📄 *Detailed PDF Statement Available*
-Visit the store to get your complete bill statement with itemized details and payment history.
-
-Thank you for your business! 🎨
-_${getReceiptSettings().businessName} - ${getReceiptSettings().address}_`;
-
-      const encodedMessage = encodeURIComponent(message);
-      const whatsappUrl = `https://wa.me/${sale.customerPhone.replace('+', '')}?text=${encodedMessage}`;
-      
-      window.open(whatsappUrl, '_blank');
-      
-      toast({ 
-        title: "Shared via WhatsApp", 
-        description: `Bill details sent to ${sale.customerName}` 
-      });
-    } catch (error) {
-      console.error("Error sharing via WhatsApp:", error);
-      toast({
-        title: "Sharing failed",
-        description: "Could not share bill via WhatsApp",
-        variant: "destructive"
-      });
-    }
+    // Clean up
+    setTimeout(() => {
+      window.URL.revokeObjectURL(url);
+    }, 1000);
   };
 
   // View sale details
@@ -862,11 +870,11 @@ _${getReceiptSettings().businessName} - ${getReceiptSettings().address}_`;
   const getPaymentStatusBadge = (status: string) => {
     switch (status) {
       case "paid":
-        return <Badge variant="default" className="bg-green-100 text-green-800 hover:bg-green-100">Paid</Badge>;
+        return <Badge className="bg-green-100 text-green-800">Paid</Badge>;
       case "partial":
-        return <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100">Partial</Badge>;
+        return <Badge className="bg-yellow-100 text-yellow-800">Partial</Badge>;
       case "unpaid":
-        return <Badge variant="outline" className="bg-red-100 text-red-800 hover:bg-red-100">Unpaid</Badge>;
+        return <Badge className="bg-red-100 text-red-800">Unpaid</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
@@ -877,12 +885,14 @@ _${getReceiptSettings().businessName} - ${getReceiptSettings().address}_`;
     return `${item.color.variant.product.productName} - ${item.color.colorName} ${item.color.colorCode} - ${item.color.variant.packingSize}`;
   };
 
+  const receiptSettings = getReceiptSettings();
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight" data-testid="text-sales-title">Sales</h1>
-          <p className="text-sm text-muted-foreground">View all sales transactions</p>
+          <h1 className="text-2xl font-semibold tracking-tight">Sales</h1>
+          <p className="text-sm text-muted-foreground">View all sales transactions • Auto-updates every 30 seconds</p>
         </div>
         <Button variant="outline" onClick={refreshSales}>
           <RefreshCw className="h-4 w-4 mr-2" />
@@ -912,7 +922,6 @@ _${getReceiptSettings().businessName} - ${getReceiptSettings().address}_`;
                     value={customerSearchQuery}
                     onChange={(e) => setCustomerSearchQuery(e.target.value)}
                     className="pl-10"
-                    data-testid="input-sales-search"
                   />
                 </div>
 
@@ -921,7 +930,6 @@ _${getReceiptSettings().businessName} - ${getReceiptSettings().address}_`;
                     value={dateFilter}
                     onChange={(e) => setDateFilter(e.target.value)}
                     className="border rounded-md px-3 py-2 text-sm"
-                    data-testid="select-date-filter"
                   >
                     <option value="all">All Dates</option>
                     <option value="today">Today</option>
@@ -976,7 +984,7 @@ _${getReceiptSettings().businessName} - ${getReceiptSettings().address}_`;
                   <Card className="bg-muted/50">
                     <CardContent className="p-3">
                       <div className="text-xs text-muted-foreground">Total Due</div>
-                      <div className="text-lg font-semibold text-destructive">
+                      <div className="text-lg font-semibold text-red-600">
                         Rs. {Math.round(totals.totalDue).toLocaleString()}
                       </div>
                     </CardContent>
@@ -1000,7 +1008,7 @@ _${getReceiptSettings().businessName} - ${getReceiptSettings().address}_`;
                       const amountDue = Math.round(totalFloat - paidFloat);
 
                       return (
-                        <Card key={sale.id} className="hover:shadow-lg transition-shadow duration-200" data-testid={`card-sale-${sale.id}`}>
+                        <Card key={sale.id} className="hover:shadow-lg transition-shadow duration-200">
                           <CardContent className="p-4">
                             <div className="flex items-start justify-between gap-4">
                               <div className="flex-1 min-w-0 space-y-2">
@@ -1046,7 +1054,17 @@ _${getReceiptSettings().businessName} - ${getReceiptSettings().address}_`;
                                   onView={handleViewSaleDetails}
                                   onDownload={downloadSalePDF}
                                   onShare={shareBillViaWhatsApp}
+                                  onPrint={printSaleBill}
                                 />
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleViewSaleDetails(sale)}
+                                  className="flex items-center gap-1"
+                                >
+                                  <Eye className="h-3 w-3" />
+                                  View Bill
+                                </Button>
                               </div>
                             </div>
                           </CardContent>
@@ -1075,7 +1093,7 @@ _${getReceiptSettings().businessName} - ${getReceiptSettings().address}_`;
                       {totals.totalDue > 0 && (
                         <div>
                           <span className="text-muted-foreground">Total Due: </span>
-                          <span className="text-destructive">Rs. {Math.round(totals.totalDue).toLocaleString()}</span>
+                          <span className="text-red-600">Rs. {Math.round(totals.totalDue).toLocaleString()}</span>
                         </div>
                       )}
                     </div>
@@ -1232,7 +1250,7 @@ _${getReceiptSettings().businessName} - ${getReceiptSettings().address}_`;
                   <span className="text-muted-foreground">Amount Paid:</span>
                   <span className="text-green-600">Rs. {Math.round(parseFloat(saleDetails.amountPaid)).toLocaleString()}</span>
                 </div>
-                <div className="flex justify-between font-semibold text-base text-destructive border-t border-border pt-2">
+                <div className="flex justify-between font-semibold text-base text-red-600 border-t border-border pt-2">
                   <span>Balance Due:</span>
                   <span>Rs. {Math.round(parseFloat(saleDetails.totalAmount) - parseFloat(saleDetails.amountPaid)).toLocaleString()}</span>
                 </div>
@@ -1249,12 +1267,13 @@ _${getReceiptSettings().businessName} - ${getReceiptSettings().address}_`;
                   <FileText className="h-4 w-4" />
                   View Statement
                 </Button>
-                <Link href={`/bill/${saleDetails.id}`}>
-                  <Button className="flex items-center gap-2">
-                    <Printer className="h-4 w-4" />
-                    Print Bill
-                  </Button>
-                </Link>
+                <Button
+                  onClick={() => printSaleBill(saleDetails)}
+                  className="flex items-center gap-2"
+                >
+                  <Printer className="h-4 w-4" />
+                  Print Bill
+                </Button>
               </div>
             </div>
           )}
