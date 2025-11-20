@@ -1,4 +1,4 @@
-// unpaid-bills.tsx - Fixed version
+// unpaid-bills.tsx - Updated with Edit Payment and Balance Features
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -49,11 +49,14 @@ import {
   Filter,
   X,
   ChevronDown,
-  FileText
+  FileText,
+  Download,
+  Edit,
+  MoreVertical
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { Sale, SaleWithItems, ColorWithVariantAndProduct } from "@shared/schema";
+import type { Sale, SaleWithItems, ColorWithVariantAndProduct, Payment } from "@shared/schema";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
 import {
@@ -115,6 +118,7 @@ export default function UnpaidBills() {
     dueDate: "",
     notes: ""
   });
+  const [editingBalanceId, setEditingBalanceId] = useState<string | null>(null);
   const [customerSuggestionsOpen, setCustomerSuggestionsOpen] = useState(false);
   
   // Due date edit state
@@ -124,6 +128,19 @@ export default function UnpaidBills() {
     dueDate: "",
     notes: ""
   });
+
+  // Payment edit state
+  const [editPaymentDialogOpen, setEditPaymentDialogOpen] = useState(false);
+  const [editingPayment, setEditingPayment] = useState<Payment | null>(null);
+  const [editPaymentForm, setEditPaymentForm] = useState({
+    amount: "",
+    paymentDate: "",
+    notes: ""
+  });
+
+  // Payment history state
+  const [paymentHistoryDialogOpen, setPaymentHistoryDialogOpen] = useState(false);
+  const [selectedBillForPayments, setSelectedBillForPayments] = useState<string | null>(null);
   
   const { toast } = useToast();
 
@@ -160,9 +177,25 @@ export default function UnpaidBills() {
     enabled: addProductDialogOpen,
   });
 
+  // Get payment history for a bill
+  const { data: paymentHistory = [] } = useQuery<Payment[]>({
+    queryKey: [`/api/sales/${selectedBillForPayments}/payments`],
+    enabled: !!selectedBillForPayments,
+  });
+
+  // Get customer's all sales for statement
+  const { data: customerSales = [] } = useQuery<SaleWithItems[]>({
+    queryKey: ["/api/sales/customer", selectedCustomerPhone],
+    enabled: !!selectedCustomerPhone,
+  });
+
   const recordPaymentMutation = useMutation({
-    mutationFn: async (data: { saleId: string; amount: number }) => {
-      return await apiRequest("POST", `/api/sales/${data.saleId}/payment`, { amount: data.amount });
+    mutationFn: async (data: { saleId: string; amount: number; paymentDate?: string; notes?: string }) => {
+      return await apiRequest("POST", `/api/sales/${data.saleId}/payment`, { 
+        amount: data.amount,
+        paymentDate: data.paymentDate,
+        notes: data.notes
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
@@ -170,6 +203,7 @@ export default function UnpaidBills() {
         queryClient.invalidateQueries({ queryKey: [`/api/sales/${selectedSaleId}`] });
       }
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/sales/${selectedBillForPayments}/payments`] });
       toast({ title: "Payment recorded successfully" });
       setPaymentDialogOpen(false);
       setPaymentAmount("");
@@ -177,6 +211,44 @@ export default function UnpaidBills() {
     onError: (error: Error) => {
       console.error("Payment recording error:", error);
       toast({ title: "Failed to record payment", variant: "destructive" });
+    },
+  });
+
+  const updatePaymentMutation = useMutation({
+    mutationFn: async (data: { paymentId: string; amount: number; paymentDate?: string; notes?: string }) => {
+      return await apiRequest("PATCH", `/api/payments/${data.paymentId}`, { 
+        amount: data.amount,
+        paymentDate: data.paymentDate,
+        notes: data.notes
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/sales/${selectedBillForPayments}/payments`] });
+      toast({ title: "Payment updated successfully" });
+      setEditPaymentDialogOpen(false);
+      setEditingPayment(null);
+    },
+    onError: (error: Error) => {
+      console.error("Payment update error:", error);
+      toast({ title: "Failed to update payment", variant: "destructive" });
+    },
+  });
+
+  const deletePaymentMutation = useMutation({
+    mutationFn: async (paymentId: string) => {
+      return await apiRequest("DELETE", `/api/payments/${paymentId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/sales/${selectedBillForPayments}/payments`] });
+      toast({ title: "Payment deleted successfully" });
+    },
+    onError: (error: Error) => {
+      console.error("Payment delete error:", error);
+      toast({ title: "Failed to delete payment", variant: "destructive" });
     },
   });
 
@@ -251,6 +323,54 @@ export default function UnpaidBills() {
     },
   });
 
+  const updateManualBalanceMutation = useMutation({
+    mutationFn: async (data: { saleId: string; customerName: string; customerPhone: string; totalAmount: string; dueDate?: string; notes?: string }) => {
+      return await apiRequest("PATCH", `/api/sales/${data.saleId}`, {
+        customerName: data.customerName,
+        customerPhone: data.customerPhone,
+        totalAmount: data.totalAmount,
+        dueDate: data.dueDate,
+        notes: data.notes
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
+      toast({ 
+        title: "Balance updated successfully",
+        description: "Pending balance has been updated"
+      });
+      setManualBalanceDialogOpen(false);
+      setEditingBalanceId(null);
+      setManualBalanceForm({
+        customerName: "",
+        customerPhone: "",
+        totalAmount: "",
+        dueDate: "",
+        notes: ""
+      });
+    },
+    onError: (error: Error) => {
+      console.error("Update manual balance error:", error);
+      toast({ title: "Failed to update balance", variant: "destructive" });
+    },
+  });
+
+  const deleteManualBalanceMutation = useMutation({
+    mutationFn: async (saleId: string) => {
+      return await apiRequest("DELETE", `/api/sales/${saleId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
+      toast({ title: "Balance deleted successfully" });
+    },
+    onError: (error: Error) => {
+      console.error("Delete manual balance error:", error);
+      toast({ title: "Failed to delete balance", variant: "destructive" });
+    },
+  });
+
   const updateDueDateMutation = useMutation({
     mutationFn: async (data: { saleId: string; dueDate?: string; notes?: string }) => {
       return await apiRequest("PATCH", `/api/sales/${data.saleId}/due-date`, {
@@ -273,6 +393,309 @@ export default function UnpaidBills() {
       toast({ title: "Failed to update due date", variant: "destructive" });
     },
   });
+
+  // Edit manual balance
+  const handleEditBalance = (sale: Sale) => {
+    setEditingBalanceId(sale.id);
+    setManualBalanceForm({
+      customerName: sale.customerName,
+      customerPhone: sale.customerPhone,
+      totalAmount: sale.totalAmount,
+      dueDate: sale.dueDate || "",
+      notes: sale.notes || ""
+    });
+    setManualBalanceDialogOpen(true);
+  };
+
+  // Edit payment
+  const handleEditPayment = (payment: Payment) => {
+    setEditingPayment(payment);
+    setEditPaymentForm({
+      amount: payment.amount.toString(),
+      paymentDate: payment.paymentDate ? new Date(payment.paymentDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+      notes: payment.notes || ""
+    });
+    setEditPaymentDialogOpen(true);
+  };
+
+  // View payment history
+  const handleViewPaymentHistory = (billId: string) => {
+    setSelectedBillForPayments(billId);
+    setPaymentHistoryDialogOpen(true);
+  };
+
+  // Generate PDF Statement for Individual Customer
+  const generateCustomerPDFStatement = (customer: ConsolidatedCustomer) => {
+    const currentDate = new Date().toLocaleDateString('en-PK');
+    let pdfHTML = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>Customer Account Statement - ${customer.customerName}</title>
+        <style>
+          @page { size: A4; margin: 15mm; }
+          body { font-family: Arial, sans-serif; color: #333; margin: 0; padding: 0; }
+          .header { text-align: center; border-bottom: 3px solid #2563eb; padding-bottom: 15px; margin-bottom: 25px; }
+          .header h1 { margin: 0; color: #2563eb; font-size: 24px; }
+          .header p { margin: 5px 0; color: #666; font-size: 14px; }
+          .customer-info { background: #f8fafc; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+          .customer-info h3 { margin: 0 0 10px 0; color: #2563eb; }
+          .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+          .section { margin-bottom: 25px; page-break-inside: avoid; }
+          .section-title { background: #2563eb; color: white; padding: 8px 12px; font-size: 14px; font-weight: bold; margin-bottom: 12px; border-radius: 4px; }
+          table { width: 100%; border-collapse: collapse; margin-bottom: 15px; font-size: 12px; }
+          th { background: #e2e8f0; text-align: left; padding: 8px; border: 1px solid #cbd5e0; font-weight: 600; }
+          td { padding: 8px; border: 1px solid #e2e8f0; }
+          .amount { text-align: right; font-family: monospace; }
+          .total-row { background: #fef3c7; font-weight: bold; }
+          .summary-box { background: #dbeafe; padding: 15px; border-radius: 8px; margin: 15px 0; }
+          .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; }
+          .summary-item { text-align: center; }
+          .summary-value { font-size: 18px; font-weight: bold; color: #2563eb; }
+          .summary-label { font-size: 12px; color: #64748b; }
+          .footer { margin-top: 30px; text-align: center; font-size: 11px; color: #666; border-top: 1px solid #e2e8f0; padding-top: 15px; }
+          .text-right { text-align: right; }
+          .text-center { text-align: center; }
+          .text-danger { color: #dc2626; }
+          .text-success { color: #16a34a; }
+          .status-paid { background: #d1fae5; color: #065f46; padding: 2px 6px; border-radius: 4px; font-size: 10px; }
+          .status-unpaid { background: #fee2e2; color: #991b1b; padding: 2px 6px; border-radius: 4px; font-size: 10px; }
+          .status-partial { background: #fef3c7; color: #92400e; padding: 2px 6px; border-radius: 4px; font-size: 10px; }
+          .notes-section { background: #fffbeb; border: 1px solid #fcd34d; border-radius: 6px; padding: 12px; margin: 10px 0; }
+          .notes-title { font-weight: bold; color: #92400e; margin-bottom: 5px; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>📊 Customer Account Statement</h1>
+          <p>Generated on ${currentDate}</p>
+        </div>
+
+        <div class="customer-info">
+          <h3>Customer Information</h3>
+          <div class="info-grid">
+            <div><strong>Name:</strong> ${customer.customerName}</div>
+            <div><strong>Phone:</strong> ${customer.customerPhone}</div>
+            <div><strong>Total Bills:</strong> ${customer.bills.length}</div>
+            <div><strong>Oldest Bill:</strong> ${customer.oldestBillDate.toLocaleDateString('en-PK')}</div>
+          </div>
+        </div>
+
+        <!-- Account Summary -->
+        <div class="summary-box">
+          <div class="summary-grid">
+            <div class="summary-item">
+              <div class="summary-value">Rs. ${Math.round(customer.totalAmount).toLocaleString()}</div>
+              <div class="summary-label">Total Amount</div>
+            </div>
+            <div class="summary-item">
+              <div class="summary-value">Rs. ${Math.round(customer.totalPaid).toLocaleString()}</div>
+              <div class="summary-label">Total Paid</div>
+            </div>
+            <div class="summary-item">
+              <div class="summary-value ${customer.totalOutstanding > 0 ? 'text-danger' : 'text-success'}">
+                Rs. ${Math.round(customer.totalOutstanding).toLocaleString()}
+              </div>
+              <div class="summary-label">Outstanding Balance</div>
+            </div>
+            <div class="summary-item">
+              <div class="summary-value">${customer.daysOverdue}</div>
+              <div class="summary-label">Days Overdue</div>
+            </div>
+          </div>
+        </div>
+    `;
+
+    // Bills History Section
+    pdfHTML += `
+      <div class="section">
+        <div class="section-title">Bills History (${customer.bills.length} Bills)</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Bill Date</th>
+              <th>Bill ID</th>
+              <th class="amount">Total Amount</th>
+              <th class="amount">Amount Paid</th>
+              <th class="amount">Outstanding</th>
+              <th>Status</th>
+              <th>Due Date</th>
+            </tr>
+          </thead>
+          <tbody>
+    `;
+
+    customer.bills.forEach(bill => {
+      const billTotal = parseFloat(bill.totalAmount);
+      const billPaid = parseFloat(bill.amountPaid);
+      const billOutstanding = billTotal - billPaid;
+      const statusClass = bill.paymentStatus === 'paid' ? 'status-paid' : 
+                         bill.paymentStatus === 'partial' ? 'status-partial' : 'status-unpaid';
+      
+      pdfHTML += `
+        <tr>
+          <td>${new Date(bill.createdAt).toLocaleDateString('en-PK')}</td>
+          <td>${bill.id.slice(0, 8).toUpperCase()}</td>
+          <td class="amount">Rs. ${Math.round(billTotal).toLocaleString()}</td>
+          <td class="amount">Rs. ${Math.round(billPaid).toLocaleString()}</td>
+          <td class="amount ${billOutstanding > 0 ? 'text-danger' : 'text-success'}">
+            Rs. ${Math.round(billOutstanding).toLocaleString()}
+          </td>
+          <td><span class="${statusClass}">${bill.paymentStatus.toUpperCase()}</span></td>
+          <td>${bill.dueDate ? new Date(bill.dueDate).toLocaleDateString('en-PK') : '-'}</td>
+        </tr>
+      `;
+    });
+
+    pdfHTML += `
+        </tbody>
+      </table>
+    </div>
+    `;
+
+    // Notes & Comments Section
+    const billsWithNotes = customer.bills.filter(bill => bill.notes && bill.notes.trim() !== '');
+    if (billsWithNotes.length > 0) {
+      pdfHTML += `
+        <div class="section">
+          <div class="section-title">📝 Customer Notes & Comments</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Bill Date</th>
+                <th>Bill ID</th>
+                <th>Notes & Comments</th>
+              </tr>
+            </thead>
+            <tbody>
+      `;
+      
+      billsWithNotes.forEach(bill => {
+        pdfHTML += `
+          <tr>
+            <td>${new Date(bill.createdAt).toLocaleDateString('en-PK')}</td>
+            <td>${bill.id.slice(0, 8).toUpperCase()}</td>
+            <td>${bill.notes}</td>
+          </tr>
+        `;
+      });
+      
+      pdfHTML += `
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    // Payment History Section
+    pdfHTML += `
+      <div class="section">
+        <div class="section-title">Payment History</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Payment Date</th>
+              <th>Bill ID</th>
+              <th class="amount">Amount Paid</th>
+              <th>Payment Method</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td colspan="5" class="text-center">Payment history data would be displayed here</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    `;
+
+    // Aging Analysis
+    const agingAnalysis = {
+      current: 0,
+      overdue30: 0,
+      overdue60: 0,
+      overdue90: 0
+    };
+
+    customer.bills.forEach(bill => {
+      if (bill.paymentStatus !== 'paid') {
+        const billDate = new Date(bill.createdAt);
+        const today = new Date();
+        const diffTime = today.getTime() - billDate.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        
+        if (diffDays <= 30) agingAnalysis.current += parseFloat(bill.totalAmount) - parseFloat(bill.amountPaid);
+        else if (diffDays <= 60) agingAnalysis.overdue30 += parseFloat(bill.totalAmount) - parseFloat(bill.amountPaid);
+        else if (diffDays <= 90) agingAnalysis.overdue60 += parseFloat(bill.totalAmount) - parseFloat(bill.amountPaid);
+        else agingAnalysis.overdue90 += parseFloat(bill.totalAmount) - parseFloat(bill.amountPaid);
+      }
+    });
+
+    pdfHTML += `
+      <div class="section">
+        <div class="section-title">Aging Analysis</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Period</th>
+              <th class="amount">Amount</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Current (0-30 days)</td>
+              <td class="amount">Rs. ${Math.round(agingAnalysis.current).toLocaleString()}</td>
+              <td><span class="status-paid">Current</span></td>
+            </tr>
+            <tr>
+              <td>31-60 Days Overdue</td>
+              <td class="amount">Rs. ${Math.round(agingAnalysis.overdue30).toLocaleString()}</td>
+              <td><span class="status-partial">Attention Needed</span></td>
+            </tr>
+            <tr>
+              <td>61-90 Days Overdue</td>
+              <td class="amount">Rs. ${Math.round(agingAnalysis.overdue60).toLocaleString()}</td>
+              <td><span class="status-unpaid">Overdue</span></td>
+            </tr>
+            <tr>
+              <td>90+ Days Overdue</td>
+              <td class="amount">Rs. ${Math.round(agingAnalysis.overdue90).toLocaleString()}</td>
+              <td><span class="status-unpaid">Critical</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="footer">
+        <p>PaintPulse POS System • Customer Account Statement</p>
+        <p>Generated on ${currentDate} • This is a system-generated document</p>
+      </div>
+
+      <script>
+        // PDF opens for viewing without auto-print
+        console.log('Customer account statement ready for viewing');
+      </script>
+      </body>
+      </html>
+    `;
+
+    // Create blob and open in new window WITHOUT auto-print
+    const blob = new Blob([pdfHTML], { type: 'text/html' });
+    const url = window.URL.createObjectURL(blob);
+    const printWindow = window.open(url, '_blank');
+    
+    if (printWindow) {
+      printWindow.focus();
+    }
+    
+    toast({ 
+      title: "Customer Statement Generated",
+      description: `Account statement for ${customer.customerName} is ready for viewing`
+    });
+  };
 
   const handleRecordPayment = async () => {
     if (!selectedCustomer || !paymentAmount) {
@@ -339,6 +762,26 @@ export default function UnpaidBills() {
       console.error("Payment processing error:", error);
       toast({ title: "Failed to record payment", variant: "destructive" });
     }
+  };
+
+  const handleUpdatePayment = async () => {
+    if (!editingPayment || !editPaymentForm.amount) {
+      toast({ title: "Please enter payment amount", variant: "destructive" });
+      return;
+    }
+
+    const amount = parseFloat(editPaymentForm.amount);
+    if (amount <= 0) {
+      toast({ title: "Payment amount must be positive", variant: "destructive" });
+      return;
+    }
+
+    updatePaymentMutation.mutate({
+      paymentId: editingPayment.id,
+      amount: amount,
+      paymentDate: editPaymentForm.paymentDate,
+      notes: editPaymentForm.notes
+    });
   };
 
   const handleAddProduct = () => {
@@ -765,21 +1208,24 @@ export default function UnpaidBills() {
           <p>PaintPulse POS System • Statement generated on ${currentDate}</p>
           <p>This is a system-generated report</p>
         </div>
+
+        <script>
+          // PDF opens for viewing without auto-print
+          console.log('Unpaid bills statement ready for viewing');
+        </script>
       </body>
       </html>
     `;
 
-    // Create blob and download
+    // Create blob and open in new window WITHOUT auto-print
     const blob = new Blob([pdfHTML], { type: 'text/html' });
     const url = window.URL.createObjectURL(blob);
     const printWindow = window.open(url, '_blank');
     if (printWindow) {
-      printWindow.onload = () => {
-        printWindow.print();
-      };
+      printWindow.focus();
     }
     
-    toast({ title: "PDF Statement opened for printing" });
+    toast({ title: "PDF Statement opened for viewing" });
   };
 
   const [selectedCustomerPhone, setSelectedCustomerPhone] = useState<string | null>(null);
@@ -801,7 +1247,17 @@ export default function UnpaidBills() {
           <div className="flex items-center gap-2 flex-wrap">
             <Button 
               variant="default" 
-              onClick={() => setManualBalanceDialogOpen(true)}
+              onClick={() => {
+                setEditingBalanceId(null);
+                setManualBalanceForm({
+                  customerName: "",
+                  customerPhone: "",
+                  totalAmount: "",
+                  dueDate: "",
+                  notes: ""
+                });
+                setManualBalanceDialogOpen(true);
+              }}
               className="flex items-center gap-2"
             >
               <Plus className="h-4 w-4" />
@@ -1042,6 +1498,9 @@ export default function UnpaidBills() {
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {filteredAndSortedCustomers.map((customer) => {
+            // Find if any bill has notes
+            const billWithNotes = customer.bills.find(bill => bill.notes);
+            
             return (
               <Card key={customer.customerPhone} className="hover-elevate" data-testid={`unpaid-bill-customer-${customer.customerPhone}`}>
                 <CardHeader className="pb-3">
@@ -1051,6 +1510,12 @@ export default function UnpaidBills() {
                       <Badge variant="secondary">{customer.bills.length} Bills</Badge>
                     )}
                   </div>
+                  {/* Show notes if available */}
+                  {billWithNotes?.notes && (
+                    <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded-md">
+                      <p className="text-xs text-yellow-800 font-medium">Note: {billWithNotes.notes}</p>
+                    </div>
+                  )}
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="space-y-2 text-sm">
@@ -1097,19 +1562,29 @@ export default function UnpaidBills() {
                       <Eye className="h-4 w-4 mr-2" />
                       View Details
                     </Button>
-                    <Button
-                      className="w-full"
-                      variant="default"
-                      onClick={() => {
-                        setSelectedCustomerPhone(customer.customerPhone);
-                        setPaymentDialogOpen(true);
-                        setPaymentAmount(Math.round(customer.totalOutstanding).toString());
-                      }}
-                      data-testid={`button-record-payment-${customer.customerPhone}`}
-                    >
-                      <Banknote className="h-4 w-4 mr-2" />
-                      Payment
-                    </Button>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button
+                        variant="outline"
+                        onClick={() => generateCustomerPDFStatement(customer)}
+                        data-testid={`button-pdf-statement-${customer.customerPhone}`}
+                        className="flex items-center gap-1"
+                      >
+                        <Download className="h-3 w-3" />
+                        PDF
+                      </Button>
+                      <Button
+                        variant="default"
+                        onClick={() => {
+                          setSelectedCustomerPhone(customer.customerPhone);
+                          setPaymentDialogOpen(true);
+                          setPaymentAmount(Math.round(customer.totalOutstanding).toString());
+                        }}
+                        data-testid={`button-record-payment-${customer.customerPhone}`}
+                      >
+                        <Banknote className="h-4 w-4 mr-1" />
+                        Payment
+                      </Button>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -1151,7 +1626,17 @@ export default function UnpaidBills() {
 
               {/* Bills List */}
               <div className="space-y-3">
-                <h3 className="font-medium">Bills</h3>
+                <div className="flex items-center justify-between">
+                  <h3 className="font-medium">Bills</h3>
+                  <Button
+                    variant="outline"
+                    onClick={() => generateCustomerPDFStatement(selectedCustomer)}
+                    className="flex items-center gap-2"
+                  >
+                    <FileText className="h-4 w-4" />
+                    Download Statement
+                  </Button>
+                </div>
                 {selectedCustomer.bills.map((bill) => {
                   const billTotal = parseFloat(bill.totalAmount);
                   const billPaid = parseFloat(bill.amountPaid);
@@ -1185,14 +1670,40 @@ export default function UnpaidBills() {
                                 </div>
                               )}
                             </div>
+                            {/* Show notes for each bill */}
+                            {bill.notes && (
+                              <div className="p-2 bg-blue-50 border border-blue-200 rounded-md">
+                                <p className="text-xs text-blue-800">
+                                  <span className="font-medium">Note:</span> {bill.notes}
+                                </p>
+                              </div>
+                            )}
                           </div>
                           <div className="flex gap-2">
-                            <Link href={`/bill/${bill.id}`}>
-                              <Button variant="outline" size="sm" data-testid={`button-view-bill-${bill.id}`}>
-                                <Printer className="h-4 w-4 mr-1" />
-                                Print
-                              </Button>
-                            </Link>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="outline" size="sm">
+                                  <MoreVertical className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => handleEditBalance(bill)}>
+                                  <Edit className="h-4 w-4 mr-2" />
+                                  Edit Balance
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleViewPaymentHistory(bill.id)}>
+                                  <Banknote className="h-4 w-4 mr-2" />
+                                  View Payments
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <Link href={`/bill/${bill.id}`}>
+                                  <DropdownMenuItem>
+                                    <Printer className="h-4 w-4 mr-2" />
+                                    Print Bill
+                                  </DropdownMenuItem>
+                                </Link>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </div>
                         </div>
                       </CardContent>
@@ -1295,6 +1806,352 @@ export default function UnpaidBills() {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Payment Dialog */}
+      <Dialog open={editPaymentDialogOpen} onOpenChange={setEditPaymentDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Payment</DialogTitle>
+            <DialogDescription>
+              Update payment details
+            </DialogDescription>
+          </DialogHeader>
+          {editingPayment && (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="editPaymentAmount">Payment Amount</Label>
+                <Input
+                  id="editPaymentAmount"
+                  type="number"
+                  step="0.01"
+                  placeholder="0"
+                  value={editPaymentForm.amount}
+                  onChange={(e) => setEditPaymentForm({ ...editPaymentForm, amount: e.target.value })}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="editPaymentDate">Payment Date</Label>
+                <Input
+                  id="editPaymentDate"
+                  type="date"
+                  value={editPaymentForm.paymentDate}
+                  onChange={(e) => setEditPaymentForm({ ...editPaymentForm, paymentDate: e.target.value })}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="editPaymentNotes">Notes (Optional)</Label>
+                <Input
+                  id="editPaymentNotes"
+                  placeholder="Add payment notes"
+                  value={editPaymentForm.notes}
+                  onChange={(e) => setEditPaymentForm({ ...editPaymentForm, notes: e.target.value })}
+                />
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setEditPaymentDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleUpdatePayment}
+                  disabled={updatePaymentMutation.isPending}
+                >
+                  {updatePaymentMutation.isPending ? "Updating..." : "Update Payment"}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Payment History Dialog */}
+      <Dialog open={paymentHistoryDialogOpen} onOpenChange={setPaymentHistoryDialogOpen}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Payment History</DialogTitle>
+            <DialogDescription>
+              View and manage payment history for this bill
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {paymentHistory.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                No payment history found for this bill
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Amount</TableHead>
+                    <TableHead>Notes</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {paymentHistory.map((payment) => (
+                    <TableRow key={payment.id}>
+                      <TableCell>
+                        {new Date(payment.paymentDate).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell className="font-mono">
+                        Rs. {Math.round(parseFloat(payment.amount))}
+                      </TableCell>
+                      <TableCell>
+                        {payment.notes || "-"}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleEditPayment(payment)}
+                          >
+                            <Edit className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              if (confirm("Are you sure you want to delete this payment?")) {
+                                deletePaymentMutation.mutate(payment.id);
+                              }
+                            }}
+                            disabled={deletePaymentMutation.isPending}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Manual Balance Dialog */}
+      <Dialog open={manualBalanceDialogOpen} onOpenChange={setManualBalanceDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {editingBalanceId ? "Edit Pending Balance" : "Add Pending Balance"}
+            </DialogTitle>
+            <DialogDescription>
+              {editingBalanceId ? "Update pending balance details" : "Add a pending balance for a customer without creating a sale from POS"}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Customer</Label>
+              <div className="relative">
+                <Input
+                  value={manualBalanceForm.customerName}
+                  onChange={(e) => setManualBalanceForm(prev => ({ ...prev, customerName: e.target.value }))}
+                  className="pr-12"
+                  placeholder="Type or select customer"
+                />
+                <Popover open={customerSuggestionsOpen} onOpenChange={setCustomerSuggestionsOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                    >
+                      <Search className="h-4 w-4 text-muted-foreground" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-80 p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Search customers..." />
+                      <CommandList>
+                        <CommandEmpty>No customers found</CommandEmpty>
+                        <CommandGroup heading="Recent Customers">
+                          {customerSuggestions.map((customer) => (
+                            <CommandItem
+                              key={customer.customerPhone}
+                              onSelect={() => selectCustomer(customer)}
+                              className="flex flex-col items-start gap-2 py-3 px-4 cursor-pointer"
+                            >
+                              <div className="flex items-center gap-2 w-full">
+                                <User className="h-4 w-4 text-blue-500" />
+                                <span className="font-medium">{customer.customerName}</span>
+                              </div>
+                              <div className="flex items-center gap-4 text-xs text-muted-foreground w-full pl-6">
+                                <div className="flex items-center gap-1">
+                                  <Phone className="h-3 w-3" />
+                                  {customer.customerPhone}
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <Calendar className="h-3 w-3" />
+                                  {new Date(customer.lastSaleDate).toLocaleDateString()}
+                                </div>
+                              </div>
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="customerPhone">Phone</Label>
+              <Input
+                id="customerPhone"
+                placeholder="Enter phone number"
+                value={manualBalanceForm.customerPhone}
+                onChange={(e) => setManualBalanceForm(prev => ({ ...prev, customerPhone: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="totalAmount">Amount</Label>
+              <Input
+                id="totalAmount"
+                type="number"
+                placeholder="Enter amount"
+                value={manualBalanceForm.totalAmount}
+                onChange={(e) => setManualBalanceForm(prev => ({ ...prev, totalAmount: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="dueDate">Due Date (Optional)</Label>
+              <Input
+                id="dueDate"
+                type="date"
+                value={manualBalanceForm.dueDate}
+                onChange={(e) => setManualBalanceForm(prev => ({ ...prev, dueDate: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="notes">Notes (Optional)</Label>
+              <Input
+                id="notes"
+                placeholder="Add notes about this balance"
+                value={manualBalanceForm.notes}
+                onChange={(e) => setManualBalanceForm(prev => ({ ...prev, notes: e.target.value }))}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              {editingBalanceId && (
+                <Button
+                  variant="destructive"
+                  onClick={() => {
+                    if (confirm("Are you sure you want to delete this balance?")) {
+                      deleteManualBalanceMutation.mutate(editingBalanceId);
+                      setManualBalanceDialogOpen(false);
+                    }
+                  }}
+                  disabled={deleteManualBalanceMutation.isPending}
+                >
+                  {deleteManualBalanceMutation.isPending ? "Deleting..." : "Delete"}
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setManualBalanceDialogOpen(false);
+                  setEditingBalanceId(null);
+                  setManualBalanceForm({
+                    customerName: "",
+                    customerPhone: "",
+                    totalAmount: "",
+                    dueDate: "",
+                    notes: ""
+                  });
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  if (!manualBalanceForm.customerName || !manualBalanceForm.customerPhone || !manualBalanceForm.totalAmount) {
+                    toast({ title: "Please fill all required fields", variant: "destructive" });
+                    return;
+                  }
+                  
+                  if (editingBalanceId) {
+                    updateManualBalanceMutation.mutate({
+                      saleId: editingBalanceId,
+                      ...manualBalanceForm
+                    });
+                  } else {
+                    createManualBalanceMutation.mutate(manualBalanceForm);
+                  }
+                }}
+                disabled={createManualBalanceMutation.isPending || updateManualBalanceMutation.isPending}
+              >
+                {editingBalanceId 
+                  ? (updateManualBalanceMutation.isPending ? "Updating..." : "Update Balance")
+                  : (createManualBalanceMutation.isPending ? "Adding..." : "Add Balance")
+                }
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Due Date Edit Dialog */}
+      <Dialog open={dueDateDialogOpen} onOpenChange={setDueDateDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Due Date</DialogTitle>
+            <DialogDescription>
+              Set or update the payment due date for this bill
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="editDueDate">Due Date</Label>
+              <Input
+                id="editDueDate"
+                type="date"
+                value={dueDateForm.dueDate}
+                onChange={(e) => setDueDateForm(prev => ({ ...prev, dueDate: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="editNotes">Notes (Optional)</Label>
+              <Input
+                id="editNotes"
+                placeholder="Add notes about the due date"
+                value={dueDateForm.notes}
+                onChange={(e) => setDueDateForm(prev => ({ ...prev, notes: e.target.value }))}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setDueDateDialogOpen(false);
+                  setEditingSaleId(null);
+                  setDueDateForm({ dueDate: "", notes: "" });
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  if (!editingSaleId) return;
+                  updateDueDateMutation.mutate({
+                    saleId: editingSaleId,
+                    dueDate: dueDateForm.dueDate || undefined,
+                    notes: dueDateForm.notes || undefined
+                  });
+                }}
+                disabled={updateDueDateMutation.isPending}
+              >
+                {updateDueDateMutation.isPending ? "Updating..." : "Update Due Date"}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -1405,197 +2262,6 @@ export default function UnpaidBills() {
                 data-testid="button-confirm-add-product"
               >
                 {addItemMutation.isPending ? "Adding..." : "Add Product"}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Manual Balance Dialog */}
-      <Dialog open={manualBalanceDialogOpen} onOpenChange={setManualBalanceDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Add Pending Balance</DialogTitle>
-            <DialogDescription>
-              Add a pending balance for a customer without creating a sale from POS
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">Customer</Label>
-              <div className="relative">
-                <Input
-                  value={manualBalanceForm.customerName}
-                  onChange={(e) => setManualBalanceForm(prev => ({ ...prev, customerName: e.target.value }))}
-                  className="pr-12"
-                  placeholder="Type or select customer"
-                />
-                <Popover open={customerSuggestionsOpen} onOpenChange={setCustomerSuggestionsOpen}>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
-                    >
-                      <Search className="h-4 w-4 text-muted-foreground" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-80 p-0" align="start">
-                    <Command>
-                      <CommandInput placeholder="Search customers..." />
-                      <CommandList>
-                        <CommandEmpty>No customers found</CommandEmpty>
-                        <CommandGroup heading="Recent Customers">
-                          {customerSuggestions.map((customer) => (
-                            <CommandItem
-                              key={customer.customerPhone}
-                              onSelect={() => selectCustomer(customer)}
-                              className="flex flex-col items-start gap-2 py-3 px-4 cursor-pointer"
-                            >
-                              <div className="flex items-center gap-2 w-full">
-                                <User className="h-4 w-4 text-blue-500" />
-                                <span className="font-medium">{customer.customerName}</span>
-                              </div>
-                              <div className="flex items-center gap-4 text-xs text-muted-foreground w-full pl-6">
-                                <div className="flex items-center gap-1">
-                                  <Phone className="h-3 w-3" />
-                                  {customer.customerPhone}
-                                </div>
-                                <div className="flex items-center gap-1">
-                                  <Calendar className="h-3 w-3" />
-                                  {new Date(customer.lastSaleDate).toLocaleDateString()}
-                                </div>
-                              </div>
-                            </CommandItem>
-                          ))}
-                        </CommandGroup>
-                      </CommandList>
-                    </Command>
-                  </PopoverContent>
-                </Popover>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="customerPhone">Phone</Label>
-              <Input
-                id="customerPhone"
-                placeholder="Enter phone number"
-                value={manualBalanceForm.customerPhone}
-                onChange={(e) => setManualBalanceForm(prev => ({ ...prev, customerPhone: e.target.value }))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="totalAmount">Amount</Label>
-              <Input
-                id="totalAmount"
-                type="number"
-                placeholder="Enter amount"
-                value={manualBalanceForm.totalAmount}
-                onChange={(e) => setManualBalanceForm(prev => ({ ...prev, totalAmount: e.target.value }))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="dueDate">Due Date (Optional)</Label>
-              <Input
-                id="dueDate"
-                type="date"
-                value={manualBalanceForm.dueDate}
-                onChange={(e) => setManualBalanceForm(prev => ({ ...prev, dueDate: e.target.value }))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="notes">Notes (Optional)</Label>
-              <Input
-                id="notes"
-                placeholder="Add notes about this balance"
-                value={manualBalanceForm.notes}
-                onChange={(e) => setManualBalanceForm(prev => ({ ...prev, notes: e.target.value }))}
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setManualBalanceDialogOpen(false);
-                  setManualBalanceForm({
-                    customerName: "",
-                    customerPhone: "",
-                    totalAmount: "",
-                    dueDate: "",
-                    notes: ""
-                  });
-                }}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={() => {
-                  if (!manualBalanceForm.customerName || !manualBalanceForm.customerPhone || !manualBalanceForm.totalAmount) {
-                    toast({ title: "Please fill all required fields", variant: "destructive" });
-                    return;
-                  }
-                  createManualBalanceMutation.mutate(manualBalanceForm);
-                }}
-                disabled={createManualBalanceMutation.isPending}
-              >
-                {createManualBalanceMutation.isPending ? "Adding..." : "Add Balance"}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Due Date Edit Dialog */}
-      <Dialog open={dueDateDialogOpen} onOpenChange={setDueDateDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Edit Due Date</DialogTitle>
-            <DialogDescription>
-              Set or update the payment due date for this bill
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="editDueDate">Due Date</Label>
-              <Input
-                id="editDueDate"
-                type="date"
-                value={dueDateForm.dueDate}
-                onChange={(e) => setDueDateForm(prev => ({ ...prev, dueDate: e.target.value }))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="editNotes">Notes (Optional)</Label>
-              <Input
-                id="editNotes"
-                placeholder="Add notes about the due date"
-                value={dueDateForm.notes}
-                onChange={(e) => setDueDateForm(prev => ({ ...prev, notes: e.target.value }))}
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setDueDateDialogOpen(false);
-                  setEditingSaleId(null);
-                  setDueDateForm({ dueDate: "", notes: "" });
-                }}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={() => {
-                  if (!editingSaleId) return;
-                  updateDueDateMutation.mutate({
-                    saleId: editingSaleId,
-                    dueDate: dueDateForm.dueDate || undefined,
-                    notes: dueDateForm.notes || undefined
-                  });
-                }}
-                disabled={updateDueDateMutation.isPending}
-              >
-                {updateDueDateMutation.isPending ? "Updating..." : "Update Due Date"}
               </Button>
             </div>
           </div>
