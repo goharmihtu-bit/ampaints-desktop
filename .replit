@@ -1,4 +1,4 @@
-modules = ["nodejs-20", "web", "postgresql-16"]
+modules = ["nodejs-20", "web", "bash"]
 [agent]
 expertMode = true
 
@@ -22,21 +22,29 @@ args = "dev"
 name = "dev"
 author = "agent"
 
+[workflows.workflow.metadata]
+outputType = "webview"
+
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "npm run dev"
 waitForPort = 5000
-
-[workflows.workflow.metadata]
-outputType = "webview"
 
 [[ports]]
 localPort = 5000
 externalPort = 80
 
 [[ports]]
-localPort = 41267
+localPort = 34267
 externalPort = 3000
+
+[[ports]]
+localPort = 39873
+externalPort = 5173
+
+[[ports]]
+localPort = 40435
+externalPort = 5000
 
 [[ports]]
 localPort = 42433
@@ -50,7 +58,11 @@ externalPort = 3002
 localPort = 43919
 externalPort = 3001
 
+[[ports]]
+localPort = 44895
+externalPort = 4200
+
 [deployment]
 deploymentTarget = "autoscale"
-run = ["npm", "start"]
+run = ["npm", "run", "start"]
 build = ["npm", "run", "build"]

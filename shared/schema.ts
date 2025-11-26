@@ -85,11 +85,38 @@ export const paymentHistory = sqliteTable("payment_history", {
   createdAt: integer("created_at", { mode: 'timestamp' }).$defaultFn(() => new Date()).notNull(),
 });
 
+// Returns table - stores return transactions
+export const returns = sqliteTable("returns", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  saleId: text("sale_id").references(() => sales.id, { onDelete: "set null" }), // Original sale (nullable for bill returns)
+  customerName: text("customer_name").notNull(),
+  customerPhone: text("customer_phone").notNull(),
+  returnType: text("return_type").notNull().default("item"), // "bill" for full bill return, "item" for partial return
+  totalRefund: text("total_refund").notNull().default("0"), // Total refund amount
+  reason: text("reason"), // Optional reason for return
+  status: text("status").notNull().default("completed"), // completed, pending
+  createdAt: integer("created_at", { mode: 'timestamp' }).$defaultFn(() => new Date()).notNull(),
+});
+
+// Return Items table - stores individual returned items
+export const returnItems = sqliteTable("return_items", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  returnId: text("return_id").notNull().references(() => returns.id, { onDelete: "cascade" }),
+  colorId: text("color_id").notNull().references(() => colors.id),
+  saleItemId: text("sale_item_id").references(() => saleItems.id, { onDelete: "set null" }), // Original sale item
+  quantity: integer("quantity").notNull(),
+  rate: text("rate").notNull(), // Rate at time of return
+  subtotal: text("subtotal").notNull(), // Refund subtotal
+  stockRestored: integer("stock_restored", { mode: 'boolean' }).notNull().default(true), // Whether stock was restored
+});
+
 // Settings table - stores app preferences (single row)
 export const settings = sqliteTable("settings", {
   id: text("id").primaryKey().default("default"),
   // Store Settings
   storeName: text("store_name").notNull().default("PaintPulse"),
+  // Date Format Setting (DD-MM-YYYY, MM-DD-YYYY, YYYY-MM-DD)
+  dateFormat: text("date_format").notNull().default("DD-MM-YYYY"),
   // Card Design Settings
   cardBorderStyle: text("card_border_style").notNull().default("shadow"), // shadow, border, none
   cardShadowSize: text("card_shadow_size").notNull().default("sm"), // sm, md, lg
@@ -151,6 +178,29 @@ export const paymentHistoryRelations = relations(paymentHistory, ({ one }) => ({
   }),
 }));
 
+export const returnsRelations = relations(returns, ({ one, many }) => ({
+  sale: one(sales, {
+    fields: [returns.saleId],
+    references: [sales.id],
+  }),
+  returnItems: many(returnItems),
+}));
+
+export const returnItemsRelations = relations(returnItems, ({ one }) => ({
+  return: one(returns, {
+    fields: [returnItems.returnId],
+    references: [returns.id],
+  }),
+  color: one(colors, {
+    fields: [returnItems.colorId],
+    references: [colors.id],
+  }),
+  saleItem: one(saleItems, {
+    fields: [returnItems.saleItemId],
+    references: [saleItems.id],
+  }),
+}));
+
 // Insert schemas
 export const insertProductSchema = createInsertSchema(products).omit({
   id: true,
@@ -202,6 +252,22 @@ export const insertPaymentHistorySchema = createInsertSchema(paymentHistory).omi
   createdAt: true,
 });
 
+export const insertReturnSchema = createInsertSchema(returns).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  returnType: z.enum(["bill", "item"]),
+  totalRefund: z.string().or(z.number()),
+});
+
+export const insertReturnItemSchema = createInsertSchema(returnItems).omit({
+  id: true,
+}).extend({
+  quantity: z.number().int().min(1),
+  rate: z.string().or(z.number()),
+  subtotal: z.string().or(z.number()),
+});
+
 export const insertSettingsSchema = createInsertSchema(settings).omit({
   id: true,
   updatedAt: true,
@@ -217,6 +283,8 @@ export const selectSaleSchema = createSelectSchema(sales);
 export const selectSaleItemSchema = createSelectSchema(saleItems);
 export const selectStockInHistorySchema = createSelectSchema(stockInHistory);
 export const selectPaymentHistorySchema = createSelectSchema(paymentHistory);
+export const selectReturnSchema = createSelectSchema(returns);
+export const selectReturnItemSchema = createSelectSchema(returnItems);
 export const selectSettingsSchema = createSelectSchema(settings);
 
 // Types
@@ -240,6 +308,12 @@ export type StockInHistory = typeof stockInHistory.$inferSelect;
 
 export type InsertPaymentHistory = z.infer<typeof insertPaymentHistorySchema>;
 export type PaymentHistory = typeof paymentHistory.$inferSelect;
+
+export type InsertReturn = z.infer<typeof insertReturnSchema>;
+export type Return = typeof returns.$inferSelect;
+
+export type InsertReturnItem = z.infer<typeof insertReturnItemSchema>;
+export type ReturnItem = typeof returnItems.$inferSelect;
 
 export type InsertSettings = z.infer<typeof insertSettingsSchema>;
 export type UpdateSettings = z.infer<typeof updateSettingsSchema>;
@@ -270,6 +344,15 @@ export type StockInHistoryWithColor = StockInHistory & {
 
 export type PaymentHistoryWithSale = PaymentHistory & {
   sale: Sale;
+};
+
+export type ReturnItemWithDetails = ReturnItem & {
+  color: ColorWithVariantAndProduct;
+};
+
+export type ReturnWithItems = Return & {
+  sale?: Sale | null;
+  returnItems: ReturnItemWithDetails[];
 };
 
 // Helper function to compute effective rate for a color

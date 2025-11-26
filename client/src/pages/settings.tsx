@@ -9,15 +9,39 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Store, Receipt, Bluetooth, Printer, Database, Download, Upload, FolderOpen, Palette } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Settings2, Receipt, Bluetooth, Printer, Database, Download, Upload, FolderOpen, Palette, CalendarDays, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { format } from "date-fns";
 import type { Settings as UISettings, UpdateSettings } from "@shared/schema";
+
+type DateFormatType = "DD-MM-YYYY" | "MM-DD-YYYY" | "YYYY-MM-DD";
+
+const dateFormats: { value: DateFormatType; label: string; description: string; example: string }[] = [
+  {
+    value: "DD-MM-YYYY",
+    label: "DD-MM-YYYY",
+    description: "Day-Month-Year (Default)",
+    example: format(new Date(), "dd-MM-yyyy"),
+  },
+  {
+    value: "MM-DD-YYYY",
+    label: "MM-DD-YYYY",
+    description: "Month-Day-Year (US Format)",
+    example: format(new Date(), "MM-dd-yyyy"),
+  },
+  {
+    value: "YYYY-MM-DD",
+    label: "YYYY-MM-DD",
+    description: "Year-Month-Day (ISO Format)",
+    example: format(new Date(), "yyyy-MM-dd"),
+  },
+];
 
 export default function Settings() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // UI Settings from backend
   const { data: uiSettings, isLoading: isLoadingSettings } = useQuery<UISettings>({
     queryKey: ["/api/settings"],
   });
@@ -29,6 +53,7 @@ export default function Settings() {
     cardButtonColor: "gray-900",
     cardPriceColor: "blue-600",
     showStockBadgeBorder: false,
+    dateFormat: "DD-MM-YYYY",
   });
 
   useEffect(() => {
@@ -40,6 +65,7 @@ export default function Settings() {
         cardButtonColor: uiSettings.cardButtonColor,
         cardPriceColor: uiSettings.cardPriceColor,
         showStockBadgeBorder: uiSettings.showStockBadgeBorder,
+        dateFormat: uiSettings.dateFormat || "DD-MM-YYYY",
       });
     }
   }, [uiSettings]);
@@ -57,40 +83,30 @@ export default function Settings() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
       toast({
-        title: "UI Settings Saved",
-        description: "Your customization has been updated successfully.",
+        title: "Settings Saved",
+        description: "Your settings have been updated successfully.",
       });
     },
     onError: () => {
       toast({
         title: "Error",
-        description: "Failed to save UI settings. Please try again.",
+        description: "Failed to save settings. Please try again.",
         variant: "destructive",
       });
     },
   });
   
-  // Desktop/Database Settings
   const [databasePath, setDatabasePath] = useState<string>("");
   const [isElectron, setIsElectron] = useState(false);
   
-  // Store Settings (legacy - can be migrated to UI settings)
-  const [storeName, setStoreName] = useState("PaintPulse Store");
-  const [storeAddress, setStoreAddress] = useState("");
-  const [storePhone, setStorePhone] = useState("");
-  const [storeEmail, setStoreEmail] = useState("");
-  
   useEffect(() => {
-    // Check if running in Electron
     if (typeof window !== 'undefined' && (window as any).electron) {
       setIsElectron(true);
-      // Get current database path
       (window as any).electron.getDatabasePath().then((path: string) => {
         setDatabasePath(path);
       });
     }
     
-    // Load POS receipt settings from localStorage
     try {
       const savedReceiptSettings = localStorage.getItem('posReceiptSettings');
       if (savedReceiptSettings) {
@@ -106,17 +122,14 @@ export default function Settings() {
       }
     } catch (error) {
       console.error("Error loading receipt settings:", error);
-      // Keep default settings if parsing fails
     }
   }, []);
 
-  // POS Bill Settings
   const [showCompanyName, setShowCompanyName] = useState(true);
   const [showGST, setShowGST] = useState(true);
   const [autoprint, setAutoprint] = useState(false);
   const [billFooter, setBillFooter] = useState("Thank you for your business!");
   
-  // POS Receipt Header/Footer Settings
   const [receiptBusinessName, setReceiptBusinessName] = useState("ALI MUHAMMAD PAINTS");
   const [receiptAddress, setReceiptAddress] = useState("Basti Malook, Multan. 0300-868-3395");
   const [receiptDealerText, setReceiptDealerText] = useState("AUTHORIZED DEALER:");
@@ -126,16 +139,10 @@ export default function Settings() {
   const [receiptItemFontSize, setReceiptItemFontSize] = useState("12");
   const [receiptPadding, setReceiptPadding] = useState("12");
 
-  // Bluetooth Settings
   const [bluetoothEnabled, setBluetoothEnabled] = useState(false);
   const [connectedDevice, setConnectedDevice] = useState<string | null>(null);
 
-  const handleSaveStoreSettings = () => {
-    toast({ title: "Store settings saved successfully" });
-  };
-
   const handleSaveBillSettings = () => {
-    // Save POS receipt settings to localStorage
     const receiptSettings = {
       businessName: receiptBusinessName,
       address: receiptAddress,
@@ -147,12 +154,11 @@ export default function Settings() {
       padding: receiptPadding,
     };
     localStorage.setItem('posReceiptSettings', JSON.stringify(receiptSettings));
-    toast({ title: "Bill settings saved successfully" });
+    toast({ title: "Receipt settings saved successfully" });
   };
 
   const handleConnectBluetooth = async () => {
     try {
-      // Request Bluetooth device
       const device = await (navigator as any).bluetooth.requestDevice({
         acceptAllDevices: true,
         optionalServices: ['battery_service']
@@ -328,26 +334,22 @@ export default function Settings() {
         <h1 className="text-2xl font-semibold tracking-tight" data-testid="text-settings-title">
           Settings
         </h1>
-        <p className="text-sm text-muted-foreground">Manage your store, POS, and device settings</p>
+        <p className="text-sm text-muted-foreground">Manage your store, display, and system settings</p>
       </div>
 
-      <Tabs defaultValue="ui" className="w-full">
-        <TabsList className="grid w-full grid-cols-5">
-          <TabsTrigger value="ui" data-testid="tab-ui-settings">
-            <Palette className="h-4 w-4 mr-2" />
-            UI
+      <Tabs defaultValue="general" className="w-full">
+        <TabsList className="grid w-full grid-cols-4">
+          <TabsTrigger value="general" data-testid="tab-general-settings">
+            <Settings2 className="h-4 w-4 mr-2" />
+            General
           </TabsTrigger>
-          <TabsTrigger value="store" data-testid="tab-store-settings">
-            <Store className="h-4 w-4 mr-2" />
-            Store
-          </TabsTrigger>
-          <TabsTrigger value="pos" data-testid="tab-pos-settings">
+          <TabsTrigger value="receipts" data-testid="tab-receipts-settings">
             <Receipt className="h-4 w-4 mr-2" />
-            POS & Bills
+            Receipts
           </TabsTrigger>
-          <TabsTrigger value="bluetooth" data-testid="tab-bluetooth-settings">
-            <Bluetooth className="h-4 w-4 mr-2" />
-            Bluetooth
+          <TabsTrigger value="printer" data-testid="tab-printer-settings">
+            <Printer className="h-4 w-4 mr-2" />
+            Printer
           </TabsTrigger>
           <TabsTrigger value="database" data-testid="tab-database-settings">
             <Database className="h-4 w-4 mr-2" />
@@ -355,12 +357,16 @@ export default function Settings() {
           </TabsTrigger>
         </TabsList>
 
-        {/* UI Customization Settings */}
-        <TabsContent value="ui" className="space-y-4">
+        {/* General Settings - UI + Date Format */}
+        <TabsContent value="general" className="space-y-4">
+          {/* Store Branding */}
           <Card>
             <CardHeader>
-              <CardTitle>Store Branding</CardTitle>
-              <CardDescription>Customize your store name</CardDescription>
+              <div className="flex items-center gap-2">
+                <Palette className="h-5 w-5 text-purple-600" />
+                <CardTitle>Store Branding</CardTitle>
+              </div>
+              <CardDescription>Customize your store name and appearance</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
@@ -371,14 +377,76 @@ export default function Settings() {
                   onChange={(e) => setUiFormData({ ...uiFormData, storeName: e.target.value })}
                   placeholder="Enter store name"
                   className="mt-1"
+                  data-testid="input-store-name"
                 />
                 <p className="text-xs text-muted-foreground mt-1">
-                  This name will appear in the sidebar
+                  This name appears in the sidebar navigation
                 </p>
               </div>
             </CardContent>
           </Card>
 
+          {/* Date Format */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <CalendarDays className="h-5 w-5 text-blue-600" />
+                <CardTitle>Date Format</CardTitle>
+              </div>
+              <CardDescription>
+                Choose how dates are displayed across all pages
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <RadioGroup
+                value={uiFormData.dateFormat || "DD-MM-YYYY"}
+                onValueChange={(value) => setUiFormData({ ...uiFormData, dateFormat: value as DateFormatType })}
+                className="space-y-3"
+              >
+                {dateFormats.map((dateFormat) => (
+                  <div
+                    key={dateFormat.value}
+                    className={`relative flex items-center space-x-4 rounded-lg border-2 p-3 cursor-pointer transition-all ${
+                      uiFormData.dateFormat === dateFormat.value
+                        ? "border-purple-500 bg-purple-50/50"
+                        : "border-slate-200 hover:border-slate-300 bg-white/50"
+                    }`}
+                    onClick={() => setUiFormData({ ...uiFormData, dateFormat: dateFormat.value })}
+                    data-testid={`option-${dateFormat.value}`}
+                  >
+                    <RadioGroupItem value={dateFormat.value} id={dateFormat.value} className="sr-only" />
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Label
+                          htmlFor={dateFormat.value}
+                          className="font-semibold text-slate-800 cursor-pointer"
+                        >
+                          {dateFormat.label}
+                        </Label>
+                        {dateFormat.value === "DD-MM-YYYY" && (
+                          <Badge variant="secondary" className="text-xs">
+                            Default
+                          </Badge>
+                        )}
+                        {uiFormData.dateFormat === dateFormat.value && (
+                          <Check className="h-4 w-4 text-purple-600" />
+                        )}
+                      </div>
+                      <p className="text-sm text-slate-600">{dateFormat.description}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs text-slate-500 mb-1">Example:</p>
+                      <p className="font-mono font-semibold text-purple-600">
+                        {dateFormat.example}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </RadioGroup>
+            </CardContent>
+          </Card>
+
+          {/* Product Card Design */}
           <Card>
             <CardHeader>
               <CardTitle>Product Card Design</CardTitle>
@@ -501,6 +569,7 @@ export default function Settings() {
                     cardButtonColor: uiSettings.cardButtonColor,
                     cardPriceColor: uiSettings.cardPriceColor,
                     showStockBadgeBorder: uiSettings.showStockBadgeBorder,
+                    dateFormat: uiSettings.dateFormat || "DD-MM-YYYY",
                   });
                 }
               }}
@@ -508,77 +577,13 @@ export default function Settings() {
               Reset
             </Button>
             <Button onClick={() => updateUiMutation.mutate(uiFormData)} disabled={updateUiMutation.isPending}>
-              {updateUiMutation.isPending ? "Saving..." : "Save UI Settings"}
+              {updateUiMutation.isPending ? "Saving..." : "Save Settings"}
             </Button>
           </div>
         </TabsContent>
 
-        {/* Store Settings */}
-        <TabsContent value="store" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Store Information</CardTitle>
-              <CardDescription>
-                Update your store details that appear on bills and receipts
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="storeName">Store Name</Label>
-                <Input
-                  id="storeName"
-                  value={storeName}
-                  onChange={(e) => setStoreName(e.target.value)}
-                  data-testid="input-store-name"
-                  placeholder="Enter store name"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="storeAddress">Address</Label>
-                <Input
-                  id="storeAddress"
-                  value={storeAddress}
-                  onChange={(e) => setStoreAddress(e.target.value)}
-                  data-testid="input-store-address"
-                  placeholder="Enter store address"
-                />
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="storePhone">Phone Number</Label>
-                  <Input
-                    id="storePhone"
-                    type="tel"
-                    value={storePhone}
-                    onChange={(e) => setStorePhone(e.target.value)}
-                    data-testid="input-store-phone"
-                    placeholder="Enter phone number"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="storeEmail">Email</Label>
-                  <Input
-                    id="storeEmail"
-                    type="email"
-                    value={storeEmail}
-                    onChange={(e) => setStoreEmail(e.target.value)}
-                    data-testid="input-store-email"
-                    placeholder="Enter email address"
-                  />
-                </div>
-              </div>
-              <Separator />
-              <div className="flex justify-end">
-                <Button onClick={handleSaveStoreSettings} data-testid="button-save-store">
-                  Save Store Settings
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* POS & Bill Settings */}
-        <TabsContent value="pos" className="space-y-4">
+        {/* Receipts Settings */}
+        <TabsContent value="receipts" className="space-y-4">
           <Card>
             <CardHeader>
               <CardTitle>Bill Display Settings</CardTitle>
@@ -634,123 +639,127 @@ export default function Settings() {
                 />
                 <p className="text-xs text-muted-foreground">This message appears at the bottom of every bill</p>
               </div>
-              <Separator />
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardHeader>
+              <CardTitle>Thermal Receipt Customization</CardTitle>
+              <CardDescription>
+                Customize thermal receipt header and footer
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="receiptBusinessName">Business Name</Label>
+                <Input
+                  id="receiptBusinessName"
+                  value={receiptBusinessName}
+                  onChange={(e) => setReceiptBusinessName(e.target.value)}
+                  placeholder="Enter business name"
+                />
+                <p className="text-xs text-muted-foreground">Appears at the top of thermal receipt</p>
+              </div>
               
-              {/* POS Receipt Header/Footer Settings */}
-              <div className="space-y-4 pt-4">
-                <h3 className="font-semibold">Thermal Receipt Customization</h3>
-                
+              <div className="space-y-2">
+                <Label htmlFor="receiptAddress">Address & Contact</Label>
+                <Input
+                  id="receiptAddress"
+                  value={receiptAddress}
+                  onChange={(e) => setReceiptAddress(e.target.value)}
+                  placeholder="Enter address and phone"
+                />
+                <p className="text-xs text-muted-foreground">Shop address and phone number</p>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="receiptDealerText">Dealer Label</Label>
+                <Input
+                  id="receiptDealerText"
+                  value={receiptDealerText}
+                  onChange={(e) => setReceiptDealerText(e.target.value)}
+                  placeholder="e.g., AUTHORIZED DEALER:"
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="receiptDealerBrands">Dealer Brands</Label>
+                <Input
+                  id="receiptDealerBrands"
+                  value={receiptDealerBrands}
+                  onChange={(e) => setReceiptDealerBrands(e.target.value)}
+                  placeholder="e.g., ICI-DULUX • MOBI PAINTS • WESTER 77"
+                />
+                <p className="text-xs text-muted-foreground">Use • (bullet) to separate brands</p>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="receiptThankYou">Thank You Message</Label>
+                <Input
+                  id="receiptThankYou"
+                  value={receiptThankYou}
+                  onChange={(e) => setReceiptThankYou(e.target.value)}
+                  placeholder="e.g., THANKS FOR YOUR BUSINESS"
+                />
+                <p className="text-xs text-muted-foreground">Final message at the bottom of receipt</p>
+              </div>
+              
+              <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="receiptBusinessName">Business Name</Label>
+                  <Label htmlFor="receiptFontSize">General Font Size (px)</Label>
                   <Input
-                    id="receiptBusinessName"
-                    value={receiptBusinessName}
-                    onChange={(e) => setReceiptBusinessName(e.target.value)}
-                    placeholder="Enter business name"
+                    id="receiptFontSize"
+                    type="number"
+                    min="8"
+                    max="16"
+                    value={receiptFontSize}
+                    onChange={(e) => setReceiptFontSize(e.target.value)}
+                    placeholder="11"
                   />
-                  <p className="text-xs text-muted-foreground">Appears at the top of thermal receipt</p>
+                  <p className="text-xs text-muted-foreground">Base font size</p>
                 </div>
                 
                 <div className="space-y-2">
-                  <Label htmlFor="receiptAddress">Address & Contact</Label>
+                  <Label htmlFor="receiptItemFontSize">Item Font Size (px)</Label>
                   <Input
-                    id="receiptAddress"
-                    value={receiptAddress}
-                    onChange={(e) => setReceiptAddress(e.target.value)}
-                    placeholder="Enter address and phone"
+                    id="receiptItemFontSize"
+                    type="number"
+                    min="10"
+                    max="18"
+                    value={receiptItemFontSize}
+                    onChange={(e) => setReceiptItemFontSize(e.target.value)}
+                    placeholder="12"
                   />
-                  <p className="text-xs text-muted-foreground">Shop address and phone number</p>
+                  <p className="text-xs text-muted-foreground">Item list size</p>
                 </div>
                 
                 <div className="space-y-2">
-                  <Label htmlFor="receiptDealerText">Dealer Label</Label>
+                  <Label htmlFor="receiptPadding">Padding (px)</Label>
                   <Input
-                    id="receiptDealerText"
-                    value={receiptDealerText}
-                    onChange={(e) => setReceiptDealerText(e.target.value)}
-                    placeholder="e.g., AUTHORIZED DEALER:"
+                    id="receiptPadding"
+                    type="number"
+                    min="0"
+                    max="20"
+                    value={receiptPadding}
+                    onChange={(e) => setReceiptPadding(e.target.value)}
+                    placeholder="12"
                   />
-                </div>
-                
-                <div className="space-y-2">
-                  <Label htmlFor="receiptDealerBrands">Dealer Brands</Label>
-                  <Input
-                    id="receiptDealerBrands"
-                    value={receiptDealerBrands}
-                    onChange={(e) => setReceiptDealerBrands(e.target.value)}
-                    placeholder="e.g., ICI-DULUX • MOBI PAINTS • WESTER 77"
-                  />
-                  <p className="text-xs text-muted-foreground">Use • (bullet) to separate brands</p>
-                </div>
-                
-                <div className="space-y-2">
-                  <Label htmlFor="receiptThankYou">Thank You Message</Label>
-                  <Input
-                    id="receiptThankYou"
-                    value={receiptThankYou}
-                    onChange={(e) => setReceiptThankYou(e.target.value)}
-                    placeholder="e.g., THANKS FOR YOUR BUSINESS"
-                  />
-                  <p className="text-xs text-muted-foreground">Final message at the bottom of receipt</p>
-                </div>
-                
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="receiptFontSize">General Font Size (px)</Label>
-                    <Input
-                      id="receiptFontSize"
-                      type="number"
-                      min="8"
-                      max="16"
-                      value={receiptFontSize}
-                      onChange={(e) => setReceiptFontSize(e.target.value)}
-                      placeholder="11"
-                    />
-                    <p className="text-xs text-muted-foreground">Base font size</p>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="receiptItemFontSize">Item Font Size (px)</Label>
-                    <Input
-                      id="receiptItemFontSize"
-                      type="number"
-                      min="10"
-                      max="18"
-                      value={receiptItemFontSize}
-                      onChange={(e) => setReceiptItemFontSize(e.target.value)}
-                      placeholder="12"
-                    />
-                    <p className="text-xs text-muted-foreground">Item list size</p>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="receiptPadding">Padding (px)</Label>
-                    <Input
-                      id="receiptPadding"
-                      type="number"
-                      min="0"
-                      max="20"
-                      value={receiptPadding}
-                      onChange={(e) => setReceiptPadding(e.target.value)}
-                      placeholder="12"
-                    />
-                    <p className="text-xs text-muted-foreground">Side padding</p>
-                  </div>
+                  <p className="text-xs text-muted-foreground">Side padding</p>
                 </div>
               </div>
               
               <Separator />
               <div className="flex justify-end">
                 <Button onClick={handleSaveBillSettings} data-testid="button-save-bill">
-                  Save Bill Settings
+                  Save Receipt Settings
                 </Button>
               </div>
             </CardContent>
           </Card>
         </TabsContent>
 
-        {/* Bluetooth Settings */}
-        <TabsContent value="bluetooth" className="space-y-4">
+        {/* Printer Settings */}
+        <TabsContent value="printer" className="space-y-4">
           <Card>
             <CardHeader>
               <CardTitle>Bluetooth Printer Connection</CardTitle>

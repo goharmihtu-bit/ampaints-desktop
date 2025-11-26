@@ -1,15 +1,18 @@
 import { useQuery } from "@tanstack/react-query";
-import { useRoute } from "wouter";
+import { useRoute, useLocation, useSearch } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Receipt, MoreVertical, Edit, Plus, Trash2, Save, X } from "lucide-react";
+import { ArrowLeft, Receipt, MoreVertical, Edit, Plus, Trash2, Save, X, Download, MessageCircle, Share2 } from "lucide-react";
 import { Link } from "wouter";
 import type { SaleWithItems, ColorWithVariantAndProduct, SaleItem } from "@shared/schema";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
+import { useDateFormat } from "@/hooks/use-date-format";
+import { useReceiptSettings } from "@/hooks/use-receipt-settings";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
+import jsPDF from "jspdf";
 import {
   Dialog,
   DialogContent,
@@ -28,9 +31,13 @@ import {
 import ThermalReceipt from "@/components/thermal-receipt";
 
 export default function BillPrint() {
+  const { formatDateShort } = useDateFormat();
+  const { receiptSettings } = useReceiptSettings();
   const [, params] = useRoute("/bill/:id");
   const saleId = params?.id;
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
+  const searchParams = useSearch();
   const [editMode, setEditMode] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [addItemDialogOpen, setAddItemDialogOpen] = useState(false);
@@ -40,39 +47,7 @@ export default function BillPrint() {
   const [searchQuery, setSearchQuery] = useState("");
   const [editingItems, setEditingItems] = useState<{ [key: string]: { quantity: string; rate: string } }>({});
   
-  // Load receipt settings from localStorage
-  const [receiptSettings, setReceiptSettings] = useState({
-    businessName: "ALI MUHAMMAD PAINTS",
-    address: "Basti Malook, Multan. 0300-868-3395",
-    dealerText: "AUTHORIZED DEALER:",
-    dealerBrands: "ICI-DULUX • MOBI PAINTS • WESTER 77",
-    thankYou: "THANKS FOR YOUR BUSINESS",
-    fontSize: "11px",
-    itemFontSize: "12px",
-    padding: "0 12px 12px 12px"
-  });
-  
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem('posReceiptSettings');
-      if (saved) {
-        const settings = JSON.parse(saved);
-        setReceiptSettings({
-          businessName: settings.businessName || "ALI MUHAMMAD PAINTS",
-          address: settings.address || "Basti Malook, Multan. 0300-868-3395",
-          dealerText: settings.dealerText || "AUTHORIZED DEALER:",
-          dealerBrands: settings.dealerBrands || "ICI-DULUX • MOBI PAINTS • WESTER 77",
-          thankYou: settings.thankYou || "THANKS FOR YOUR BUSINESS",
-          fontSize: settings.fontSize ? `${settings.fontSize}px` : "11px",
-          itemFontSize: settings.itemFontSize ? `${settings.itemFontSize}px` : "12px",
-          padding: settings.padding ? `0 ${settings.padding}px 12px ${settings.padding}px` : "0 12px 12px 12px"
-        });
-      }
-    } catch (error) {
-      console.error("Error loading receipt settings:", error);
-      // Keep default settings if parsing fails
-    }
-  }, []);
+  const referrer = new URLSearchParams(searchParams).get('from');
 
   const { data: sale, isLoading, error } = useQuery<SaleWithItems>({
     queryKey: ["/api/sales", saleId],
@@ -125,6 +100,249 @@ export default function BillPrint() {
   // Print Thermal
   const printThermal = () => {
     setTimeout(() => window.print(), 200);
+  };
+
+  // Handle Back Navigation
+  const handleGoBack = () => {
+    if (referrer && sale?.customerPhone) {
+      setLocation(`/customer/${encodeURIComponent(sale.customerPhone)}`);
+    } else {
+      setLocation('/sales');
+    }
+  };
+
+  // Format phone for WhatsApp with validation
+  const formatPhoneForWhatsApp = (phone: string): string | null => {
+    if (!phone || phone.trim().length < 10) {
+      return null;
+    }
+    let cleaned = phone.replace(/[^\d+]/g, '');
+    if (cleaned.length < 10) {
+      return null;
+    }
+    if (cleaned.startsWith('0')) {
+      cleaned = '92' + cleaned.slice(1);
+    } else if (!cleaned.startsWith('92') && !cleaned.startsWith('+92')) {
+      cleaned = '92' + cleaned;
+    }
+    cleaned = cleaned.replace(/^\+/, '');
+    if (cleaned.length < 12) {
+      return null;
+    }
+    return cleaned;
+  };
+
+  // Download Bill as PDF - Professional Design
+  const downloadBillPDF = () => {
+    if (!sale) return;
+
+    const pdf = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
+
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const margin = 15;
+    let yPos = margin;
+
+    pdf.setFillColor(102, 126, 234);
+    pdf.rect(0, 0, pageWidth, 40, 'F');
+
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFontSize(22);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(receiptSettings.businessName, pageWidth / 2, 18, { align: 'center' });
+
+    pdf.setFontSize(10);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(receiptSettings.address, pageWidth / 2, 26, { align: 'center' });
+
+    pdf.setFontSize(8);
+    pdf.text(receiptSettings.dealerText + ' ' + receiptSettings.dealerBrands, pageWidth / 2, 33, { align: 'center' });
+
+    pdf.setTextColor(0, 0, 0);
+    yPos = 50;
+
+    pdf.setFillColor(240, 240, 240);
+    pdf.roundedRect(margin, yPos, (pageWidth - 2 * margin) / 2 - 5, 28, 3, 3, 'F');
+    pdf.roundedRect(pageWidth / 2 + 5, yPos, (pageWidth - 2 * margin) / 2 - 5, 28, 3, 3, 'F');
+
+    pdf.setFontSize(8);
+    pdf.setTextColor(100, 100, 100);
+    pdf.text('INVOICE NUMBER', margin + 5, yPos + 6);
+    pdf.text('DATE', margin + 5, yPos + 18);
+
+    pdf.setTextColor(0, 0, 0);
+    pdf.setFontSize(11);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(`#${sale.id.slice(0, 8).toUpperCase()}`, margin + 5, yPos + 12);
+    pdf.setFontSize(10);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(formatDateShort(sale.createdAt), margin + 5, yPos + 24);
+
+    const rightBoxX = pageWidth / 2 + 10;
+    pdf.setFontSize(8);
+    pdf.setTextColor(100, 100, 100);
+    pdf.text('BILL TO', rightBoxX, yPos + 6);
+
+    pdf.setTextColor(0, 0, 0);
+    pdf.setFontSize(11);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(sale.customerName, rightBoxX, yPos + 13);
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(sale.customerPhone, rightBoxX, yPos + 20);
+
+    yPos += 38;
+
+    pdf.setFillColor(50, 50, 50);
+    pdf.rect(margin, yPos, pageWidth - 2 * margin, 8, 'F');
+
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFontSize(8);
+    pdf.setFont('helvetica', 'bold');
+
+    const colX = {
+      item: margin + 3,
+      packing: margin + 80,
+      qty: margin + 110,
+      rate: margin + 130,
+      amount: pageWidth - margin - 3
+    };
+
+    pdf.text('ITEM DESCRIPTION', colX.item, yPos + 5.5);
+    pdf.text('SIZE', colX.packing, yPos + 5.5);
+    pdf.text('QTY', colX.qty, yPos + 5.5);
+    pdf.text('RATE', colX.rate, yPos + 5.5);
+    pdf.text('AMOUNT', colX.amount, yPos + 5.5, { align: 'right' });
+
+    yPos += 10;
+    pdf.setTextColor(0, 0, 0);
+
+    sale.saleItems.forEach((item, index) => {
+      const bgColor = index % 2 === 0 ? [250, 250, 250] : [255, 255, 255];
+      pdf.setFillColor(bgColor[0], bgColor[1], bgColor[2]);
+      pdf.rect(margin, yPos, pageWidth - 2 * margin, 10, 'F');
+
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(item.color.variant.product.productName, colX.item, yPos + 4);
+
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(80, 80, 80);
+      pdf.text(`${item.color.colorName} (${item.color.colorCode})`, colX.item, yPos + 8);
+      pdf.setTextColor(0, 0, 0);
+
+      pdf.text(item.color.variant.packingSize, colX.packing, yPos + 6);
+      pdf.text(item.quantity.toString(), colX.qty, yPos + 6);
+      pdf.text(`Rs.${Math.round(parseFloat(item.rate)).toLocaleString()}`, colX.rate, yPos + 6);
+      
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(`Rs.${Math.round(parseFloat(item.subtotal)).toLocaleString()}`, colX.amount, yPos + 6, { align: 'right' });
+
+      yPos += 12;
+    });
+
+    yPos += 5;
+    pdf.setDrawColor(200, 200, 200);
+    pdf.line(margin, yPos, pageWidth - margin, yPos);
+    yPos += 8;
+
+    const summaryX = pageWidth - margin - 60;
+    const valueX = pageWidth - margin;
+
+    pdf.setFontSize(10);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text('Subtotal:', summaryX, yPos);
+    pdf.text(`Rs. ${Math.round(parseFloat(sale.totalAmount)).toLocaleString()}`, valueX, yPos, { align: 'right' });
+    yPos += 7;
+
+    pdf.setTextColor(34, 139, 34);
+    pdf.text('Amount Paid:', summaryX, yPos);
+    pdf.text(`Rs. ${Math.round(parseFloat(sale.amountPaid)).toLocaleString()}`, valueX, yPos, { align: 'right' });
+    yPos += 7;
+
+    const outstanding = parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid);
+
+    pdf.setFillColor(102, 126, 234);
+    pdf.roundedRect(summaryX - 5, yPos - 4, pageWidth - summaryX + 5 - margin + 5, 12, 2, 2, 'F');
+
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFontSize(12);
+    pdf.setFont('helvetica', 'bold');
+    
+    if (outstanding > 0) {
+      pdf.text('BALANCE DUE:', summaryX, yPos + 4);
+      pdf.text(`Rs. ${Math.round(outstanding).toLocaleString()}`, valueX, yPos + 4, { align: 'right' });
+    } else {
+      pdf.text('STATUS:', summaryX, yPos + 4);
+      pdf.text('PAID IN FULL', valueX, yPos + 4, { align: 'right' });
+    }
+
+    yPos += 25;
+
+    pdf.setTextColor(100, 100, 100);
+    pdf.setFontSize(10);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(receiptSettings.thankYou, pageWidth / 2, yPos, { align: 'center' });
+
+    yPos += 8;
+    pdf.setFontSize(8);
+    pdf.text('This is a computer-generated invoice.', pageWidth / 2, yPos, { align: 'center' });
+
+    pdf.save(`Invoice-${sale.id.slice(0, 8).toUpperCase()}-${formatDateShort(sale.createdAt).replace(/\//g, '-')}.pdf`);
+    
+    toast({
+      title: "Invoice Downloaded",
+      description: "Professional invoice has been downloaded as PDF.",
+    });
+  };
+
+  // Share Bill via WhatsApp
+  const shareToWhatsApp = () => {
+    if (!sale) return;
+
+    const whatsappPhone = formatPhoneForWhatsApp(sale.customerPhone);
+    
+    if (!whatsappPhone) {
+      toast({
+        title: "Invalid Phone Number",
+        description: "Customer phone number is invalid for WhatsApp. Please check the number.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const outstanding = parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid);
+    const itemsList = sale.saleItems.map(item => 
+      `- ${item.color.variant.product.productName} ${item.color.colorName} (${item.color.colorCode}) x${item.quantity} = Rs.${Math.round(parseFloat(item.subtotal))}`
+    ).join('\n');
+
+    const message = `*${receiptSettings.businessName}*
+Bill #${sale.id.slice(0, 8)}
+Date: ${formatDateShort(sale.createdAt)}
+
+*Customer:* ${sale.customerName}
+
+*Items:*
+${itemsList}
+
+*Total:* Rs. ${Math.round(parseFloat(sale.totalAmount)).toLocaleString()}
+*Paid:* Rs. ${Math.round(parseFloat(sale.amountPaid)).toLocaleString()}
+${outstanding > 0 ? `*Outstanding:* Rs. ${Math.round(outstanding).toLocaleString()}` : '*Status:* PAID'}
+
+${receiptSettings.thankYou}
+_${receiptSettings.dealerText} ${receiptSettings.dealerBrands}_`;
+
+    const encodedMessage = encodeURIComponent(message);
+    window.open(`https://wa.me/${whatsappPhone}?text=${encodedMessage}`, '_blank');
+    
+    toast({
+      title: "WhatsApp Opening",
+      description: "Bill details sent to WhatsApp.",
+    });
   };
 
   // Add Item with Custom Rate
@@ -288,7 +506,7 @@ export default function BillPrint() {
     }
   }, [selectedColor]);
 
-  const formatDate = (d: string) => new Date(d).toLocaleDateString("en-GB");
+  const formatDate = (d: string) => formatDateShort(d);
 
   // Show error if bill not found
   if (error) {
@@ -328,44 +546,50 @@ export default function BillPrint() {
       <div className="p-6 max-w-2xl mx-auto">
 
         {/* Header */}
-        <div className="flex justify-between items-center mb-6 no-print">
-          <Link href="/pos">
-            <Button variant="outline">
-              <ArrowLeft className="h-4 w-4 mr-2" /> Back
-            </Button>
-          </Link>
+        <div className="flex justify-between items-center mb-6 no-print flex-wrap gap-2">
+          <Button variant="outline" onClick={handleGoBack} data-testid="button-back">
+            <ArrowLeft className="h-4 w-4 mr-2" /> Back
+          </Button>
 
-          <div className="flex gap-3">
-            <Button onClick={printThermal} className="font-medium">
+          <div className="flex gap-2 flex-wrap">
+            <Button onClick={downloadBillPDF} variant="outline" data-testid="button-download-pdf">
+              <Download className="h-4 w-4 mr-2" />
+              Download PDF
+            </Button>
+            <Button onClick={shareToWhatsApp} className="bg-green-500 hover:bg-green-600 text-white" data-testid="button-share-whatsapp">
+              <MessageCircle className="h-4 w-4 mr-2" />
+              WhatsApp
+            </Button>
+            <Button onClick={printThermal} className="font-medium" data-testid="button-print-receipt">
               <Receipt className="h-4 w-4 mr-2" />
-              Print Receipt
+              Print
             </Button>
 
             <div className="flex gap-2">
               {editMode ? (
                 <>
-                  <Button variant="outline" onClick={cancelEditMode}>
+                  <Button variant="outline" onClick={cancelEditMode} data-testid="button-cancel-edit">
                     <X className="h-4 w-4 mr-2" /> Cancel
                   </Button>
-                  <Button onClick={saveAllChanges}>
+                  <Button onClick={saveAllChanges} data-testid="button-save-changes">
                     <Save className="h-4 w-4 mr-2" /> Save Changes
                   </Button>
                 </>
               ) : (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="icon">
+                    <Button variant="outline" size="icon" data-testid="button-bill-menu">
                       <MoreVertical className="h-4 w-4" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={startEditMode}>
+                    <DropdownMenuItem onClick={startEditMode} data-testid="menu-edit-bill">
                       <Edit className="h-4 w-4 mr-2" /> Edit Bill
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setAddItemDialogOpen(true)}>
+                    <DropdownMenuItem onClick={() => setAddItemDialogOpen(true)} data-testid="menu-add-item">
                       <Plus className="h-4 w-4 mr-2" /> Add Item
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setDeleteDialogOpen(true)} className="text-red-600">
+                    <DropdownMenuItem onClick={() => setDeleteDialogOpen(true)} className="text-red-600" data-testid="menu-delete-bill">
                       <Trash2 className="h-4 w-4 mr-2" /> Delete Bill
                     </DropdownMenuItem>
                   </DropdownMenuContent>
@@ -385,7 +609,7 @@ export default function BillPrint() {
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div><span className="text-muted-foreground">Customer:</span> <strong>{sale.customerName}</strong></div>
               <div><span className="text-muted-foreground">Phone:</span> <strong>{sale.customerPhone}</strong></div>
-              <div><span className="text-muted-foreground">Date:</span> <strong>{new Date(sale.createdAt).toLocaleDateString("en-GB")}</strong></div>
+              <div><span className="text-muted-foreground">Date:</span> <strong>{formatDateShort(sale.createdAt)}</strong></div>
               <div><span className="text-muted-foreground">Time:</span> <strong>{new Date(sale.createdAt).toLocaleTimeString()}</strong></div>
             </div>
 

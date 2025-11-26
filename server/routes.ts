@@ -10,6 +10,8 @@ import {
   insertSaleItemSchema, 
   insertStockInHistorySchema,
   insertPaymentHistorySchema,
+  insertReturnSchema,
+  insertReturnItemSchema,
   formatDateToDDMMYYYY, 
   parseDDMMYYYYToDate 
 } from "@shared/schema";
@@ -402,7 +404,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Stock Out History (items sold through POS)
+  app.get("/api/stock-out/history", async (_req, res) => {
+    try {
+      console.log("[API] Fetching stock out history (sold items)");
+      const history = await storage.getStockOutHistory();
+      console.log(`[API] Returning ${history.length} stock out records`);
+      res.json(history);
+    } catch (error) {
+      console.error("[API] Error fetching stock out history:", error);
+      res.json([]);
+    }
+  });
+
   // Payment History routes
+  app.get("/api/payment-history", async (_req, res) => {
+    try {
+      const history = await storage.getAllPaymentHistory();
+      res.json(history);
+    } catch (error) {
+      console.error("Error fetching all payment history:", error);
+      res.status(500).json({ error: "Failed to fetch payment history" });
+    }
+  });
+
   app.get("/api/payment-history/customer/:phone", async (req, res) => {
     try {
       const history = await storage.getPaymentHistoryByCustomer(req.params.phone);
@@ -434,7 +459,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         previousBalance: parseFloat(validated.previousBalance),
         newBalance: parseFloat(validated.newBalance),
         paymentMethod: validated.paymentMethod,
-        notes: validated.notes
+        notes: validated.notes ?? undefined
       });
       res.json(paymentHistory);
     } catch (error) {
@@ -444,6 +469,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error("Error creating payment history:", error);
         res.status(500).json({ error: "Failed to create payment history" });
       }
+    }
+  });
+
+  // Update Payment History
+  app.patch("/api/payment-history/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { amount, paymentMethod, notes } = req.body;
+      
+      const updated = await storage.updatePaymentHistory(id, {
+        amount: amount !== undefined ? parseFloat(amount) : undefined,
+        paymentMethod,
+        notes,
+      });
+      
+      if (!updated) {
+        res.status(404).json({ error: "Payment record not found" });
+        return;
+      }
+      
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating payment history:", error);
+      res.status(500).json({ error: "Failed to update payment history" });
+    }
+  });
+
+  // Delete Payment History
+  app.delete("/api/payment-history/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const deleted = await storage.deletePaymentHistory(id);
+      
+      if (!deleted) {
+        res.status(404).json({ error: "Payment record not found" });
+        return;
+      }
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting payment history:", error);
+      res.status(500).json({ error: "Failed to delete payment history" });
     }
   });
 
@@ -512,10 +579,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Sales
+  // Sales (with items for returns page)
   app.get("/api/sales", async (_req, res) => {
     try {
-      const sales = await storage.getSales();
+      const sales = await storage.getSalesWithItems();
       res.json(sales);
     } catch (error) {
       console.error("Error fetching sales:", error);
@@ -530,6 +597,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching unpaid sales:", error);
       res.status(500).json({ error: "Failed to fetch unpaid sales" });
+    }
+  });
+
+  // Get all sales for a customer (paid + unpaid)
+  app.get("/api/sales/customer/:phone", async (req, res) => {
+    try {
+      const sales = await storage.getSalesByCustomerPhone(req.params.phone);
+      res.json(sales);
+    } catch (error) {
+      console.error("Error fetching customer sales:", error);
+      res.status(500).json({ error: "Failed to fetch customer sales" });
+    }
+  });
+
+  // Get all sales with items for a customer (for statement details)
+  app.get("/api/sales/customer/:phone/with-items", async (req, res) => {
+    try {
+      const sales = await storage.getSalesByCustomerPhoneWithItems(req.params.phone);
+      res.json(sales);
+    } catch (error) {
+      console.error("Error fetching customer sales with items:", error);
+      res.status(500).json({ error: "Failed to fetch customer sales with items" });
     }
   });
 
@@ -948,6 +1037,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error generating customer statement:", error);
       res.status(500).json({ error: "Failed to generate customer statement" });
+    }
+  });
+
+  // Returns API
+  app.get("/api/returns", async (_req, res) => {
+    try {
+      const returns = await storage.getReturns();
+      res.json(returns);
+    } catch (error) {
+      console.error("Error fetching returns:", error);
+      res.status(500).json({ error: "Failed to fetch returns" });
+    }
+  });
+
+  app.get("/api/returns/:id", async (req, res) => {
+    try {
+      const returnRecord = await storage.getReturn(req.params.id);
+      if (!returnRecord) {
+        res.status(404).json({ error: "Return not found" });
+        return;
+      }
+      res.json(returnRecord);
+    } catch (error) {
+      console.error("Error fetching return:", error);
+      res.status(500).json({ error: "Failed to fetch return" });
+    }
+  });
+
+  app.post("/api/returns", async (req, res) => {
+    try {
+      const { returnData, items } = req.body;
+      
+      if (!returnData || !items || !Array.isArray(items) || items.length === 0) {
+        res.status(400).json({ error: "Return data and items are required" });
+        return;
+      }
+
+      const validatedReturn = insertReturnSchema.parse(returnData);
+      const validatedItems = items.map((item: any) => insertReturnItemSchema.parse(item));
+      
+      const returnRecord = await storage.createReturn(validatedReturn, validatedItems);
+      res.json(returnRecord);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ error: "Invalid return data", details: error.errors });
+      } else {
+        console.error("Error creating return:", error);
+        res.status(500).json({ error: "Failed to create return" });
+      }
+    }
+  });
+
+  app.get("/api/returns/customer/:phone", async (req, res) => {
+    try {
+      const returns = await storage.getReturnsByCustomerPhone(req.params.phone);
+      res.json(returns);
+    } catch (error) {
+      console.error("Error fetching customer returns:", error);
+      res.status(500).json({ error: "Failed to fetch customer returns" });
     }
   });
 

@@ -52,7 +52,6 @@ import {
   TrendingUp,
   BarChart3,
   Warehouse,
-  Cube,
   PaintBucket,
   ArrowUpCircle,
   Database,
@@ -63,6 +62,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
+import { useDateFormat } from "@/hooks/use-date-format";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Product, VariantWithProduct, ColorWithVariantAndProduct } from "@shared/schema";
 import { getEffectiveRate, formatDateToDDMMYYYY, parseDDMMYYYYToDate } from "@shared/schema";
@@ -144,9 +144,27 @@ interface StockInHistory {
 }
 
 /* -------------------------
+   Stock Out History Types (Items sold through POS)
+   ------------------------- */
+interface StockOutHistory {
+  id: string;
+  saleId: string;
+  colorId: string;
+  quantity: number;
+  rate: string;
+  subtotal: string;
+  color: ColorWithVariantAndProduct;
+  soldAt: string;
+  customerName: string;
+  customerPhone: string;
+}
+
+/* -------------------------
    Main component
    ------------------------- */
 export default function StockManagement() {
+  const { formatDateShort } = useDateFormat();
+  
   /* Dialog visibility */
   const [isProductDialogOpen, setIsProductDialogOpen] = useState(false);
   const [isVariantDialogOpen, setIsVariantDialogOpen] = useState(false);
@@ -185,6 +203,8 @@ export default function StockManagement() {
   const { toast } = useToast();
 
   /* Search & stock-in state */
+  const [productSearchQuery, setProductSearchQuery] = useState("");
+  const [variantSearchQuery, setVariantSearchQuery] = useState("");
   const [colorSearchQuery, setColorSearchQuery] = useState("");
   const [stockInSearchQuery, setStockInSearchQuery] = useState("");
   const [selectedColorForStockIn, setSelectedColorForStockIn] = useState<ColorWithVariantAndProduct | null>(null);
@@ -207,6 +227,14 @@ export default function StockManagement() {
   const [historyStartDate, setHistoryStartDate] = useState<string>("");
   const [historyEndDate, setHistoryEndDate] = useState<string>("");
 
+  /* Stock Out History filters (items sold through POS) */
+  const [stockOutCompanyFilter, setStockOutCompanyFilter] = useState("all");
+  const [stockOutProductFilter, setStockOutProductFilter] = useState("all");
+  const [stockOutDateFilter, setStockOutDateFilter] = useState("all");
+  const [stockOutSearchQuery, setStockOutSearchQuery] = useState("");
+  const [stockOutStartDate, setStockOutStartDate] = useState<string>("");
+  const [stockOutEndDate, setStockOutEndDate] = useState<string>("");
+
   /* Multi-select state */
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
   const [selectedVariants, setSelectedVariants] = useState<Set<string>>(new Set());
@@ -217,14 +245,17 @@ export default function StockManagement() {
      ------------------------- */
   const { data: products = [], isLoading: productsLoading } = useQuery<Product[]>({
     queryKey: ["/api/products"],
+    refetchOnWindowFocus: true, // Auto-refresh when tab becomes active
   });
 
   const { data: variantsData = [], isLoading: variantsLoading } = useQuery<VariantWithProduct[]>({
     queryKey: ["/api/variants"],
+    refetchOnWindowFocus: true, // Auto-refresh when tab becomes active
   });
 
   const { data: colorsData = [], isLoading: colorsLoading } = useQuery<ColorWithVariantAndProduct[]>({
     queryKey: ["/api/colors"],
+    refetchOnWindowFocus: true, // Auto-refresh when tab becomes active
   });
 
   /* Stock In History Query */
@@ -306,6 +337,76 @@ export default function StockManagement() {
 
     return filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [stockInHistory, historyCompanyFilter, historyProductFilter, historyDateFilter, historySearchQuery, historyStartDate, historyEndDate]);
+
+  /* Stock Out History Query (Items sold through POS) */
+  const { data: stockOutHistory = [], isLoading: stockOutLoading, refetch: refetchStockOutHistory } = useQuery<StockOutHistory[]>({
+    queryKey: ["/api/stock-out/history"],
+  });
+
+  /* Filtered Stock Out History */
+  const filteredStockOutHistory = useMemo(() => {
+    let filtered = stockOutHistory;
+
+    if (stockOutCompanyFilter !== "all") {
+      filtered = filtered.filter(item => 
+        item.color?.variant?.product?.company === stockOutCompanyFilter
+      );
+    }
+
+    if (stockOutProductFilter !== "all") {
+      filtered = filtered.filter(item => 
+        item.color?.variant?.product?.productName === stockOutProductFilter
+      );
+    }
+
+    if (stockOutDateFilter !== "all") {
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const lastWeek = new Date(today);
+      lastWeek.setDate(lastWeek.getDate() - 7);
+      const lastMonth = new Date(today);
+      lastMonth.setMonth(lastMonth.getMonth() - 1);
+
+      filtered = filtered.filter(item => {
+        const soldDate = new Date(item.soldAt);
+        switch (stockOutDateFilter) {
+          case "today": return soldDate >= today;
+          case "yesterday": return soldDate >= yesterday && soldDate < today;
+          case "week": return soldDate >= lastWeek;
+          case "month": return soldDate >= lastMonth;
+          default: return true;
+        }
+      });
+    }
+
+    if (stockOutStartDate) {
+      const start = new Date(stockOutStartDate);
+      start.setHours(0, 0, 0, 0);
+      filtered = filtered.filter(item => new Date(item.soldAt) >= start);
+    }
+
+    if (stockOutEndDate) {
+      const end = new Date(stockOutEndDate);
+      end.setHours(23, 59, 59, 999);
+      filtered = filtered.filter(item => new Date(item.soldAt) <= end);
+    }
+
+    if (stockOutSearchQuery.trim()) {
+      const query = stockOutSearchQuery.trim().toLowerCase();
+      filtered = filtered.filter(item => 
+        item.color?.colorCode?.toLowerCase().includes(query) ||
+        item.color?.colorName?.toLowerCase().includes(query) ||
+        item.color?.variant?.product?.company?.toLowerCase().includes(query) ||
+        item.color?.variant?.product?.productName?.toLowerCase().includes(query) ||
+        item.customerName?.toLowerCase().includes(query) ||
+        item.customerPhone?.toLowerCase().includes(query)
+      );
+    }
+
+    return filtered;
+  }, [stockOutHistory, stockOutCompanyFilter, stockOutProductFilter, stockOutDateFilter, stockOutSearchQuery, stockOutStartDate, stockOutEndDate]);
 
   /* Useful derived lists */
   const companies = useMemo(() => {
@@ -723,20 +824,42 @@ export default function StockManagement() {
      Advanced filtering
      ------------------------- */
   const filteredProducts = useMemo(() => {
-    return products.filter(p => {
+    let filtered = products.filter(p => {
       if (productCompanyFilter !== "all" && p.company !== productCompanyFilter) return false;
       return true;
     });
-  }, [products, productCompanyFilter]);
+    
+    const query = productSearchQuery.trim().toLowerCase();
+    if (query) {
+      filtered = filtered.filter(p => 
+        p.productName.toLowerCase().includes(query) ||
+        p.company.toLowerCase().includes(query)
+      );
+    }
+    
+    return filtered;
+  }, [products, productCompanyFilter, productSearchQuery]);
 
   const filteredVariants = useMemo(() => {
-    return variantsData.filter(v => {
+    let filtered = variantsData.filter(v => {
       if (variantCompanyFilter !== "all" && v.product.company !== variantCompanyFilter) return false;
       if (variantProductFilter !== "all" && v.product.productName !== variantProductFilter) return false;
       if (variantSizeFilter !== "all" && v.packingSize !== variantSizeFilter) return false;
       return true;
     });
-  }, [variantsData, variantCompanyFilter, variantProductFilter, variantSizeFilter]);
+    
+    const query = variantSearchQuery.trim().toLowerCase();
+    if (query) {
+      filtered = filtered.filter(v => 
+        v.product.productName.toLowerCase().includes(query) ||
+        v.product.company.toLowerCase().includes(query) ||
+        v.packingSize.toLowerCase().includes(query) ||
+        v.rate.toString().includes(query)
+      );
+    }
+    
+    return filtered;
+  }, [variantsData, variantCompanyFilter, variantProductFilter, variantSizeFilter, variantSearchQuery]);
 
   const filteredColors = useMemo(() => {
     let filtered = colorsData;
@@ -829,7 +952,7 @@ export default function StockManagement() {
     
     const csvData = filteredStockInHistory.map(history => [
       history.stockInDate,
-      new Date(history.createdAt).toLocaleDateString(),
+      formatDateShort(history.createdAt),
       new Date(history.createdAt).toLocaleTimeString(),
       history.color.variant.product.company,
       history.color.variant.product.productName,
@@ -1239,28 +1362,64 @@ export default function StockManagement() {
 
       {/* Tabs: Products/Variants/Colors/Stock In/Stock In History */}
       <Tabs defaultValue="products" className="space-y-4">
-        <TabsList className="glass-card border-white/20 p-1">
-          <TabsTrigger value="products" className="flex items-center gap-2 data-[state=active]:gradient-bg data-[state=active]:text-white">
-            <Package className="h-4 w-4" />
-            Products
-          </TabsTrigger>
-          <TabsTrigger value="variants" className="flex items-center gap-2 data-[state=active]:gradient-bg data-[state=active]:text-white">
-            <Layers className="h-4 w-4" />
-            Variants
-          </TabsTrigger>
-          <TabsTrigger value="colors" className="flex items-center gap-2 data-[state=active]:gradient-bg data-[state=active]:text-white">
-            <Palette className="h-4 w-4" />
-            Colors
-          </TabsTrigger>
-          <TabsTrigger value="stock-in" className="flex items-center gap-2 data-[state=active]:gradient-bg data-[state=active]:text-white">
-            <TruckIcon className="h-4 w-4" />
-            Stock In
-          </TabsTrigger>
-          <TabsTrigger value="stock-in-history" className="flex items-center gap-2 data-[state=active]:gradient-bg data-[state=active]:text-white">
-            <History className="h-4 w-4" />
-            History
-          </TabsTrigger>
-        </TabsList>
+        <div className="overflow-x-auto pb-2">
+          <TabsList className="glass-card border-white/20 p-1 inline-flex w-auto min-w-full sm:w-full" data-testid="stock-management-tabs">
+            <TabsTrigger 
+              value="products" 
+              className="flex items-center gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#667eea] data-[state=active]:to-[#764ba2] data-[state=active]:text-white data-[state=active]:shadow-md whitespace-nowrap text-slate-700"
+              data-testid="tab-products"
+            >
+              <Package className="h-4 w-4" />
+              <span className="hidden sm:inline">Products</span>
+              <span className="sm:hidden">Prod</span>
+            </TabsTrigger>
+            <TabsTrigger 
+              value="variants" 
+              className="flex items-center gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#667eea] data-[state=active]:to-[#764ba2] data-[state=active]:text-white data-[state=active]:shadow-md whitespace-nowrap text-slate-700"
+              data-testid="tab-variants"
+            >
+              <Layers className="h-4 w-4" />
+              <span className="hidden sm:inline">Variants</span>
+              <span className="sm:hidden">Var</span>
+            </TabsTrigger>
+            <TabsTrigger 
+              value="colors" 
+              className="flex items-center gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#667eea] data-[state=active]:to-[#764ba2] data-[state=active]:text-white data-[state=active]:shadow-md whitespace-nowrap text-slate-700"
+              data-testid="tab-colors"
+            >
+              <Palette className="h-4 w-4" />
+              <span className="hidden sm:inline">Colors</span>
+              <span className="sm:hidden">Col</span>
+            </TabsTrigger>
+            <TabsTrigger 
+              value="stock-in" 
+              className="flex items-center gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#667eea] data-[state=active]:to-[#764ba2] data-[state=active]:text-white data-[state=active]:shadow-md whitespace-nowrap text-slate-700"
+              data-testid="tab-stock-in"
+            >
+              <TruckIcon className="h-4 w-4" />
+              <span className="hidden sm:inline">Stock In</span>
+              <span className="sm:hidden">In</span>
+            </TabsTrigger>
+            <TabsTrigger 
+              value="stock-in-history" 
+              className="flex items-center gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#667eea] data-[state=active]:to-[#764ba2] data-[state=active]:text-white data-[state=active]:shadow-md whitespace-nowrap text-slate-700"
+              data-testid="tab-history"
+            >
+              <History className="h-4 w-4" />
+              <span className="hidden sm:inline">Stock In</span>
+              <span className="sm:hidden">In</span>
+            </TabsTrigger>
+            <TabsTrigger 
+              value="stock-out-history" 
+              className="flex items-center gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#667eea] data-[state=active]:to-[#764ba2] data-[state=active]:text-white data-[state=active]:shadow-md whitespace-nowrap text-slate-700"
+              data-testid="tab-stock-out"
+            >
+              <ArrowUpCircle className="h-4 w-4" />
+              <span className="hidden sm:inline">Stock Out</span>
+              <span className="sm:hidden">Out</span>
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         {/* Products Tab */}
         <TabsContent value="products" className="space-y-4">
@@ -1277,7 +1436,7 @@ export default function StockManagement() {
                 >
                   <Plus className="h-4 w-4" /> Add Product
                 </Button>
-                <DialogContent className="glass-card border-white/20">
+                <DialogContent className="glass-card border-white/20 max-h-[85vh] overflow-y-auto">
                   <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                       <Package className="h-5 w-5" />
@@ -1360,12 +1519,21 @@ export default function StockManagement() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {/* Filters */}
-                  <div className="flex gap-2 items-end flex-wrap">
-                    <div className="flex-1 min-w-[200px]">
-                      <Label className="text-xs text-slate-700">Filter by Company</Label>
+                  {/* Search and Filters */}
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
+                      <Input 
+                        placeholder="Search by product name or company..." 
+                        value={productSearchQuery} 
+                        onChange={e => setProductSearchQuery(e.target.value)} 
+                        className="pl-9 glass-card border-white/20"
+                        data-testid="input-product-search"
+                      />
+                    </div>
+                    <div className="flex gap-2 items-center flex-wrap">
                       <Select value={productCompanyFilter} onValueChange={setProductCompanyFilter}>
-                        <SelectTrigger className="glass-card border-white/20">
+                        <SelectTrigger className="glass-card border-white/20 min-w-[180px]" data-testid="select-product-company-filter">
                           <SelectValue placeholder="All Companies" />
                         </SelectTrigger>
                         <SelectContent className="glass-card border-white/20">
@@ -1373,17 +1541,21 @@ export default function StockManagement() {
                           {companies.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                         </SelectContent>
                       </Select>
+                      {(productCompanyFilter !== "all" || productSearchQuery) && (
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          onClick={() => {
+                            setProductCompanyFilter("all");
+                            setProductSearchQuery("");
+                          }}
+                          className="glass-card border-white/20"
+                          data-testid="button-clear-product-filters"
+                        >
+                          Clear
+                        </Button>
+                      )}
                     </div>
-                    {productCompanyFilter !== "all" && (
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        onClick={() => setProductCompanyFilter("all")}
-                        className="glass-card border-white/20"
-                      >
-                        Clear Filters
-                      </Button>
-                    )}
                   </div>
 
                   {/* Bulk Actions */}
@@ -1406,7 +1578,25 @@ export default function StockManagement() {
                   )}
 
                   {/* Products Grid */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {filteredProducts.length === 0 ? (
+                    <div className="text-center py-12">
+                      <Search className="h-12 w-12 mx-auto mb-4 text-slate-400" />
+                      <h3 className="text-lg font-semibold text-slate-800 mb-2">No products found</h3>
+                      <p className="text-slate-600 mb-4">Try adjusting your search or filter criteria</p>
+                      <Button 
+                        variant="outline"
+                        onClick={() => {
+                          setProductCompanyFilter("all");
+                          setProductSearchQuery("");
+                        }}
+                        className="glass-card border-white/20"
+                        data-testid="button-reset-product-search"
+                      >
+                        Reset Search
+                      </Button>
+                    </div>
+                  ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="products-grid">
                     {filteredProducts.map(product => {
                       const productVariants = variantsData.filter(v => v.productId === product.id);
                       
@@ -1468,7 +1658,7 @@ export default function StockManagement() {
                             </div>
                             <div className="flex justify-between items-center text-sm">
                               <span className="text-slate-600">Created</span>
-                              <span className="text-slate-500">{new Date(product.createdAt).toLocaleDateString()}</span>
+                              <span className="text-slate-500">{formatDateShort(product.createdAt)}</span>
                             </div>
                           </div>
 
@@ -1502,6 +1692,7 @@ export default function StockManagement() {
                       );
                     })}
                   </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1523,7 +1714,7 @@ export default function StockManagement() {
                 >
                   <Plus className="h-4 w-4" /> Add Variant
                 </Button>
-                <DialogContent className="glass-card border-white/20">
+                <DialogContent className="glass-card border-white/20 max-h-[85vh] overflow-y-auto">
                   <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                       <Layers className="h-5 w-5" />
@@ -1624,58 +1815,72 @@ export default function StockManagement() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {/* Filters */}
-                  <div className="flex gap-2 items-end flex-wrap">
-                    <div className="flex-1 min-w-[150px]">
-                      <Label className="text-xs text-slate-700">Company</Label>
-                      <Select value={variantCompanyFilter} onValueChange={setVariantCompanyFilter}>
-                        <SelectTrigger className="glass-card border-white/20">
-                          <SelectValue placeholder="All" />
-                        </SelectTrigger>
-                        <SelectContent className="glass-card border-white/20">
-                          <SelectItem value="all">All Companies</SelectItem>
-                          {companies.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
+                  {/* Search and Filters */}
+                  <div className="space-y-3">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
+                      <Input 
+                        placeholder="Search by product, company, size, or rate..." 
+                        value={variantSearchQuery} 
+                        onChange={e => setVariantSearchQuery(e.target.value)} 
+                        className="pl-9 glass-card border-white/20"
+                        data-testid="input-variant-search"
+                      />
                     </div>
-                    <div className="flex-1 min-w-[150px]">
-                      <Label className="text-xs text-slate-700">Product</Label>
-                      <Select value={variantProductFilter} onValueChange={setVariantProductFilter}>
-                        <SelectTrigger className="glass-card border-white/20">
-                          <SelectValue placeholder="All" />
-                        </SelectTrigger>
-                        <SelectContent className="glass-card border-white/20">
-                          <SelectItem value="all">All Products</SelectItem>
-                          {Array.from(new Set(variantsData.map(v => v.product.productName))).sort().map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
+                    <div className="flex gap-2 items-end flex-wrap">
+                      <div className="flex-1 min-w-[140px]">
+                        <Label className="text-xs text-slate-700">Company</Label>
+                        <Select value={variantCompanyFilter} onValueChange={setVariantCompanyFilter}>
+                          <SelectTrigger className="glass-card border-white/20" data-testid="select-variant-company-filter">
+                            <SelectValue placeholder="All" />
+                          </SelectTrigger>
+                          <SelectContent className="glass-card border-white/20">
+                            <SelectItem value="all">All Companies</SelectItem>
+                            {companies.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex-1 min-w-[140px]">
+                        <Label className="text-xs text-slate-700">Product</Label>
+                        <Select value={variantProductFilter} onValueChange={setVariantProductFilter}>
+                          <SelectTrigger className="glass-card border-white/20" data-testid="select-variant-product-filter">
+                            <SelectValue placeholder="All" />
+                          </SelectTrigger>
+                          <SelectContent className="glass-card border-white/20">
+                            <SelectItem value="all">All Products</SelectItem>
+                            {Array.from(new Set(variantsData.map(v => v.product.productName))).sort().map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex-1 min-w-[140px]">
+                        <Label className="text-xs text-slate-700">Size</Label>
+                        <Select value={variantSizeFilter} onValueChange={setVariantSizeFilter}>
+                          <SelectTrigger className="glass-card border-white/20" data-testid="select-variant-size-filter">
+                            <SelectValue placeholder="All" />
+                          </SelectTrigger>
+                          <SelectContent className="glass-card border-white/20">
+                            <SelectItem value="all">All Sizes</SelectItem>
+                            {Array.from(new Set(variantsData.map(v => v.packingSize))).sort().map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {(variantCompanyFilter !== "all" || variantProductFilter !== "all" || variantSizeFilter !== "all" || variantSearchQuery) && (
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          onClick={() => {
+                            setVariantCompanyFilter("all");
+                            setVariantProductFilter("all");
+                            setVariantSizeFilter("all");
+                            setVariantSearchQuery("");
+                          }}
+                          className="glass-card border-white/20"
+                          data-testid="button-clear-variant-filters"
+                        >
+                          Clear
+                        </Button>
+                      )}
                     </div>
-                    <div className="flex-1 min-w-[150px]">
-                      <Label className="text-xs text-slate-700">Packing Size</Label>
-                      <Select value={variantSizeFilter} onValueChange={setVariantSizeFilter}>
-                        <SelectTrigger className="glass-card border-white/20">
-                          <SelectValue placeholder="All" />
-                        </SelectTrigger>
-                        <SelectContent className="glass-card border-white/20">
-                          <SelectItem value="all">All Sizes</SelectItem>
-                          {Array.from(new Set(variantsData.map(v => v.packingSize))).sort().map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    {(variantCompanyFilter !== "all" || variantProductFilter !== "all" || variantSizeFilter !== "all") && (
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        onClick={() => {
-                          setVariantCompanyFilter("all");
-                          setVariantProductFilter("all");
-                          setVariantSizeFilter("all");
-                        }}
-                        className="glass-card border-white/20"
-                      >
-                        Clear Filters
-                      </Button>
-                    )}
                   </div>
 
                   {/* Bulk Actions */}
@@ -1698,7 +1903,27 @@ export default function StockManagement() {
                   )}
 
                   {/* Variants Grid */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {filteredVariants.length === 0 ? (
+                    <div className="text-center py-12" data-testid="variants-no-results">
+                      <Search className="h-12 w-12 mx-auto mb-4 text-slate-400" />
+                      <h3 className="text-lg font-semibold text-slate-800 mb-2">No variants found</h3>
+                      <p className="text-slate-600 mb-4">Try adjusting your search or filter criteria</p>
+                      <Button 
+                        variant="outline"
+                        onClick={() => {
+                          setVariantCompanyFilter("all");
+                          setVariantProductFilter("all");
+                          setVariantSizeFilter("all");
+                          setVariantSearchQuery("");
+                        }}
+                        className="glass-card border-white/20"
+                        data-testid="button-reset-variant-search"
+                      >
+                        Reset Search
+                      </Button>
+                    </div>
+                  ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="variants-grid">
                     {filteredVariants.map(variant => {
                       const variantColors = colorsData.filter(c => c.variantId === variant.id);
                       return (
@@ -1783,6 +2008,7 @@ export default function StockManagement() {
                       );
                     })}
                   </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1804,7 +2030,7 @@ export default function StockManagement() {
                 >
                   <Plus className="h-4 w-4" /> Add Color
                 </Button>
-                <DialogContent className="glass-card border-white/20">
+                <DialogContent className="glass-card border-white/20 max-h-[85vh] overflow-y-auto">
                   <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                       <Palette className="h-5 w-5" />
@@ -1929,6 +2155,7 @@ export default function StockManagement() {
                           value={colorSearchQuery} 
                           onChange={e => setColorSearchQuery(e.target.value)} 
                           className="pl-9 glass-card border-white/20"
+                          data-testid="input-color-search"
                         />
                       </div>
                     </div>
@@ -1936,7 +2163,7 @@ export default function StockManagement() {
                     <div>
                       <Label className="text-xs text-slate-700 mb-2 block">Stock Status</Label>
                       <Select value={colorStockStatusFilter} onValueChange={setColorStockStatusFilter}>
-                        <SelectTrigger className="glass-card border-white/20">
+                        <SelectTrigger className="glass-card border-white/20" data-testid="select-color-status-filter">
                           <SelectValue placeholder="All Status" />
                         </SelectTrigger>
                         <SelectContent className="glass-card border-white/20">
@@ -1951,7 +2178,7 @@ export default function StockManagement() {
                     <div>
                       <Label className="text-xs text-slate-700 mb-2 block">Company</Label>
                       <Select value={colorCompanyFilter} onValueChange={setColorCompanyFilter}>
-                        <SelectTrigger className="glass-card border-white/20">
+                        <SelectTrigger className="glass-card border-white/20" data-testid="select-color-company-filter">
                           <SelectValue placeholder="All Companies" />
                         </SelectTrigger>
                         <SelectContent className="glass-card border-white/20">
@@ -1960,6 +2187,21 @@ export default function StockManagement() {
                         </SelectContent>
                       </Select>
                     </div>
+                    {(colorSearchQuery || colorStockStatusFilter !== "all" || colorCompanyFilter !== "all") && (
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => {
+                          setColorSearchQuery("");
+                          setColorStockStatusFilter("all");
+                          setColorCompanyFilter("all");
+                        }}
+                        className="glass-card border-white/20 self-end"
+                        data-testid="button-clear-color-filters"
+                      >
+                        Clear Filters
+                      </Button>
+                    )}
                   </div>
 
                   {/* Bulk Actions */}
@@ -1982,12 +2224,25 @@ export default function StockManagement() {
                   )}
 
                   {filteredColors.length === 0 ? (
-                    <div className="text-center py-8 text-slate-600">
-                      <Filter className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                      <p>No colors found matching your filters</p>
+                    <div className="text-center py-12" data-testid="colors-no-results">
+                      <Search className="h-12 w-12 mx-auto mb-4 text-slate-400" />
+                      <h3 className="text-lg font-semibold text-slate-800 mb-2">No colors found</h3>
+                      <p className="text-slate-600 mb-4">Try adjusting your search or filter criteria</p>
+                      <Button 
+                        variant="outline"
+                        onClick={() => {
+                          setColorSearchQuery("");
+                          setColorStockStatusFilter("all");
+                          setColorCompanyFilter("all");
+                        }}
+                        className="glass-card border-white/20"
+                        data-testid="button-reset-color-search"
+                      >
+                        Reset Search
+                      </Button>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4" data-testid="colors-grid">
                       {filteredColors.map(color => (
                         <div 
                           key={color.id} 
@@ -2217,7 +2472,7 @@ export default function StockManagement() {
               });
             }
           }}>
-            <DialogContent className="glass-card border-white/20 max-w-3xl max-h-[85vh]">
+            <DialogContent className="glass-card border-white/20 max-w-3xl max-h-[85vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2">
                   <ArrowUpCircle className="h-5 w-5" />
@@ -2632,7 +2887,7 @@ export default function StockManagement() {
                             )}
 
                             <div className="flex justify-between items-center text-xs text-slate-500 pt-2 border-t border-slate-200">
-                              <span>{new Date(history.createdAt).toLocaleDateString()}</span>
+                              <span>{formatDateShort(history.createdAt)}</span>
                               <span>{new Date(history.createdAt).toLocaleTimeString()}</span>
                             </div>
                           </div>
@@ -2640,6 +2895,236 @@ export default function StockManagement() {
                       ))}
                     </div>
                   )}
+                </div>
+              )}
+            </div>
+          </div>
+        </TabsContent>
+
+        {/* Stock Out History Tab (Items sold through POS) */}
+        <TabsContent value="stock-out-history" className="space-y-4">
+          <div className="glass-card rounded-2xl border border-white/20">
+            <div className="flex flex-row items-center justify-between gap-4 p-6 border-b border-white/20">
+              <div>
+                <h2 className="text-xl font-semibold text-slate-800">Stock Out History ({filteredStockOutHistory.length})</h2>
+                <p className="text-sm text-slate-600">Track all items sold through POS bills</p>
+              </div>
+              <div className="flex gap-2">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => refetchStockOutHistory()}
+                  className="glass-card border-white/20"
+                >
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Refresh
+                </Button>
+              </div>
+            </div>
+            <div className="p-6">
+              {stockOutLoading ? (
+                <div className="space-y-3">
+                  {[1, 2, 3].map(i => (
+                    <div key={i} className="glass-card rounded-xl p-4 border border-white/20">
+                      <Skeleton className="h-6 w-3/4 mb-2 rounded-lg" />
+                      <Skeleton className="h-4 w-1/2 rounded-lg" />
+                    </div>
+                  ))}
+                </div>
+              ) : filteredStockOutHistory.length === 0 ? (
+                <div className="text-center py-12">
+                  <ArrowUpCircle className="h-16 w-16 mx-auto mb-4 text-slate-400" />
+                  <h3 className="text-lg font-semibold text-slate-800 mb-2">No stock out records found</h3>
+                  <p className="text-slate-600 mb-4">Items sold through POS will appear here</p>
+                  <Button 
+                    onClick={() => refetchStockOutHistory()}
+                    className="gradient-bg text-white"
+                  >
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Refresh History
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {/* Filters */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 p-4 bg-slate-50 rounded-xl">
+                    <div className="space-y-2">
+                      <Label className="text-xs font-medium text-slate-700">Start Date</Label>
+                      <Input
+                        type="date"
+                        value={stockOutStartDate || ''}
+                        onChange={(e) => setStockOutStartDate(e.target.value)}
+                        className="w-full glass-card border-white/20"
+                      />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label className="text-xs font-medium text-slate-700">End Date</Label>
+                      <Input
+                        type="date"
+                        value={stockOutEndDate || ''}
+                        onChange={(e) => setStockOutEndDate(e.target.value)}
+                        className="w-full glass-card border-white/20"
+                      />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label className="text-xs font-medium text-slate-700">Company</Label>
+                      <Select value={stockOutCompanyFilter} onValueChange={setStockOutCompanyFilter}>
+                        <SelectTrigger className="glass-card border-white/20">
+                          <SelectValue placeholder="All Companies" />
+                        </SelectTrigger>
+                        <SelectContent className="glass-card border-white/20">
+                          <SelectItem value="all">All Companies</SelectItem>
+                          {companies.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label className="text-xs font-medium text-slate-700">Product</Label>
+                      <Select value={stockOutProductFilter} onValueChange={setStockOutProductFilter}>
+                        <SelectTrigger className="glass-card border-white/20">
+                          <SelectValue placeholder="All Products" />
+                        </SelectTrigger>
+                        <SelectContent className="glass-card border-white/20">
+                          <SelectItem value="all">All Products</SelectItem>
+                          {Array.from(new Set(stockOutHistory.map(h => h.color?.variant?.product?.productName).filter(Boolean))).sort().map(p => (
+                            <SelectItem key={p} value={p!}>{p}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  {/* Search and Quick Filters */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-2 md:col-span-2">
+                      <Label className="text-xs font-medium text-slate-700">Search</Label>
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
+                        <Input 
+                          placeholder="Search by color, product, customer name or phone..." 
+                          value={stockOutSearchQuery}
+                          onChange={e => setStockOutSearchQuery(e.target.value)}
+                          className="pl-9 glass-card border-white/20"
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label className="text-xs font-medium text-slate-700">Quick Date Filters</Label>
+                      <Select value={stockOutDateFilter} onValueChange={setStockOutDateFilter}>
+                        <SelectTrigger className="glass-card border-white/20">
+                          <SelectValue placeholder="All Time" />
+                        </SelectTrigger>
+                        <SelectContent className="glass-card border-white/20">
+                          <SelectItem value="all">All Time</SelectItem>
+                          <SelectItem value="today">Today</SelectItem>
+                          <SelectItem value="yesterday">Yesterday</SelectItem>
+                          <SelectItem value="week">Last 7 Days</SelectItem>
+                          <SelectItem value="month">Last 30 Days</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  {/* Clear Filters */}
+                  {(stockOutCompanyFilter !== "all" || stockOutProductFilter !== "all" || stockOutDateFilter !== "all" || stockOutSearchQuery || stockOutStartDate || stockOutEndDate) && (
+                    <div className="flex justify-between items-center">
+                      <p className="text-sm text-slate-600">
+                        Showing {filteredStockOutHistory.length} of {stockOutHistory.length} records
+                      </p>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => {
+                          setStockOutCompanyFilter("all");
+                          setStockOutProductFilter("all");
+                          setStockOutDateFilter("all");
+                          setStockOutSearchQuery("");
+                          setStockOutStartDate("");
+                          setStockOutEndDate("");
+                        }}
+                        className="glass-card border-white/20"
+                      >
+                        <Filter className="h-4 w-4 mr-2" />
+                        Clear All Filters
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Stock Out Records Grid */}
+                  <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+                    {filteredStockOutHistory.map((item) => (
+                      <div 
+                        key={item.id}
+                        className="glass-card rounded-xl p-4 border border-white/20 hover-elevate"
+                      >
+                        <div className="space-y-3">
+                          {/* Header with color info */}
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <div className="p-2 bg-red-100 rounded-lg">
+                                <ArrowUpCircle className="h-4 w-4 text-red-600" />
+                              </div>
+                              <div>
+                                <p className="font-semibold text-slate-800">{item.color?.colorName || 'Unknown'}</p>
+                                <p className="text-xs text-slate-500">{item.color?.colorCode || '-'}</p>
+                              </div>
+                            </div>
+                            <Badge className="bg-red-100 text-red-700 border-red-200">
+                              -{item.quantity}
+                            </Badge>
+                          </div>
+                          
+                          {/* Product Info */}
+                          <div className="space-y-2">
+                            <div className="flex justify-between items-center text-sm">
+                              <span className="text-slate-600">Company</span>
+                              <span className="font-medium text-slate-800">{item.color?.variant?.product?.company || '-'}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-sm">
+                              <span className="text-slate-600">Product</span>
+                              <span className="text-slate-500 truncate">{item.color?.variant?.product?.productName || '-'}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-sm">
+                              <span className="text-slate-600">Size</span>
+                              <Badge variant="outline" className="glass-card border-white/20">
+                                {item.color?.variant?.packingSize || '-'}
+                              </Badge>
+                            </div>
+                          </div>
+                          
+                          {/* Sale Info */}
+                          <div className="grid grid-cols-2 gap-2 text-center mt-3 p-2 bg-slate-50 rounded-lg">
+                            <div className="space-y-1">
+                              <p className="text-xs text-slate-600">Rate</p>
+                              <p className="font-mono text-sm font-semibold text-blue-600">Rs. {Math.round(parseFloat(item.rate)).toLocaleString()}</p>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-xs text-slate-600">Total</p>
+                              <p className="font-mono text-sm font-semibold text-green-600">Rs. {Math.round(parseFloat(item.subtotal)).toLocaleString()}</p>
+                            </div>
+                          </div>
+
+                          {/* Customer Info */}
+                          {item.customerName && (
+                            <div className="text-xs text-slate-600 bg-blue-50 p-2 rounded-lg">
+                              <p className="font-medium text-blue-800">{item.customerName}</p>
+                              <p className="text-blue-600">{item.customerPhone}</p>
+                            </div>
+                          )}
+
+                          {/* Date */}
+                          <div className="flex justify-between items-center text-xs text-slate-500 pt-2 border-t border-slate-200">
+                            <span>{item.soldAt ? formatDateShort(item.soldAt) : '-'}</span>
+                            <span>{item.soldAt ? new Date(item.soldAt).toLocaleTimeString() : '-'}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -2972,7 +3457,7 @@ export default function StockManagement() {
       {/* Edit Dialogs remain the same but with glass styling */}
       {/* Edit Product Dialog */}
       <Dialog open={!!editingProduct} onOpenChange={(open) => !open && setEditingProduct(null)}>
-        <DialogContent className="glass-card border-white/20">
+        <DialogContent className="glass-card border-white/20 max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Edit className="h-5 w-5" />
@@ -3027,7 +3512,7 @@ export default function StockManagement() {
 
       {/* Edit Variant Dialog */}
       <Dialog open={!!editingVariant} onOpenChange={(open) => !open && setEditingVariant(null)}>
-        <DialogContent className="glass-card border-white/20">
+        <DialogContent className="glass-card border-white/20 max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Edit className="h-5 w-5" />
@@ -3103,7 +3588,7 @@ export default function StockManagement() {
 
       {/* Edit Color Dialog */}
       <Dialog open={!!editingColor} onOpenChange={(open) => !open && setEditingColor(null)}>
-        <DialogContent className="glass-card border-white/20">
+        <DialogContent className="glass-card border-white/20 max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Edit className="h-5 w-5" />
@@ -3220,7 +3705,7 @@ export default function StockManagement() {
 
       {/* Edit Stock History Dialog */}
       <Dialog open={isEditStockHistoryOpen} onOpenChange={setIsEditStockHistoryOpen}>
-        <DialogContent className="glass-card border-white/20">
+        <DialogContent className="glass-card border-white/20 max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Edit className="h-5 w-5" />
@@ -3327,7 +3812,7 @@ export default function StockManagement() {
       {/* View Detail Dialogs with glass styling */}
       {/* View Product Details */}
       <Dialog open={!!viewingProduct} onOpenChange={(open) => !open && setViewingProduct(null)}>
-        <DialogContent className="glass-card border-white/20">
+        <DialogContent className="glass-card border-white/20 max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Eye className="h-5 w-5" />
@@ -3347,7 +3832,7 @@ export default function StockManagement() {
                 </div>
                 <div>
                   <Label className="text-sm font-medium text-slate-700">Created Date</Label>
-                  <p className="text-sm text-slate-600">{new Date(viewingProduct.createdAt).toLocaleDateString()}</p>
+                  <p className="text-sm text-slate-600">{formatDateShort(viewingProduct.createdAt)}</p>
                 </div>
                 <div>
                   <Label className="text-sm font-medium text-slate-700">Variants Count</Label>
@@ -3370,7 +3855,7 @@ export default function StockManagement() {
 
       {/* View Variant Details */}
       <Dialog open={!!viewingVariant} onOpenChange={(open) => !open && setViewingVariant(null)}>
-        <DialogContent className="glass-card border-white/20">
+        <DialogContent className="glass-card border-white/20 max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Eye className="h-5 w-5" />
@@ -3402,7 +3887,7 @@ export default function StockManagement() {
                 </div>
                 <div>
                   <Label className="text-sm font-medium text-slate-700">Created Date</Label>
-                  <p className="text-sm text-slate-600">{new Date(viewingVariant.createdAt).toLocaleDateString()}</p>
+                  <p className="text-sm text-slate-600">{formatDateShort(viewingVariant.createdAt)}</p>
                 </div>
               </div>
               <div className="flex justify-end">
@@ -3421,7 +3906,7 @@ export default function StockManagement() {
 
       {/* View Color Details */}
       <Dialog open={!!viewingColor} onOpenChange={(open) => !open && setViewingColor(null)}>
-        <DialogContent className="glass-card border-white/20">
+        <DialogContent className="glass-card border-white/20 max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Eye className="h-5 w-5" />
@@ -3475,7 +3960,7 @@ export default function StockManagement() {
                 </div>
                 <div>
                   <Label className="text-sm font-medium text-slate-700">Created Date</Label>
-                  <p className="text-sm text-slate-600">{new Date(viewingColor.createdAt).toLocaleDateString()}</p>
+                  <p className="text-sm text-slate-600">{formatDateShort(viewingColor.createdAt)}</p>
                 </div>
               </div>
               <div className="flex justify-end">

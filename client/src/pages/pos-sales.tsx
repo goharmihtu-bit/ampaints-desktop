@@ -29,6 +29,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useDateFormat } from "@/hooks/use-date-format";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { ColorWithVariantAndProduct, Sale, Settings } from "@shared/schema";
 import { getEffectiveRate } from "@shared/schema";
@@ -63,6 +64,7 @@ interface CustomerSuggestion {
 }
 
 export default function POSSales() {
+  const { formatDateShort } = useDateFormat();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
@@ -94,6 +96,7 @@ export default function POSSales() {
   const { data: colors = [], isLoading } =
     useQuery<ColorWithVariantAndProduct[]>({
       queryKey: ["/api/colors"],
+      refetchOnWindowFocus: true, // Auto-refresh when tab becomes active
     });
 
   // FIXED: Show ALL customer suggestions without limit
@@ -138,10 +141,14 @@ export default function POSSales() {
       return res.json();
     },
     onSuccess: (sale) => {
+      // Invalidate all related queries for auto-refresh across all pages
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
       queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
       queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
       queryClient.invalidateQueries({ queryKey: ["/api/customers/suggestions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/variants"] });
       toast({ title: "Sale completed successfully" });
       setCart([]);
       setCustomerName("");
@@ -155,10 +162,15 @@ export default function POSSales() {
     },
   });
 
-  // Refresh data function
+  // Refresh data function - invalidate all related queries
   const refreshData = () => {
     queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
     queryClient.invalidateQueries({ queryKey: ["/api/customers/suggestions"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/variants"] });
     toast({ title: "Data refreshed" });
   };
 
@@ -670,7 +682,7 @@ export default function POSSales() {
                                   </div>
                                   <div className="flex items-center gap-1">
                                     <Calendar className="h-3 w-3" />
-                                    {new Date(customer.lastSaleDate).toLocaleDateString()}
+                                    {formatDateShort(customer.lastSaleDate)}
                                   </div>
                                   <div className="text-green-600 font-medium">
                                     Rs. {Math.round(customer.totalSpent).toLocaleString()}

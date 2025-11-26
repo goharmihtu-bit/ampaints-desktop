@@ -1,5 +1,6 @@
 // unpaid-bills.tsx - Complete Premium Version
 import { useState, useMemo } from "react";
+import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -80,6 +81,7 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useDateFormat } from "@/hooks/use-date-format";
 
 interface CustomerSuggestion {
   customerName: string;
@@ -91,7 +93,7 @@ interface CustomerSuggestion {
 interface PaymentRecord {
   id: string;
   saleId: string;
-  amount: number;
+  amount: string;
   paymentDate: string;
   paymentMethod: string;
   notes?: string;
@@ -135,6 +137,8 @@ type FilterType = {
 };
 
 export default function UnpaidBills() {
+  const { formatDateShort } = useDateFormat();
+  const [, setLocation] = useLocation();
   const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState("");
@@ -196,6 +200,8 @@ export default function UnpaidBills() {
 
   const { data: unpaidSales = [], isLoading } = useQuery<Sale[]>({
     queryKey: ["/api/sales/unpaid"],
+    refetchInterval: 30000, // Auto-refresh every 30 seconds
+    refetchOnWindowFocus: true, // Refresh when tab becomes active
   });
 
   // Fetch payment history for a specific customer
@@ -402,7 +408,7 @@ export default function UnpaidBills() {
     });
   };
 
-  const getDueDateStatus = (dueDate: string | null) => {
+  const getDueDateStatus = (dueDate: Date | string | null) => {
     if (!dueDate) return "no_due_date";
     
     const due = new Date(dueDate);
@@ -418,7 +424,7 @@ export default function UnpaidBills() {
     return "future";
   };
 
-  const getDueDateBadge = (dueDate: string | null) => {
+  const getDueDateBadge = (dueDate: Date | string | null) => {
     const status = getDueDateStatus(dueDate);
     
     switch (status) {
@@ -635,7 +641,7 @@ export default function UnpaidBills() {
               <strong>Total Bills:</strong> ${customer.bills.length}
             </div>
             <div>
-              <strong>Statement Period:</strong> ${customer.oldestBillDate.toLocaleDateString('en-PK')} to ${formattedDate}<br>
+              <strong>Statement Period:</strong> ${formatDateShort(customer.oldestBillDate)} to ${formattedDate}<br>
               <strong>Days Outstanding:</strong> ${customer.daysOverdue} days<br>
               <strong>Status:</strong> ${customer.totalOutstanding > 0 ? 'Pending' : 'Cleared'}
             </div>
@@ -1135,7 +1141,8 @@ export default function UnpaidBills() {
               <div 
                 key={customer.customerPhone} 
                 className="glass-card rounded-2xl p-6 border border-white/20 hover-elevate group cursor-pointer"
-                onClick={() => setSelectedCustomerPhone(customer.customerPhone)}
+                onClick={() => setLocation(`/customer/${encodeURIComponent(customer.customerPhone)}`)}
+                data-testid={`card-customer-${customer.customerPhone}`}
               >
                 {/* Header */}
                 <div className="flex items-start justify-between mb-4">
@@ -1202,7 +1209,7 @@ export default function UnpaidBills() {
                 <div className="flex items-center gap-2 mb-4 flex-wrap">
                   <div className="flex items-center gap-2 text-sm text-slate-600">
                     <Calendar className="h-3 w-3" />
-                    {customer.oldestBillDate.toLocaleDateString()}
+                    {formatDateShort(customer.oldestBillDate)}
                   </div>
                   <Badge 
                     variant={customer.daysOverdue > 30 ? "destructive" : "secondary"} 
@@ -1310,7 +1317,7 @@ export default function UnpaidBills() {
                 </div>
                 <div>
                   <p className="text-slate-600">Oldest Bill</p>
-                  <p className="font-medium">{selectedCustomer.oldestBillDate.toLocaleDateString()}</p>
+                  <p className="font-medium">{formatDateShort(selectedCustomer.oldestBillDate)}</p>
                 </div>
               </div>
 
@@ -1365,7 +1372,7 @@ export default function UnpaidBills() {
                             <div className="flex items-center gap-2">
                               <Receipt className="h-4 w-4 text-slate-600" />
                               <span className="text-sm font-medium">
-                                {new Date(bill.createdAt).toLocaleDateString()} - {new Date(bill.createdAt).toLocaleTimeString()}
+                                {formatDateShort(bill.createdAt)} - {new Date(bill.createdAt).toLocaleTimeString()}
                               </span>
                               {getDueDateBadge(bill.dueDate)}
                               {isManual && (
@@ -1576,7 +1583,7 @@ export default function UnpaidBills() {
                             <Badge variant="outline" className="glass-card border-white/20">{payment.paymentMethod}</Badge>
                           </div>
                           <div className="text-sm text-slate-600">
-                            {new Date(payment.createdAt).toLocaleDateString()} at {new Date(payment.createdAt).toLocaleTimeString()}
+                            {formatDateShort(payment.createdAt)} at {new Date(payment.createdAt).toLocaleTimeString()}
                           </div>
                           {payment.notes && (
                             <div className="text-sm bg-slate-50 p-2 rounded-md mt-2">
@@ -1652,7 +1659,7 @@ export default function UnpaidBills() {
                         <p className="text-sm">{note.note}</p>
                         <div className="flex justify-between text-xs text-slate-600">
                           <span>By: {note.createdBy}</span>
-                          <span>{new Date(note.createdAt).toLocaleDateString()}</span>
+                          <span>{formatDateShort(note.createdAt)}</span>
                         </div>
                       </div>
                     </CardContent>
@@ -1736,7 +1743,7 @@ export default function UnpaidBills() {
                                 </div>
                                 <div className="flex items-center gap-1">
                                   <Calendar className="h-3 w-3" />
-                                  {new Date(customer.lastSaleDate).toLocaleDateString()}
+                                  {formatDateShort(customer.lastSaleDate)}
                                 </div>
                               </div>
                             </CommandItem>

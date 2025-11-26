@@ -8,6 +8,7 @@ import { Search, Receipt, Calendar, RefreshCw } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
+import { useDateFormat } from "@/hooks/use-date-format";
 
 interface Sale {
   id: string;
@@ -20,6 +21,7 @@ interface Sale {
 }
 
 export default function Sales() {
+  const { formatDateShort } = useDateFormat();
   const [customerSearchQuery, setCustomerSearchQuery] = useState("");
   const [dateFilter, setDateFilter] = useState("all"); // "all", "today", "yesterday", "week", "month", "custom"
   const [startDate, setStartDate] = useState("");
@@ -285,7 +287,7 @@ export default function Sales() {
                                   </div>
                                   <div>
                                     <span className="text-muted-foreground">Date: </span>
-                                    <span>{new Date(sale.createdAt).toLocaleDateString()}</span>
+                                    <span>{formatDateShort(sale.createdAt)}</span>
                                   </div>
                                   <div>
                                     <span className="text-muted-foreground">Time: </span>

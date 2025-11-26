@@ -74,6 +74,7 @@ export function migrateDatabase(db: Database.Database): void {
       CREATE TABLE IF NOT EXISTS settings (
         id TEXT PRIMARY KEY DEFAULT 'default',
         store_name TEXT NOT NULL DEFAULT 'PaintPulse',
+        date_format TEXT NOT NULL DEFAULT 'DD-MM-YYYY',
         card_border_style TEXT NOT NULL DEFAULT 'shadow',
         card_shadow_size TEXT NOT NULL DEFAULT 'sm',
         card_button_color TEXT NOT NULL DEFAULT 'gray-900',
@@ -83,14 +84,23 @@ export function migrateDatabase(db: Database.Database): void {
       );
     `);
     
+    // Check and add date_format column if missing (added in v0.2.2)
+    const settingsColumns = db.pragma('table_info(settings)') as Array<{ name: string; type: string }>;
+    const settingsColumnNames = settingsColumns.map((col) => col.name);
+    
+    if (!settingsColumnNames.includes('date_format')) {
+      console.log('[Migration] Adding date_format column to settings table');
+      db.exec("ALTER TABLE settings ADD COLUMN date_format TEXT NOT NULL DEFAULT 'DD-MM-YYYY'");
+    }
+    
     // Insert default settings row if not exists
     const settingsExists = db.prepare('SELECT COUNT(*) as count FROM settings WHERE id = ?').get('default') as { count: number };
     if (settingsExists.count === 0) {
       console.log('[Migration] Inserting default settings row');
       db.prepare(`
-        INSERT INTO settings (id, store_name, card_border_style, card_shadow_size, card_button_color, card_price_color, show_stock_badge_border, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `).run('default', 'PaintPulse', 'shadow', 'sm', 'gray-900', 'blue-600', 0, Date.now());
+        INSERT INTO settings (id, store_name, date_format, card_border_style, card_shadow_size, card_button_color, card_price_color, show_stock_badge_border, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run('default', 'PaintPulse', 'DD-MM-YYYY', 'shadow', 'sm', 'gray-900', 'blue-600', 0, Date.now());
     }
 
     // Create payment_history table if it doesn't exist (added in v0.2.1)

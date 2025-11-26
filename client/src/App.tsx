@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Switch, Route } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -6,6 +6,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
+import { DateFormatProvider } from "@/hooks/use-date-format";
+import { NavigationRefreshContext } from "@/hooks/use-navigation-refresh";
 import ActivationScreen from "@/components/activation-screen";
 import NotFound from "@/pages/not-found";
 import Dashboard from "@/pages/dashboard";
@@ -13,8 +15,11 @@ import StockManagement from "@/pages/stock-management";
 import POSSales from "@/pages/pos-sales";
 import Sales from "@/pages/sales";
 import UnpaidBills from "@/pages/unpaid-bills";
+import CustomerStatement from "@/pages/customer-statement";
+import Reports from "@/pages/reports";
 import RateManagement from "@/pages/rate-management";
 import BillPrint from "@/pages/bill-print";
+import Returns from "@/pages/returns";
 import Settings from "@/pages/settings";
 
 function Router() {
@@ -25,6 +30,9 @@ function Router() {
       <Route path="/pos" component={POSSales} />
       <Route path="/sales" component={Sales} />
       <Route path="/unpaid-bills" component={UnpaidBills} />
+      <Route path="/customer/:phone" component={CustomerStatement} />
+      <Route path="/reports" component={Reports} />
+      <Route path="/returns" component={Returns} />
       <Route path="/rates" component={RateManagement} />
       <Route path="/settings" component={Settings} />
       <Route path="/bill/:id" component={BillPrint} />
@@ -36,6 +44,11 @@ function Router() {
 export default function App() {
   const [isActivated, setIsActivated] = useState<boolean | null>(null);
   const [isCheckingActivation, setIsCheckingActivation] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const triggerRefresh = useCallback(() => {
+    setRefreshKey(prev => prev + 1);
+  }, []);
 
   useEffect(() => {
     checkActivationStatus();
@@ -97,19 +110,23 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <SidebarProvider style={style as React.CSSProperties}>
-          <div className="flex h-screen w-full">
-            <AppSidebar />
-            <div className="flex flex-col flex-1 overflow-hidden">
-              <header className="flex items-center justify-between h-16 px-4 border-b border-border">
-                <SidebarTrigger data-testid="button-sidebar-toggle" />
-              </header>
-              <main className="flex-1 overflow-auto">
-                <Router />
-              </main>
-            </div>
-          </div>
-        </SidebarProvider>
+        <DateFormatProvider>
+          <NavigationRefreshContext.Provider value={{ refreshKey, triggerRefresh }}>
+            <SidebarProvider style={style as React.CSSProperties}>
+              <div className="flex h-screen w-full">
+                <AppSidebar />
+                <div className="flex flex-col flex-1 overflow-hidden">
+                  <header className="flex items-center justify-between h-16 px-4 border-b border-border">
+                    <SidebarTrigger data-testid="button-sidebar-toggle" />
+                  </header>
+                  <main key={refreshKey} className="flex-1 overflow-auto">
+                    <Router />
+                  </main>
+                </div>
+              </div>
+            </SidebarProvider>
+          </NavigationRefreshContext.Provider>
+        </DateFormatProvider>
         <Toaster />
       </TooltipProvider>
     </QueryClientProvider>

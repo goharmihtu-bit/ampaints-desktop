@@ -1,9 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Package, ShoppingCart, TrendingUp, AlertCircle, Users, Star, Crown, Award } from "lucide-react";
+import { Package, ShoppingCart, TrendingUp, AlertCircle, Users, Star, Crown, Award, ArrowRight } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import { Link } from "wouter";
+import { useDateFormat } from "@/hooks/use-date-format";
 
 interface DashboardStats {
   todaySales: {
@@ -45,8 +48,12 @@ interface DashboardStats {
 }
 
 export default function Dashboard() {
+  const { formatDateShort } = useDateFormat();
+  
   const { data: stats, isLoading } = useQuery<DashboardStats>({
     queryKey: ["/api/dashboard-stats"],
+    refetchInterval: 30000, // Auto-refresh every 30 seconds
+    refetchOnWindowFocus: true, // Refresh when tab becomes active
   });
 
   // Add CSS for glass effect
@@ -332,7 +339,7 @@ export default function Dashboard() {
                   <div className="space-y-1">
                     <p className="text-sm font-semibold text-slate-800">{sale.customerName}</p>
                     <p className="text-xs text-slate-600">
-                      {new Date(sale.createdAt).toLocaleDateString()}
+                      {formatDateShort(sale.createdAt)}
                     </p>
                   </div>
                   <div className="flex items-center gap-3">

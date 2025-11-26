@@ -8,6 +8,8 @@ import {
   settings,
   stockInHistory,
   paymentHistory,
+  returns,
+  returnItems,
   type Product,
   type InsertProduct,
   type Variant,
@@ -27,6 +29,11 @@ import {
   type PaymentHistory,
   type InsertPaymentHistory,
   type PaymentHistoryWithSale,
+  type Return,
+  type InsertReturn,
+  type ReturnItem,
+  type InsertReturnItem,
+  type ReturnWithItems,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, gte, sql, and } from "drizzle-orm";
@@ -59,7 +66,10 @@ export interface IStorage {
 
   // Sales
   getSales(): Promise<Sale[]>;
+  getSalesWithItems(): Promise<SaleWithItems[]>;
   getUnpaidSales(): Promise<Sale[]>;
+  getSalesByCustomerPhone(customerPhone: string): Promise<Sale[]>;
+  getSalesByCustomerPhoneWithItems(customerPhone: string): Promise<SaleWithItems[]>;
   findUnpaidSaleByPhone(customerPhone: string): Promise<Sale | undefined>;
   getSale(id: string): Promise<SaleWithItems | undefined>;
   createSale(sale: InsertSale, items: InsertSaleItem[]): Promise<Sale>;
@@ -96,6 +106,7 @@ export interface IStorage {
   }): Promise<PaymentHistory>;
   getPaymentHistoryByCustomer(customerPhone: string): Promise<PaymentHistoryWithSale[]>;
   getPaymentHistoryBySale(saleId: string): Promise<PaymentHistory[]>;
+  getAllPaymentHistory(): Promise<PaymentHistoryWithSale[]>;
 
   // Dashboard Stats
   getDashboardStats(): Promise<{
@@ -107,6 +118,12 @@ export interface IStorage {
     monthlyChart: { date: string; revenue: number }[];
     topCustomers: Array<{ customerName: string; customerPhone: string; totalPurchases: number; transactionCount: number }>;
   }>;
+
+  // Returns
+  getReturns(): Promise<ReturnWithItems[]>;
+  getReturn(id: string): Promise<ReturnWithItems | undefined>;
+  createReturn(returnData: InsertReturn, items: InsertReturnItem[]): Promise<Return>;
+  getReturnsByCustomerPhone(customerPhone: string): Promise<ReturnWithItems[]>;
 
   // Settings
   getSettings(): Promise<Settings>;
@@ -654,6 +671,55 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(paymentHistory).where(eq(paymentHistory.saleId, saleId)).orderBy(desc(paymentHistory.createdAt));
   }
 
+  async updatePaymentHistory(id: string, data: {
+    amount?: number;
+    paymentMethod?: string;
+    notes?: string;
+  }): Promise<PaymentHistory | null> {
+    const [existing] = await db.select().from(paymentHistory).where(eq(paymentHistory.id, id));
+    if (!existing) {
+      return null;
+    }
+
+    const updateData: any = {};
+    if (data.amount !== undefined) {
+      updateData.amount = data.amount.toString();
+    }
+    if (data.paymentMethod !== undefined) {
+      updateData.paymentMethod = data.paymentMethod;
+    }
+    if (data.notes !== undefined) {
+      updateData.notes = data.notes;
+    }
+
+    await db
+      .update(paymentHistory)
+      .set(updateData)
+      .where(eq(paymentHistory.id, id));
+
+    const [updated] = await db.select().from(paymentHistory).where(eq(paymentHistory.id, id));
+    return updated;
+  }
+
+  async deletePaymentHistory(id: string): Promise<boolean> {
+    const [existing] = await db.select().from(paymentHistory).where(eq(paymentHistory.id, id));
+    if (!existing) {
+      return false;
+    }
+    await db.delete(paymentHistory).where(eq(paymentHistory.id, id));
+    return true;
+  }
+
+  async getAllPaymentHistory(): Promise<PaymentHistoryWithSale[]> {
+    const result = await db.query.paymentHistory.findMany({
+      with: {
+        sale: true,
+      },
+      orderBy: desc(paymentHistory.createdAt),
+    });
+    return result;
+  }
+
   // Helper method to get color with relations
   private async getColorWithRelations(id: string): Promise<ColorWithVariantAndProduct> {
     const result = await db.query.colors.findFirst({
@@ -679,12 +745,65 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(sales).orderBy(desc(sales.createdAt));
   }
 
+  async getSalesWithItems(): Promise<SaleWithItems[]> {
+    const allSales = await db.query.sales.findMany({
+      with: {
+        saleItems: {
+          with: {
+            color: {
+              with: {
+                variant: {
+                  with: {
+                    product: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: [desc(sales.createdAt)],
+    });
+    return allSales;
+  }
+
   async getUnpaidSales(): Promise<Sale[]> {
     return await db
       .select()
       .from(sales)
       .where(sql`${sales.paymentStatus} != 'paid'`)
       .orderBy(desc(sales.createdAt));
+  }
+
+  async getSalesByCustomerPhone(customerPhone: string): Promise<Sale[]> {
+    return await db
+      .select()
+      .from(sales)
+      .where(eq(sales.customerPhone, customerPhone))
+      .orderBy(desc(sales.createdAt));
+  }
+
+  async getSalesByCustomerPhoneWithItems(customerPhone: string): Promise<SaleWithItems[]> {
+    const customerSales = await db.query.sales.findMany({
+      where: eq(sales.customerPhone, customerPhone),
+      with: {
+        saleItems: {
+          with: {
+            color: {
+              with: {
+                variant: {
+                  with: {
+                    product: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: [desc(sales.createdAt)],
+    });
+    return customerSales;
   }
 
   async findUnpaidSaleByPhone(customerPhone: string): Promise<Sale | undefined> {
@@ -746,13 +865,22 @@ export class DatabaseStorage implements IStorage {
     await db.insert(saleItems).values(saleItemsToInsert);
 
     // Update stock quantities in colors table
+    console.log(`[Storage] Updating stock for ${items.length} items...`);
     for (const item of items) {
+      // Get current stock before update
+      const [currentColor] = await db.select().from(colors).where(eq(colors.id, item.colorId));
+      const previousStock = currentColor?.stockQuantity ?? 0;
+      
       await db
         .update(colors)
         .set({
           stockQuantity: sql`${colors.stockQuantity} - ${item.quantity}`,
         })
         .where(eq(colors.id, item.colorId));
+      
+      // Log the stock change
+      const [updatedColor] = await db.select().from(colors).where(eq(colors.id, item.colorId));
+      console.log(`[Storage] Stock reduced: ${currentColor?.colorName || item.colorId} - Previous: ${previousStock}, Sold: ${item.quantity}, New: ${updatedColor?.stockQuantity}`);
     }
 
     return sale;
@@ -1117,6 +1245,119 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
+  // Returns
+  async getReturns(): Promise<ReturnWithItems[]> {
+    const result = await db.query.returns.findMany({
+      with: {
+        sale: true,
+        returnItems: {
+          with: {
+            color: {
+              with: {
+                variant: {
+                  with: {
+                    product: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: desc(returns.createdAt),
+    });
+    return result as ReturnWithItems[];
+  }
+
+  async getReturn(id: string): Promise<ReturnWithItems | undefined> {
+    const result = await db.query.returns.findFirst({
+      where: eq(returns.id, id),
+      with: {
+        sale: true,
+        returnItems: {
+          with: {
+            color: {
+              with: {
+                variant: {
+                  with: {
+                    product: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    return result as ReturnWithItems | undefined;
+  }
+
+  async createReturn(returnData: InsertReturn, items: InsertReturnItem[]): Promise<Return> {
+    const returnRecord: Return = {
+      id: crypto.randomUUID(),
+      saleId: returnData.saleId || null,
+      customerName: returnData.customerName,
+      customerPhone: returnData.customerPhone,
+      returnType: returnData.returnType || "item",
+      totalRefund: String(returnData.totalRefund || "0"),
+      reason: returnData.reason || null,
+      status: returnData.status || "completed",
+      createdAt: new Date(),
+    };
+
+    await db.insert(returns).values(returnRecord);
+
+    // Insert return items and restore stock
+    for (const item of items) {
+      const returnItem: ReturnItem = {
+        id: crypto.randomUUID(),
+        returnId: returnRecord.id,
+        colorId: item.colorId,
+        saleItemId: item.saleItemId || null,
+        quantity: item.quantity,
+        rate: String(item.rate),
+        subtotal: String(item.subtotal),
+        stockRestored: item.stockRestored !== false,
+      };
+      await db.insert(returnItems).values(returnItem);
+
+      // Restore stock if stockRestored is true
+      if (returnItem.stockRestored) {
+        const [color] = await db.select().from(colors).where(eq(colors.id, item.colorId));
+        if (color) {
+          const newStock = color.stockQuantity + item.quantity;
+          await db.update(colors).set({ stockQuantity: newStock }).where(eq(colors.id, item.colorId));
+        }
+      }
+    }
+
+    return returnRecord;
+  }
+
+  async getReturnsByCustomerPhone(customerPhone: string): Promise<ReturnWithItems[]> {
+    const result = await db.query.returns.findMany({
+      where: eq(returns.customerPhone, customerPhone),
+      with: {
+        sale: true,
+        returnItems: {
+          with: {
+            color: {
+              with: {
+                variant: {
+                  with: {
+                    product: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: desc(returns.createdAt),
+    });
+    return result as ReturnWithItems[];
+  }
+
   // Settings
   async getSettings(): Promise<Settings> {
     const [setting] = await db.select().from(settings).where(eq(settings.id, 'default'));
@@ -1125,6 +1366,7 @@ export class DatabaseStorage implements IStorage {
       const defaultSettings: Settings = {
         id: 'default',
         storeName: 'PaintPulse',
+        dateFormat: 'DD-MM-YYYY',
         cardBorderStyle: 'shadow',
         cardShadowSize: 'sm',
         cardButtonColor: 'gray-900',
@@ -1146,6 +1388,37 @@ export class DatabaseStorage implements IStorage {
     
     const updated = await this.getSettings();
     return updated;
+  }
+
+  async getStockOutHistory(): Promise<any[]> {
+    const result = await db.query.saleItems.findMany({
+      with: {
+        color: {
+          with: {
+            variant: {
+              with: {
+                product: true,
+              },
+            },
+          },
+        },
+        sale: true,
+      },
+    });
+    
+    return result.map(item => ({
+      id: item.id,
+      saleId: item.saleId,
+      colorId: item.colorId,
+      quantity: item.quantity,
+      rate: item.rate,
+      subtotal: item.subtotal,
+      color: item.color,
+      sale: item.sale,
+      soldAt: item.sale?.createdAt,
+      customerName: item.sale?.customerName,
+      customerPhone: item.sale?.customerPhone,
+    })).sort((a, b) => new Date(b.soldAt || 0).getTime() - new Date(a.soldAt || 0).getTime());
   }
 }
 

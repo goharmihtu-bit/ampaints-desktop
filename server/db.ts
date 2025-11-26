@@ -194,6 +194,39 @@ function createTables() {
         updated_at INTEGER NOT NULL
       );
     `);
+
+    // Create returns table
+    sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS returns (
+        id TEXT PRIMARY KEY,
+        sale_id TEXT,
+        customer_name TEXT NOT NULL,
+        customer_phone TEXT NOT NULL,
+        return_type TEXT NOT NULL DEFAULT 'item',
+        total_refund TEXT NOT NULL DEFAULT '0',
+        reason TEXT,
+        status TEXT NOT NULL DEFAULT 'completed',
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE SET NULL
+      );
+    `);
+
+    // Create return_items table
+    sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS return_items (
+        id TEXT PRIMARY KEY,
+        return_id TEXT NOT NULL,
+        color_id TEXT NOT NULL,
+        sale_item_id TEXT,
+        quantity INTEGER NOT NULL,
+        rate TEXT NOT NULL,
+        subtotal TEXT NOT NULL,
+        stock_restored INTEGER NOT NULL DEFAULT 1,
+        FOREIGN KEY (return_id) REFERENCES returns(id) ON DELETE CASCADE,
+        FOREIGN KEY (color_id) REFERENCES colors(id),
+        FOREIGN KEY (sale_item_id) REFERENCES sale_items(id) ON DELETE SET NULL
+      );
+    `);
   
     // Create composite indexes for performance and duplicate handling
     console.log('[Database] Creating indexes...');
@@ -298,6 +331,38 @@ function createTables() {
       sqlite.exec('CREATE INDEX IF NOT EXISTS idx_stock_history_stock_in_date ON stock_in_history(stock_in_date)');
     } catch (error) {
       console.log('[Database] Index already exists: idx_stock_history_stock_in_date');
+    }
+
+    // Returns indexes
+    try {
+      sqlite.exec('CREATE INDEX IF NOT EXISTS idx_returns_customer_phone ON returns(customer_phone)');
+    } catch (error) {
+      console.log('[Database] Index already exists: idx_returns_customer_phone');
+    }
+    
+    try {
+      sqlite.exec('CREATE INDEX IF NOT EXISTS idx_returns_sale_id ON returns(sale_id)');
+    } catch (error) {
+      console.log('[Database] Index already exists: idx_returns_sale_id');
+    }
+    
+    try {
+      sqlite.exec('CREATE INDEX IF NOT EXISTS idx_returns_created ON returns(created_at)');
+    } catch (error) {
+      console.log('[Database] Index already exists: idx_returns_created');
+    }
+
+    // Return items indexes
+    try {
+      sqlite.exec('CREATE INDEX IF NOT EXISTS idx_return_items_return_id ON return_items(return_id)');
+    } catch (error) {
+      console.log('[Database] Index already exists: idx_return_items_return_id');
+    }
+    
+    try {
+      sqlite.exec('CREATE INDEX IF NOT EXISTS idx_return_items_color_id ON return_items(color_id)');
+    } catch (error) {
+      console.log('[Database] Index already exists: idx_return_items_color_id');
     }
   
     console.log('[Database] ✅ All tables and indexes created successfully');
