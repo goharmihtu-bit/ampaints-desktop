@@ -18,6 +18,7 @@ import {
 } from "@shared/schema";
 import { z } from "zod";
 import crypto from "crypto";
+import { verifyAuditToken } from "./auth";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Products
