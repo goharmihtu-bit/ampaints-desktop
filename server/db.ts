@@ -646,39 +646,4 @@ export function getDatabaseStats(): {
   };
 }
 
-// Initialize database - create all tables
-export async function initializeDatabase() {
-  try {
-    console.log("[DB] Initializing database...");
-    
-    // Test each table by querying it
-    const tables = [
-      { name: "products", query: () => db.select().from(schema.products).limit(1) },
-      { name: "variants", query: () => db.select().from(schema.variants).limit(1) },
-      { name: "colors", query: () => db.select().from(schema.colors).limit(1) },
-      { name: "sales", query: () => db.select().from(schema.sales).limit(1) },
-      { name: "saleItems", query: () => db.select().from(schema.saleItems).limit(1) },
-      { name: "settings", query: () => db.select().from(schema.settings).limit(1) },
-      { name: "stockInHistory", query: () => db.select().from(schema.stockInHistory).limit(1) },
-      { name: "paymentHistory", query: () => db.select().from(schema.paymentHistory).limit(1) },
-      { name: "returns", query: () => db.select().from(schema.returns).limit(1) },
-      { name: "returnItems", query: () => db.select().from(schema.returnItems).limit(1) },
-    ];
-
-    for (const table of tables) {
-      try {
-        await table.query();
-        console.log(`[DB] Table '${table.name}' exists ✓`);
-      } catch (error) {
-        console.log(`[DB] Table '${table.name}' will be created on first use`);
-      }
-    }
-
-    console.log("[DB] Database initialized successfully");
-  } catch (error) {
-    console.error("[DB] Error initializing database:", error);
-    // Don't throw - allow app to continue, tables will be created on demand
-  }
-}
-
 export default db;
