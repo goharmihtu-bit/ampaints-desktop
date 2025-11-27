@@ -32,7 +32,7 @@ export function getDatabasePath(): string {
 let sqlite: Database.Database;
 let dbInstance: BetterSQLite3Database<typeof schema>;
 
-function initializeDatabase() {
+export function initializeDatabase() {
   try {
     console.log('[Database] Initializing database at:', dbPath);
     
