@@ -224,19 +224,21 @@ export default function UnpaidBills() {
 
   const recordPaymentMutation = useMutation({
     mutationFn: async (data: { saleId: string; amount: number; paymentMethod: string; notes?: string }) => {
-      const res = await apiRequest("POST", `/api/sales/${data.saleId}/payment`, { 
+      return await apiRequest("POST", `/api/sales/${data.saleId}/payment`, { 
         amount: data.amount,
         paymentMethod: data.paymentMethod,
         notes: data.notes 
       });
-      return res;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
+      if (selectedSaleId) {
+        queryClient.invalidateQueries({ queryKey: [`/api/sales/${selectedSaleId}`] });
+      }
       if (viewingPaymentHistoryCustomerPhone) {
         queryClient.invalidateQueries({ queryKey: [`/api/payment-history/customer/${viewingPaymentHistoryCustomerPhone}`] });
       }
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
       toast({ 
         title: "Payment recorded successfully",
         description: `Payment of Rs. ${parseFloat(paymentAmount).toLocaleString()} has been recorded.`
@@ -245,48 +247,11 @@ export default function UnpaidBills() {
       setPaymentAmount("");
       setPaymentNotes("");
       setPaymentMethod("cash");
-      setSelectedCustomerPhone(null);
     },
     onError: (error: Error) => {
       console.error("Payment recording error:", error);
       toast({ 
         title: "Failed to record payment", 
-        description: error.message,
-        variant: "destructive" 
-      });
-    },
-  });
-
-  const createManualBalanceMutation = useMutation({
-    mutationFn: async (data: { customerName: string; customerPhone: string; totalAmount: string; dueDate?: string; notes?: string }) => {
-      return await apiRequest("POST", "/api/sales/manual-balance", {
-        customerName: data.customerName,
-        customerPhone: data.customerPhone,
-        totalAmount: data.totalAmount,
-        dueDate: data.dueDate || null,
-        notes: data.notes || null
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
-      toast({ 
-        title: "New pending balance added successfully",
-        description: "A new separate bill has been created for this customer"
-      });
-      setManualBalanceDialogOpen(false);
-      setManualBalanceForm({
-        customerName: "",
-        customerPhone: "",
-        totalAmount: "",
-        dueDate: "",
-        notes: ""
-      });
-    },
-    onError: (error: Error) => {
-      console.error("Create manual balance error:", error);
-      toast({ 
-        title: "Failed to add pending balance",
         description: error.message,
         variant: "destructive" 
       });
@@ -310,11 +275,56 @@ export default function UnpaidBills() {
     },
     onError: (error: Error) => {
       console.error("Add note error:", error);
+      toast({ title: "Failed to add note", variant: "destructive" });
+    },
+  });
+
+  const createManualBalanceMutation = useMutation({
+    mutationFn: async (data: { customerName: string; customerPhone: string; totalAmount: string; dueDate?: string; notes?: string }) => {
+      return await apiRequest("POST", "/api/sales/manual-balance", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
       toast({ 
-        title: "Failed to add note",
-        description: error.message,
-        variant: "destructive" 
+        title: "New pending balance added successfully",
+        description: "A new separate bill has been created for this customer"
       });
+      setManualBalanceDialogOpen(false);
+      setManualBalanceForm({
+        customerName: "",
+        customerPhone: "",
+        totalAmount: "",
+        dueDate: "",
+        notes: ""
+      });
+    },
+    onError: (error: Error) => {
+      console.error("Create manual balance error:", error);
+      toast({ title: "Failed to add pending balance", variant: "destructive" });
+    },
+  });
+
+  const updateDueDateMutation = useMutation({
+    mutationFn: async (data: { saleId: string; dueDate?: string; notes?: string }) => {
+      return await apiRequest("PATCH", `/api/sales/${data.saleId}/due-date`, {
+        dueDate: data.dueDate || null,
+        notes: data.notes
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
+      if (selectedSaleId) {
+        queryClient.invalidateQueries({ queryKey: [`/api/sales/${selectedSaleId}`] });
+      }
+      toast({ title: "Due date updated successfully" });
+      setDueDateDialogOpen(false);
+      setEditingSaleId(null);
+      setDueDateForm({ dueDate: "", notes: "" });
+    },
+    onError: (error: Error) => {
+      console.error("Update due date error:", error);
+      toast({ title: "Failed to update due date", variant: "destructive" });
     },
   });
 
@@ -325,25 +335,28 @@ export default function UnpaidBills() {
     }
 
     const amount = parseFloat(paymentAmount);
-    if (isNaN(amount) || amount <= 0) {
-      toast({ title: "Payment amount must be a positive number", variant: "destructive" });
+    if (amount <= 0) {
+      toast({ title: "Payment amount must be positive", variant: "destructive" });
       return;
     }
 
+    // Check if payment exceeds outstanding
     if (amount > selectedCustomer.totalOutstanding) {
       toast({ 
-        title: "Payment exceeds outstanding balance", 
+        title: `Payment amount exceeds outstanding balance`, 
         description: `Payment: Rs. ${Math.round(amount).toLocaleString()} | Outstanding: Rs. ${Math.round(selectedCustomer.totalOutstanding).toLocaleString()}`,
         variant: "destructive" 
       });
       return;
     }
 
+    // Sort bills by date (oldest first) and apply payment
     const sortedBills = [...selectedCustomer.bills].sort((a, b) => 
       new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
     );
 
     let remainingPayment = amount;
+    const paymentsToApply: { saleId: string; amount: number }[] = [];
 
     for (const bill of sortedBills) {
       if (remainingPayment <= 0) break;
@@ -354,14 +367,38 @@ export default function UnpaidBills() {
       
       if (billOutstanding > 0) {
         const paymentForThisBill = Math.min(remainingPayment, billOutstanding);
-        recordPaymentMutation.mutate({
-          saleId: bill.id,
-          amount: paymentForThisBill,
-          paymentMethod,
-          notes: paymentNotes
-        });
+        paymentsToApply.push({ saleId: bill.id, amount: paymentForThisBill });
         remainingPayment -= paymentForThisBill;
       }
+    }
+
+    // Apply all payments
+    try {
+      for (const payment of paymentsToApply) {
+        await apiRequest("POST", `/api/sales/${payment.saleId}/payment`, { 
+          amount: payment.amount,
+          paymentMethod: paymentMethod,
+          notes: paymentNotes 
+        });
+      }
+      
+      queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
+      if (viewingPaymentHistoryCustomerPhone) {
+        queryClient.invalidateQueries({ queryKey: [`/api/payment-history/customer/${viewingPaymentHistoryCustomerPhone}`] });
+      }
+      toast({ 
+        title: `Payment recorded successfully`,
+        description: `Payment of Rs. ${Math.round(amount).toLocaleString()} has been applied to ${paymentsToApply.length} bill(s).`
+      });
+      setPaymentDialogOpen(false);
+      setPaymentAmount("");
+      setPaymentNotes("");
+      setPaymentMethod("cash");
+      setSelectedCustomerPhone(null);
+    } catch (error) {
+      console.error("Payment processing error:", error);
+      toast({ title: "Failed to record payment", variant: "destructive" });
     }
   };
 
@@ -1813,43 +1850,6 @@ ${receiptSettings.address}`;
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="customerPhone">Phone</Label>
-              <Input
-                id="customerPhone"
-                placeholder="Enter phone number"
-                value={manualBalanceForm.customerPhone}
-                onChange={(e) => setManualBalanceForm(prev => ({ ...prev, customerPhone: e.target.value }))}
-                className="glass-card border-white/20"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="totalAmount">Amount (Rs.)</Label>
-              <Input
-                id="totalAmount"
-                type="number"
-                placeholder="Enter amount"
-                value={manualBalanceForm.totalAmount}
-                onChange={(e) => setManualBalanceForm(prev => ({ ...prev, totalAmount: e.target.value }))}
-                className="glass-card border-white/20"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="dueDate">Due Date (Optional)</Label>
-              <Input
-                id="dueDate"
-                type="date"
-                value={manualBalanceForm.dueDate}
-                onChange={(e) => setManualBalanceForm(prev => ({ ...prev, dueDate: e.target.value }))}
-                className="glass-card border-white/20"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="notes">Notes (Optional)</Label>
-              <Textarea
-                id="notes"
-                placeholder="Add notes about this balance"
-                value={manualBalanceForm.notes}
-                onChange={(e) => setManualBalance
               <Label htmlFor="customerPhone">Phone</Label>
               <Input
                 id="customerPhone"
