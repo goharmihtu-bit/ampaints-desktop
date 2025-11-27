@@ -1667,7 +1667,21 @@ export default function Audit() {
                             }>
                               {sale.paymentStatus.toUpperCase()}
                             </Badge>
-                          </Table
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="unpaid" className="flex-1 overflow-auto p-4 space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <Card>
+              <CardContent className="pt-4">
                 <div className="flex items-center gap-3">
                   <div className="p-2 rounded-full bg-green-100 dark:bg-green-900/30">
                     <TrendingUp className="h-5 w-5 text-green-600 dark:text-green-400" />
