@@ -93,6 +93,51 @@ interface PaymentHistoryWithSale extends PaymentHistory {
   sale: Sale | null;
 }
 
+interface ConsolidatedCustomer {
+  customerName: string;
+  customerPhone: string;
+  totalAmount: number;
+  totalPaid: number;
+  totalOutstanding: number;
+  sales: Sale[];
+}
+
+// Helper function to format phone number for WhatsApp
+function formatPhoneForWhatsApp(phone: string): string | null {
+  if (!phone) return null;
+  
+  // Remove all non-digit characters
+  const cleaned = phone.replace(/\D/g, '');
+  
+  // Check if it's a valid Indian phone number (10 digits)
+  if (cleaned.length === 10) {
+    return `91${cleaned}`;
+  }
+  
+  // Check if it's already in international format
+  if (cleaned.length === 12 && cleaned.startsWith('91')) {
+    return cleaned;
+  }
+  
+  return null;
+}
+
+// Helper function to generate statement PDF blob
+function generateStatementPDFBlob(customer: ConsolidatedCustomer): Blob {
+  const pdf = new jsPDF();
+  
+  // Add basic statement content
+  pdf.text(`Statement for ${customer.customerName}`, 20, 20);
+  pdf.text(`Phone: ${customer.customerPhone}`, 20, 30);
+  pdf.text(`Total Amount: Rs. ${Math.round(customer.totalAmount).toLocaleString()}`, 20, 40);
+  pdf.text(`Total Paid: Rs. ${Math.round(customer.totalPaid).toLocaleString()}`, 20, 50);
+  pdf.text(`Outstanding: Rs. ${Math.round(customer.totalOutstanding).toLocaleString()}`, 20, 60);
+  
+  // Convert to blob
+  const pdfBlob = pdf.output('blob');
+  return pdfBlob;
+}
+
 export default function Audit() {
   const { formatDateShort } = useDateFormat();
   const { receiptSettings } = useReceiptSettings();

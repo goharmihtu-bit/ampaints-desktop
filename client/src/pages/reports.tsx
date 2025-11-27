@@ -212,6 +212,35 @@ export default function Reports() {
     return filteredSales.filter((sale) => sale.paymentStatus === "paid");
   }, [filteredSales]);
 
+  // Filtered data calculations for each tab
+  const filteredSalesTotal = useMemo(() => {
+    return filteredSales.reduce((sum, sale) => sum + parseFloat(sale.totalAmount), 0);
+  }, [filteredSales]);
+
+  const filteredSalesPaid = useMemo(() => {
+    return filteredSales.reduce((sum, sale) => sum + parseFloat(sale.amountPaid), 0);
+  }, [filteredSales]);
+
+  const filteredSalesOutstanding = useMemo(() => {
+    return filteredSalesTotal - filteredSalesPaid;
+  }, [filteredSalesTotal, filteredSalesPaid]);
+
+  const unpaidSalesTotal = useMemo(() => {
+    return unpaidSales.reduce((sum, sale) => sum + parseFloat(sale.totalAmount), 0);
+  }, [unpaidSales]);
+
+  const unpaidSalesPaid = useMemo(() => {
+    return unpaidSales.reduce((sum, sale) => sum + parseFloat(sale.amountPaid), 0);
+  }, [unpaidSales]);
+
+  const unpaidSalesOutstanding = useMemo(() => {
+    return unpaidSalesTotal - unpaidSalesPaid;
+  }, [unpaidSalesTotal, unpaidSalesPaid]);
+
+  const filteredPaymentsTotal = useMemo(() => {
+    return filteredPayments.reduce((sum, payment) => sum + parseFloat(payment.amount), 0);
+  }, [filteredPayments]);
+
   const stats = useMemo(() => {
     const totalSalesAmount = allSales.reduce((sum, sale) => sum + parseFloat(sale.totalAmount), 0);
     const totalPaidAmount = allSales.reduce((sum, sale) => sum + parseFloat(sale.amountPaid), 0);
@@ -265,6 +294,96 @@ export default function Reports() {
         return <Badge className="bg-red-500/10 text-red-600 dark:text-red-400">Unpaid</Badge>;
       default:
         return <Badge variant="secondary">{status}</Badge>;
+    }
+  };
+
+  // Table Summary Component
+  const TableSummary = ({ tab }: { tab: string }) => {
+    switch (tab) {
+      case "all-sales":
+        return (
+          <div className="flex flex-wrap justify-between items-center p-4 bg-muted/50 border-t">
+            <div className="text-sm font-medium">
+              Showing {filteredSales.length} bills
+            </div>
+            <div className="flex gap-4 text-sm">
+              <div className="flex items-center gap-1">
+                <span className="text-muted-foreground">Total Amount:</span>
+                <span className="font-semibold flex items-center">
+                  <IndianRupee className="h-3 w-3" />
+                  {filteredSalesTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-muted-foreground">Total Paid:</span>
+                <span className="font-semibold text-green-600 dark:text-green-400 flex items-center">
+                  <IndianRupee className="h-3 w-3" />
+                  {filteredSalesPaid.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-muted-foreground">Total Outstanding:</span>
+                <span className="font-semibold text-red-600 dark:text-red-400 flex items-center">
+                  <IndianRupee className="h-3 w-3" />
+                  {filteredSalesOutstanding.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+            </div>
+          </div>
+        );
+      
+      case "unpaid-bills":
+        return (
+          <div className="flex flex-wrap justify-between items-center p-4 bg-muted/50 border-t">
+            <div className="text-sm font-medium">
+              Showing {unpaidSales.length} unpaid bills
+            </div>
+            <div className="flex gap-4 text-sm">
+              <div className="flex items-center gap-1">
+                <span className="text-muted-foreground">Total Bill Amount:</span>
+                <span className="font-semibold flex items-center">
+                  <IndianRupee className="h-3 w-3" />
+                  {unpaidSalesTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-muted-foreground">Total Paid:</span>
+                <span className="font-semibold text-green-600 dark:text-green-400 flex items-center">
+                  <IndianRupee className="h-3 w-3" />
+                  {unpaidSalesPaid.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-muted-foreground">Total Outstanding:</span>
+                <span className="font-semibold text-red-600 dark:text-red-400 flex items-center">
+                  <IndianRupee className="h-3 w-3" />
+                  {unpaidSalesOutstanding.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+            </div>
+          </div>
+        );
+      
+      case "recovery-payments":
+        return (
+          <div className="flex flex-wrap justify-between items-center p-4 bg-muted/50 border-t">
+            <div className="text-sm font-medium">
+              Showing {filteredPayments.length} payment records
+            </div>
+            <div className="flex gap-4 text-sm">
+              <div className="flex items-center gap-1">
+                <span className="text-muted-foreground">Total Recovery Amount:</span>
+                <span className="font-semibold text-green-600 dark:text-green-400 flex items-center">
+                  <IndianRupee className="h-3 w-3" />
+                  {filteredPaymentsTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+            </div>
+          </div>
+        );
+      
+      default:
+        return null;
     }
   };
 
@@ -561,192 +680,201 @@ export default function Reports() {
 
         <TabsContent value="all-sales">
           <Card>
-            <CardContent className="pt-6">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>
-                      <Button variant="ghost" size="sm" onClick={() => toggleSort("customer")} className="flex items-center">
-                        Customer <SortIcon field="customer" />
-                      </Button>
-                    </TableHead>
-                    <TableHead>Phone</TableHead>
-                    <TableHead>
-                      <Button variant="ghost" size="sm" onClick={() => toggleSort("amount")} className="flex items-center">
-                        Amount <SortIcon field="amount" />
-                      </Button>
-                    </TableHead>
-                    <TableHead>Paid</TableHead>
-                    <TableHead>Outstanding</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>
-                      <Button variant="ghost" size="sm" onClick={() => toggleSort("date")} className="flex items-center">
-                        Date <SortIcon field="date" />
-                      </Button>
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredSales.map((sale) => (
-                    <TableRow key={sale.id} data-testid={`row-sale-${sale.id}`}>
-                      <TableCell className="font-medium">
-                        <Link href={`/customer/${encodeURIComponent(sale.customerPhone)}`} className="text-blue-600 hover:underline">
-                          {sale.customerName}
-                        </Link>
-                      </TableCell>
-                      <TableCell>{sale.customerPhone}</TableCell>
-                      <TableCell>Rs {parseFloat(sale.totalAmount).toLocaleString("en-IN")}</TableCell>
-                      <TableCell className="text-green-600 dark:text-green-400">
-                        Rs {parseFloat(sale.amountPaid).toLocaleString("en-IN")}
-                      </TableCell>
-                      <TableCell className="text-red-600 dark:text-red-400">
-                        Rs {(parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid)).toLocaleString("en-IN")}
-                      </TableCell>
-                      <TableCell>{getPaymentStatusBadge(sale.paymentStatus)}</TableCell>
-                      <TableCell>{formatDisplayDate(sale.createdAt)}</TableCell>
-                    </TableRow>
-                  ))}
-                  {filteredSales.length === 0 && (
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                        No sales found matching your filters
-                      </TableCell>
+                      <TableHead>
+                        <Button variant="ghost" size="sm" onClick={() => toggleSort("customer")} className="flex items-center">
+                          Customer <SortIcon field="customer" />
+                        </Button>
+                      </TableHead>
+                      <TableHead>Phone</TableHead>
+                      <TableHead>
+                        <Button variant="ghost" size="sm" onClick={() => toggleSort("amount")} className="flex items-center">
+                          Amount <SortIcon field="amount" />
+                        </Button>
+                      </TableHead>
+                      <TableHead>Paid</TableHead>
+                      <TableHead>Outstanding</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>
+                        <Button variant="ghost" size="sm" onClick={() => toggleSort("date")} className="flex items-center">
+                          Date <SortIcon field="date" />
+                        </Button>
+                      </TableHead>
                     </TableRow>
-                  )}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredSales.map((sale) => (
+                      <TableRow key={sale.id} data-testid={`row-sale-${sale.id}`}>
+                        <TableCell className="font-medium">
+                          <Link href={`/customer/${encodeURIComponent(sale.customerPhone)}`} className="text-blue-600 hover:underline">
+                            {sale.customerName}
+                          </Link>
+                        </TableCell>
+                        <TableCell>{sale.customerPhone}</TableCell>
+                        <TableCell>Rs {parseFloat(sale.totalAmount).toLocaleString("en-IN")}</TableCell>
+                        <TableCell className="text-green-600 dark:text-green-400">
+                          Rs {parseFloat(sale.amountPaid).toLocaleString("en-IN")}
+                        </TableCell>
+                        <TableCell className="text-red-600 dark:text-red-400">
+                          Rs {(parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid)).toLocaleString("en-IN")}
+                        </TableCell>
+                        <TableCell>{getPaymentStatusBadge(sale.paymentStatus)}</TableCell>
+                        <TableCell>{formatDisplayDate(sale.createdAt)}</TableCell>
+                      </TableRow>
+                    ))}
+                    {filteredSales.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                          No sales found matching your filters
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+              <TableSummary tab="all-sales" />
             </CardContent>
           </Card>
         </TabsContent>
 
         <TabsContent value="unpaid-bills">
           <Card>
-            <CardContent className="pt-6">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>
-                      <Button variant="ghost" size="sm" onClick={() => toggleSort("customer")} className="flex items-center">
-                        Customer <SortIcon field="customer" />
-                      </Button>
-                    </TableHead>
-                    <TableHead>Phone</TableHead>
-                    <TableHead>
-                      <Button variant="ghost" size="sm" onClick={() => toggleSort("amount")} className="flex items-center">
-                        Bill Amount <SortIcon field="amount" />
-                      </Button>
-                    </TableHead>
-                    <TableHead>Paid</TableHead>
-                    <TableHead>Outstanding</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Due Date</TableHead>
-                    <TableHead>
-                      <Button variant="ghost" size="sm" onClick={() => toggleSort("date")} className="flex items-center">
-                        Bill Date <SortIcon field="date" />
-                      </Button>
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {unpaidSales.map((sale) => (
-                    <TableRow key={sale.id} data-testid={`row-unpaid-${sale.id}`}>
-                      <TableCell className="font-medium">
-                        <Link href={`/customer/${encodeURIComponent(sale.customerPhone)}`} className="text-blue-600 hover:underline">
-                          {sale.customerName}
-                        </Link>
-                      </TableCell>
-                      <TableCell>{sale.customerPhone}</TableCell>
-                      <TableCell>Rs {parseFloat(sale.totalAmount).toLocaleString("en-IN")}</TableCell>
-                      <TableCell className="text-green-600 dark:text-green-400">
-                        Rs {parseFloat(sale.amountPaid).toLocaleString("en-IN")}
-                      </TableCell>
-                      <TableCell className="text-red-600 dark:text-red-400 font-semibold">
-                        Rs {(parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid)).toLocaleString("en-IN")}
-                      </TableCell>
-                      <TableCell>{getPaymentStatusBadge(sale.paymentStatus)}</TableCell>
-                      <TableCell>{sale.dueDate ? formatDisplayDate(sale.dueDate) : "Not set"}</TableCell>
-                      <TableCell>{formatDisplayDate(sale.createdAt)}</TableCell>
-                    </TableRow>
-                  ))}
-                  {unpaidSales.length === 0 && (
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
-                        No unpaid bills found matching your filters
-                      </TableCell>
+                      <TableHead>
+                        <Button variant="ghost" size="sm" onClick={() => toggleSort("customer")} className="flex items-center">
+                          Customer <SortIcon field="customer" />
+                        </Button>
+                      </TableHead>
+                      <TableHead>Phone</TableHead>
+                      <TableHead>
+                        <Button variant="ghost" size="sm" onClick={() => toggleSort("amount")} className="flex items-center">
+                          Bill Amount <SortIcon field="amount" />
+                        </Button>
+                      </TableHead>
+                      <TableHead>Paid</TableHead>
+                      <TableHead>Outstanding</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Due Date</TableHead>
+                      <TableHead>
+                        <Button variant="ghost" size="sm" onClick={() => toggleSort("date")} className="flex items-center">
+                          Bill Date <SortIcon field="date" />
+                        </Button>
+                      </TableHead>
                     </TableRow>
-                  )}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {unpaidSales.map((sale) => (
+                      <TableRow key={sale.id} data-testid={`row-unpaid-${sale.id}`}>
+                        <TableCell className="font-medium">
+                          <Link href={`/customer/${encodeURIComponent(sale.customerPhone)}`} className="text-blue-600 hover:underline">
+                            {sale.customerName}
+                          </Link>
+                        </TableCell>
+                        <TableCell>{sale.customerPhone}</TableCell>
+                        <TableCell>Rs {parseFloat(sale.totalAmount).toLocaleString("en-IN")}</TableCell>
+                        <TableCell className="text-green-600 dark:text-green-400">
+                          Rs {parseFloat(sale.amountPaid).toLocaleString("en-IN")}
+                        </TableCell>
+                        <TableCell className="text-red-600 dark:text-red-400 font-semibold">
+                          Rs {(parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid)).toLocaleString("en-IN")}
+                        </TableCell>
+                        <TableCell>{getPaymentStatusBadge(sale.paymentStatus)}</TableCell>
+                        <TableCell>{sale.dueDate ? formatDisplayDate(sale.dueDate) : "Not set"}</TableCell>
+                        <TableCell>{formatDisplayDate(sale.createdAt)}</TableCell>
+                      </TableRow>
+                    ))}
+                    {unpaidSales.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                          No unpaid bills found matching your filters
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+              <TableSummary tab="unpaid-bills" />
             </CardContent>
           </Card>
         </TabsContent>
 
         <TabsContent value="recovery-payments">
           <Card>
-            <CardContent className="pt-6">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>
-                      <Button variant="ghost" size="sm" onClick={() => toggleSort("customer")} className="flex items-center">
-                        Customer <SortIcon field="customer" />
-                      </Button>
-                    </TableHead>
-                    <TableHead>Phone</TableHead>
-                    <TableHead>
-                      <Button variant="ghost" size="sm" onClick={() => toggleSort("amount")} className="flex items-center">
-                        Payment Amount <SortIcon field="amount" />
-                      </Button>
-                    </TableHead>
-                    <TableHead>Previous Balance</TableHead>
-                    <TableHead>New Balance</TableHead>
-                    <TableHead>Method</TableHead>
-                    <TableHead>
-                      <Button variant="ghost" size="sm" onClick={() => toggleSort("date")} className="flex items-center">
-                        Date <SortIcon field="date" />
-                      </Button>
-                    </TableHead>
-                    <TableHead>Notes</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredPayments.map((payment) => (
-                    <TableRow key={payment.id} data-testid={`row-payment-${payment.id}`}>
-                      <TableCell className="font-medium">
-                        <Link href={`/customer/${encodeURIComponent(payment.customerPhone)}`} className="text-blue-600 hover:underline">
-                          {payment.sale?.customerName || "Unknown"}
-                        </Link>
-                      </TableCell>
-                      <TableCell>{payment.customerPhone}</TableCell>
-                      <TableCell className="text-green-600 dark:text-green-400 font-semibold">
-                        Rs {parseFloat(payment.amount).toLocaleString("en-IN")}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        Rs {parseFloat(payment.previousBalance).toLocaleString("en-IN")}
-                      </TableCell>
-                      <TableCell>
-                        Rs {parseFloat(payment.newBalance).toLocaleString("en-IN")}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="secondary" className="capitalize">
-                          {payment.paymentMethod || "cash"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{formatDisplayDate(payment.createdAt)}</TableCell>
-                      <TableCell className="max-w-[200px] truncate">
-                        {payment.notes || "-"}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {filteredPayments.length === 0 && (
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
-                        No recovery payments found matching your filters
-                      </TableCell>
+                      <TableHead>
+                        <Button variant="ghost" size="sm" onClick={() => toggleSort("customer")} className="flex items-center">
+                          Customer <SortIcon field="customer" />
+                        </Button>
+                      </TableHead>
+                      <TableHead>Phone</TableHead>
+                      <TableHead>
+                        <Button variant="ghost" size="sm" onClick={() => toggleSort("amount")} className="flex items-center">
+                          Payment Amount <SortIcon field="amount" />
+                        </Button>
+                      </TableHead>
+                      <TableHead>Previous Balance</TableHead>
+                      <TableHead>New Balance</TableHead>
+                      <TableHead>Method</TableHead>
+                      <TableHead>
+                        <Button variant="ghost" size="sm" onClick={() => toggleSort("date")} className="flex items-center">
+                          Date <SortIcon field="date" />
+                        </Button>
+                      </TableHead>
+                      <TableHead>Notes</TableHead>
                     </TableRow>
-                  )}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredPayments.map((payment) => (
+                      <TableRow key={payment.id} data-testid={`row-payment-${payment.id}`}>
+                        <TableCell className="font-medium">
+                          <Link href={`/customer/${encodeURIComponent(payment.customerPhone)}`} className="text-blue-600 hover:underline">
+                            {payment.sale?.customerName || "Unknown"}
+                          </Link>
+                        </TableCell>
+                        <TableCell>{payment.customerPhone}</TableCell>
+                        <TableCell className="text-green-600 dark:text-green-400 font-semibold">
+                          Rs {parseFloat(payment.amount).toLocaleString("en-IN")}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          Rs {parseFloat(payment.previousBalance).toLocaleString("en-IN")}
+                        </TableCell>
+                        <TableCell>
+                          Rs {parseFloat(payment.newBalance).toLocaleString("en-IN")}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="secondary" className="capitalize">
+                            {payment.paymentMethod || "cash"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{formatDisplayDate(payment.createdAt)}</TableCell>
+                        <TableCell className="max-w-[200px] truncate">
+                          {payment.notes || "-"}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {filteredPayments.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                          No recovery payments found matching your filters
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+              <TableSummary tab="recovery-payments" />
             </CardContent>
           </Card>
         </TabsContent>
