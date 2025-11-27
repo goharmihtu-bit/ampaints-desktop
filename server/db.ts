@@ -651,29 +651,6 @@ export async function initializeDatabase() {
   try {
     console.log("[DB] Initializing database...");
     
-    // Run migrations to create tables
-    const migrations = await import("./migrations").catch(() => null);
-    
-    if (migrations?.default) {
-      console.log("[DB] Running migrations...");
-      await migrations.default(db);
-    } else {
-      console.log("[DB] No migrations found, running manual schema sync...");
-      // Manually create tables by accessing them
-      // This ensures they exist
-      await syncDatabase();
-    }
-    
-    console.log("[DB] Database initialized successfully");
-  } catch (error) {
-    console.error("[DB] Error initializing database:", error);
-    // Continue anyway - tables might already exist
-  }
-}
-
-// Sync database schema (create tables if they don't exist)
-async function syncDatabase() {
-  try {
     // Test each table by querying it
     const tables = [
       { name: "products", query: () => db.select().from(schema.products).limit(1) },
@@ -696,8 +673,11 @@ async function syncDatabase() {
         console.log(`[DB] Table '${table.name}' will be created on first use`);
       }
     }
+
+    console.log("[DB] Database initialized successfully");
   } catch (error) {
-    console.error("[DB] Error syncing database:", error);
+    console.error("[DB] Error initializing database:", error);
+    // Don't throw - allow app to continue, tables will be created on demand
   }
 }
 
