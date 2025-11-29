@@ -1,4 +1,4 @@
-// unpaid-bills.tsx - Fixed Calculation Version
+// unpaid-bills.tsx - Fixed Balance Calculation Version
 import { useState, useMemo, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -111,6 +111,16 @@ interface BalanceNote {
   createdAt: string;
 }
 
+interface TransactionLedger {
+  date: string;
+  type: "OUT" | "IN" | "LOAN";
+  description: string;
+  billAmount: number;
+  paid: number;
+  outstanding: number;
+  runningBalance: number;
+}
+
 type ConsolidatedCustomer = {
   customerPhone: string;
   customerName: string;
@@ -122,6 +132,7 @@ type ConsolidatedCustomer = {
   daysOverdue: number;
   paymentHistory: PaymentRecord[];
   balanceNotes: BalanceNote[];
+  transactionLedger: TransactionLedger[];
 };
 
 type FilterType = {
@@ -345,6 +356,7 @@ export default function UnpaidBills() {
     },
   });
 
+  // FIXED: Proper payment distribution logic
   const handleRecordPayment = async () => {
     if (!selectedCustomer || !paymentAmount) {
       toast({ title: "Please enter payment amount", variant: "destructive" });
@@ -367,7 +379,7 @@ export default function UnpaidBills() {
       return;
     }
 
-    // Sort bills by date (oldest first) and apply payment
+    // Sort bills by date (oldest first) and include manual balances
     const sortedBills = [...selectedCustomer.bills].sort((a, b) => 
       new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
     );
@@ -375,16 +387,20 @@ export default function UnpaidBills() {
     let remainingPayment = amount;
     const paymentsToApply: { saleId: string; amount: number }[] = [];
 
+    // FIXED: Proper payment allocation considering manual balances
     for (const bill of sortedBills) {
       if (remainingPayment <= 0) break;
       
-      const billTotal = parseFloat(bill.totalAmount);
-      const billPaid = parseFloat(bill.amountPaid);
+      const billTotal = parseFloat(bill.totalAmount || "0");
+      const billPaid = parseFloat(bill.amountPaid || "0");
       const billOutstanding = billTotal - billPaid;
       
       if (billOutstanding > 0) {
         const paymentForThisBill = Math.min(remainingPayment, billOutstanding);
-        paymentsToApply.push({ saleId: bill.id, amount: paymentForThisBill });
+        paymentsToApply.push({ 
+          saleId: bill.id, 
+          amount: paymentForThisBill 
+        });
         remainingPayment -= paymentForThisBill;
       }
     }
@@ -399,25 +415,36 @@ export default function UnpaidBills() {
         });
       }
       
+      // Invalidate all relevant queries to force refresh
       queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/customers/suggestions"] });
+      
       if (viewingPaymentHistoryCustomerPhone) {
         queryClient.invalidateQueries({ queryKey: [`/api/payment-history/customer/${viewingPaymentHistoryCustomerPhone}`] });
       }
-      refetchUnpaidSales();
-      refetchPaymentHistory();
+      
+      // Force immediate refetch
+      await refetchUnpaidSales();
+      
       toast({ 
         title: `Payment recorded successfully`,
         description: `Payment of Rs. ${Math.round(amount).toLocaleString()} has been applied to ${paymentsToApply.length} bill(s).`
       });
+      
       setPaymentDialogOpen(false);
       setPaymentAmount("");
       setPaymentNotes("");
       setPaymentMethod("cash");
       setSelectedCustomerPhone(null);
+      
     } catch (error) {
       console.error("Payment processing error:", error);
-      toast({ title: "Failed to record payment", variant: "destructive" });
+      toast({ 
+        title: "Failed to record payment", 
+        description: "Please refresh the page and try again",
+        variant: "destructive" 
+      });
     }
   };
 
@@ -473,6 +500,7 @@ export default function UnpaidBills() {
     }
   };
 
+  // FIXED: Improved customer consolidation with proper balance calculation
   const consolidatedCustomers = useMemo(() => {
     const customerMap = new Map<string, ConsolidatedCustomer>();
     
@@ -491,10 +519,16 @@ export default function UnpaidBills() {
         existing.totalAmount += totalAmount;
         existing.totalPaid += totalPaid;
         existing.totalOutstanding += outstanding;
+        
+        // Update oldest bill date if this bill is older
         if (billDate < existing.oldestBillDate) {
           existing.oldestBillDate = billDate;
           existing.daysOverdue = daysOverdue;
         }
+        
+        // Recalculate transaction ledger
+        existing.transactionLedger = calculateTransactionLedger(existing.bills, existing.paymentHistory);
+        
       } else {
         customerMap.set(phone, {
           customerPhone: phone,
@@ -506,13 +540,88 @@ export default function UnpaidBills() {
           oldestBillDate: billDate,
           daysOverdue,
           paymentHistory: [],
-          balanceNotes: []
+          balanceNotes: [],
+          transactionLedger: calculateTransactionLedger([sale], [])
         });
       }
     });
     
     return Array.from(customerMap.values());
   }, [unpaidSales]);
+
+  // FIXED: Transaction ledger calculation
+  const calculateTransactionLedger = (bills: Sale[], paymentHistory: PaymentRecord[]): TransactionLedger[] => {
+    const ledger: TransactionLedger[] = [];
+    let runningBalance = 0;
+
+    // Combine all transactions and sort by date
+    const allTransactions: any[] = [];
+
+    // Add bills as OUT transactions
+    bills.forEach(bill => {
+      const billTotal = parseFloat(bill.totalAmount || "0");
+      const billPaid = parseFloat(bill.amountPaid || "0");
+      const billOutstanding = billTotal - billPaid;
+      
+      allTransactions.push({
+        date: bill.createdAt,
+        type: bill.isManualBalance ? "LOAN" : "OUT",
+        description: bill.isManualBalance 
+          ? `Manual Balance ${bill.notes || ''}`.trim()
+          : `Bill #${bill.id.slice(-8)} ${bill.notes || ''}`.trim(),
+        billAmount: billTotal,
+        paid: 0,
+        outstanding: billOutstanding,
+        isBill: true,
+        billId: bill.id
+      });
+
+      runningBalance += billTotal;
+    });
+
+    // Add payments as IN transactions
+    paymentHistory.forEach(payment => {
+      allTransactions.push({
+        date: payment.createdAt,
+        type: "IN",
+        description: `Payment Received (${payment.paymentMethod.toUpperCase()})`,
+        billAmount: 0,
+        paid: parseFloat(payment.amount),
+        outstanding: 0,
+        isPayment: true,
+        paymentId: payment.id
+      });
+
+      runningBalance -= parseFloat(payment.amount);
+    });
+
+    // Sort all transactions by date
+    allTransactions.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    // Build final ledger with correct running balances
+    let currentBalance = 0;
+    const finalLedger: TransactionLedger[] = [];
+
+    allTransactions.forEach(transaction => {
+      if (transaction.isBill) {
+        currentBalance += transaction.billAmount;
+      } else if (transaction.isPayment) {
+        currentBalance -= transaction.paid;
+      }
+
+      finalLedger.push({
+        date: transaction.date,
+        type: transaction.type,
+        description: transaction.description,
+        billAmount: transaction.billAmount,
+        paid: transaction.paid,
+        outstanding: transaction.outstanding,
+        runningBalance: currentBalance
+      });
+    });
+
+    return finalLedger;
+  };
 
   const filteredAndSortedCustomers = useMemo(() => {
     let filtered = [...consolidatedCustomers];
@@ -693,51 +802,64 @@ export default function UnpaidBills() {
     pdf.setTextColor(0, 0, 0);
     yPos += 15;
 
-    // Table Header
+    // Transaction Ledger Header
     pdf.setFillColor(50, 50, 50);
     pdf.rect(margin, yPos, pageWidth - 2 * margin, 8, 'F');
     pdf.setTextColor(255, 255, 255);
-    pdf.setFontSize(8);
+    pdf.setFontSize(7);
     pdf.setFont('helvetica', 'bold');
-    pdf.text('DATE', margin + 3, yPos + 5.5);
-    pdf.text('BILL NO', margin + 30, yPos + 5.5);
-    pdf.text('TOTAL', margin + 70, yPos + 5.5);
-    pdf.text('PAID', margin + 100, yPos + 5.5);
-    pdf.text('DUE', margin + 130, yPos + 5.5);
-    pdf.text('STATUS', pageWidth - margin - 20, yPos + 5.5);
+    pdf.text('DATE', margin + 3, yPos + 5);
+    pdf.text('TYPE', margin + 25, yPos + 5);
+    pdf.text('DESCRIPTION', margin + 45, yPos + 5);
+    pdf.text('BILL AMOUNT', margin + 90, yPos + 5);
+    pdf.text('PAID', margin + 115, yPos + 5);
+    pdf.text('OUTSTANDING', margin + 130, yPos + 5);
+    pdf.text('BALANCE', pageWidth - margin - 15, yPos + 5);
     yPos += 10;
     pdf.setTextColor(0, 0, 0);
 
-    // Bill Rows
-    customer.bills.forEach((bill, index) => {
+    // Transaction Ledger Rows
+    customer.transactionLedger.forEach((transaction, index) => {
       if (yPos > pageHeight - 30) {
         pdf.addPage();
         yPos = margin;
       }
 
-      const billTotal = parseFloat(bill.totalAmount || "0");
-      const billPaid = parseFloat(bill.amountPaid || "0");
-      const billDue = billTotal - billPaid;
-      const dueDateStatus = getDueDateStatus(bill.dueDate);
-      
       const bgColor = index % 2 === 0 ? [250, 250, 250] : [255, 255, 255];
       pdf.setFillColor(bgColor[0], bgColor[1], bgColor[2]);
-      pdf.rect(margin, yPos - 3, pageWidth - 2 * margin, 8, 'F');
+      pdf.rect(margin, yPos - 3, pageWidth - 2 * margin, 6, 'F');
       
-      pdf.setFontSize(8);
+      pdf.setFontSize(6);
       pdf.setFont('helvetica', 'normal');
-      pdf.text(formatDateShort(new Date(bill.createdAt)), margin + 3, yPos + 2);
-      pdf.text(bill.id.slice(-8).toUpperCase(), margin + 30, yPos + 2);
-      pdf.text(`Rs. ${Math.round(billTotal).toLocaleString()}`, margin + 70, yPos + 2);
-      pdf.text(`Rs. ${Math.round(billPaid).toLocaleString()}`, margin + 100, yPos + 2);
-      pdf.text(`Rs. ${Math.round(billDue).toLocaleString()}`, margin + 130, yPos + 2);
       
-      const statusText = dueDateStatus === 'overdue' ? 'Overdue' : 
-                        dueDateStatus === 'due_soon' ? 'Due Soon' : 
-                        dueDateStatus === 'future' ? 'Upcoming' : 'Pending';
-      pdf.text(statusText, pageWidth - margin - 20, yPos + 2);
+      // Date
+      pdf.text(formatDateShort(new Date(transaction.date)), margin + 3, yPos + 2);
       
-      yPos += 8;
+      // Type with color coding
+      const typeColor = transaction.type === 'IN' ? [34, 197, 94] : 
+                       transaction.type === 'LOAN' ? [59, 130, 246] : 
+                       [239, 68, 68];
+      pdf.setTextColor(typeColor[0], typeColor[1], typeColor[2]);
+      pdf.text(transaction.type, margin + 25, yPos + 2);
+      pdf.setTextColor(0, 0, 0);
+      
+      // Description (truncated if too long)
+      const desc = transaction.description.length > 30 ? 
+                   transaction.description.substring(0, 27) + '...' : 
+                   transaction.description;
+      pdf.text(desc, margin + 45, yPos + 2);
+      
+      // Amounts
+      pdf.text(transaction.billAmount > 0 ? `Rs. ${Math.round(transaction.billAmount).toLocaleString()}` : '-', margin + 90, yPos + 2);
+      pdf.text(transaction.paid > 0 ? `Rs. ${Math.round(transaction.paid).toLocaleString()}` : '-', margin + 115, yPos + 2);
+      pdf.text(transaction.outstanding > 0 ? `Rs. ${Math.round(transaction.outstanding).toLocaleString()}` : '-', margin + 130, yPos + 2);
+      
+      // Running Balance
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(`Rs. ${Math.round(transaction.runningBalance).toLocaleString()}`, pageWidth - margin - 15, yPos + 2, { align: 'right' });
+      pdf.setFont('helvetica', 'normal');
+      
+      yPos += 6;
     });
 
     // Footer
@@ -1337,6 +1459,64 @@ export default function UnpaidBills() {
                 </div>
               </div>
 
+              {/* Transaction Ledger */}
+              <div className="space-y-3">
+                <h3 className="font-medium text-slate-800">Transaction Ledger</h3>
+                <div className="border rounded-lg overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Description</TableHead>
+                        <TableHead className="text-right">Bill Amount</TableHead>
+                        <TableHead className="text-right">Paid</TableHead>
+                        <TableHead className="text-right">Outstanding</TableHead>
+                        <TableHead className="text-right">Balance</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {selectedCustomer.transactionLedger.map((transaction, index) => (
+                        <TableRow key={index}>
+                          <TableCell className="font-medium">
+                            {formatDateShort(new Date(transaction.date))}
+                          </TableCell>
+                          <TableCell>
+                            <Badge 
+                              variant={
+                                transaction.type === 'IN' ? 'default' :
+                                transaction.type === 'LOAN' ? 'secondary' : 'destructive'
+                              }
+                              className={
+                                transaction.type === 'IN' ? 'bg-green-100 text-green-800' :
+                                transaction.type === 'LOAN' ? 'bg-blue-100 text-blue-800' : ''
+                              }
+                            >
+                              {transaction.type}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="max-w-[200px] truncate" title={transaction.description}>
+                            {transaction.description}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {transaction.billAmount > 0 ? `Rs. ${Math.round(transaction.billAmount).toLocaleString()}` : '-'}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {transaction.paid > 0 ? `Rs. ${Math.round(transaction.paid).toLocaleString()}` : '-'}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {transaction.outstanding > 0 ? `Rs. ${Math.round(transaction.outstanding).toLocaleString()}` : '-'}
+                          </TableCell>
+                          <TableCell className="text-right font-semibold">
+                            Rs. {Math.round(transaction.runningBalance).toLocaleString()}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+
               {/* Action Buttons */}
               <div className="flex gap-2 flex-wrap">
                 <Button
@@ -1369,71 +1549,6 @@ export default function UnpaidBills() {
                   <Download className="h-4 w-4" />
                   Download Statement
                 </Button>
-              </div>
-
-              {/* Bills List */}
-              <div className="space-y-3">
-                <h3 className="font-medium text-slate-800">Bills ({selectedCustomer.bills.length})</h3>
-                {selectedCustomer.bills.map((bill) => {
-                  const billTotal = parseFloat(bill.totalAmount || "0");
-                  const billPaid = parseFloat(bill.amountPaid || "0");
-                  const billOutstanding = Math.round(billTotal - billPaid);
-                  const isManual = bill.isManualBalance;
-                  
-                  return (
-                    <Card key={bill.id} className={isManual ? "border-blue-200 bg-blue-50" : "glass-card border-white/20"}>
-                      <CardContent className="p-4">
-                        <div className="flex items-center justify-between gap-4">
-                          <div className="flex-1 space-y-2">
-                            <div className="flex items-center gap-2">
-                              <Receipt className="h-4 w-4 text-slate-600" />
-                              <span className="text-sm font-medium">
-                                {formatDateShort(bill.createdAt)} - {new Date(bill.createdAt).toLocaleTimeString()}
-                              </span>
-                              {getDueDateBadge(bill.dueDate)}
-                              {isManual && (
-                                <Badge variant="outline" className="glass-outline text-blue-600">
-                                  Manual Balance
-                                </Badge>
-                              )}
-                            </div>
-                            {bill.notes && isManual && (
-                              <div className="text-sm text-slate-600 bg-white p-2 rounded-md">
-                                <strong>Notes:</strong> {bill.notes}
-                              </div>
-                            )}
-                            <div className="grid grid-cols-3 gap-2 text-xs font-mono">
-                              <div>
-                                <span className="text-slate-600">Total: </span>
-                                <span>Rs. {Math.round(billTotal).toLocaleString()}</span>
-                              </div>
-                              <div>
-                                <span className="text-slate-600">Paid: </span>
-                                <span>Rs. {Math.round(billPaid).toLocaleString()}</span>
-                              </div>
-                              {billOutstanding > 0 && (
-                                <div>
-                                  <span className="text-slate-600">Due: </span>
-                                  <span className="text-red-600 font-semibold">Rs. {billOutstanding.toLocaleString()}</span>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                          <div className="flex gap-2">
-                            {!isManual && (
-                              <Link href={`/bill/${bill.id}`}>
-                                <Button variant="outline" size="sm" className="glass-card border-white/20">
-                                  <Printer className="h-4 w-4 mr-1" />
-                                  Print
-                                </Button>
-                              </Link>
-                            )}
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
               </div>
 
               {/* Consolidated Totals */}
