@@ -1,4 +1,4 @@
-// routes.ts - Complete Updated Version with Real-time Query Invalidation
+// routes.ts - Complete Updated Version with All Missing Routes Fixed
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
@@ -943,6 +943,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ============ SALES ROUTES ============
+
   // Sales (with items for returns page)
   app.get("/api/sales", async (_req, res) => {
     try {
@@ -954,12 +956,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Unpaid sales - FIXED
   app.get("/api/sales/unpaid", async (_req, res) => {
     try {
-      const sales = await storage.getUnpaidSales();
-      res.json(sales);
+      console.log("[API] Fetching unpaid sales");
+      const unpaidSales = await storage.getUnpaidSales();
+      console.log(`[API] Found ${unpaidSales.length} unpaid sales`);
+      res.json(unpaidSales);
     } catch (error) {
-      console.error("Error fetching unpaid sales:", error);
+      console.error("[API] Error fetching unpaid sales:", error);
       res.status(500).json({ error: "Failed to fetch unpaid sales" });
     }
   });
@@ -1298,6 +1303,75 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ============ RETURNS ROUTES ============
+
+  // Get all returns
+  app.get("/api/returns", async (_req, res) => {
+    try {
+      console.log("[API] Fetching returns");
+      const returns = await storage.getReturns();
+      console.log(`[API] Found ${returns.length} returns`);
+      res.json(returns);
+    } catch (error) {
+      console.error("[API] Error fetching returns:", error);
+      res.status(500).json({ error: "Failed to fetch returns" });
+    }
+  });
+
+  // Create return
+  app.post("/api/returns", async (req, res) => {
+    try {
+      const { returnData, items } = req.body;
+      console.log("[API] Creating return:", { returnData, items: items?.length });
+      
+      const returnRecord = await storage.createReturn(returnData, items || []);
+      res.json(returnRecord);
+    } catch (error) {
+      console.error("[API] Error creating return:", error);
+      res.status(500).json({ error: "Failed to create return" });
+    }
+  });
+
+  // Quick return
+  app.post("/api/returns/quick", async (req, res) => {
+    try {
+      console.log("[API] Creating quick return:", req.body);
+      const returnRecord = await storage.createQuickReturn(req.body);
+      res.json(returnRecord);
+    } catch (error) {
+      console.error("[API] Error creating quick return:", error);
+      res.status(500).json({ error: "Failed to create quick return" });
+    }
+  });
+
+  // Get return by ID
+  app.get("/api/returns/:id", async (req, res) => {
+    try {
+      const returnRecord = await storage.getReturn(req.params.id);
+      if (!returnRecord) {
+        res.status(404).json({ error: "Return not found" });
+        return;
+      }
+      res.json(returnRecord);
+    } catch (error) {
+      console.error("[API] Error fetching return:", error);
+      res.status(500).json({ error: "Failed to fetch return" });
+    }
+  });
+
+  // Get returns by customer phone
+  app.get("/api/returns/customer/:phone", async (req, res) => {
+    try {
+      const returns = await storage.getReturnsByCustomerPhone(req.params.phone);
+      res.json(returns);
+    } catch (error) {
+      console.error("[API] Error fetching customer returns:", error);
+      res.status(500).json({ error: "Failed to fetch customer returns" });
+    }
+  });
+
+  // ============ END RETURNS ROUTES ============
+
   // Dashboard Stats
   app.get("/api/dashboard-stats", async (_req, res) => {
     try {
@@ -1492,7 +1566,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         auditTokens.set(token, { createdAt: Date.now() });
         return res.json({ 
           ok: true, 
-          isDefault: false, 
+            isDefault: false, 
           auditToken: token 
         });
       } else {
