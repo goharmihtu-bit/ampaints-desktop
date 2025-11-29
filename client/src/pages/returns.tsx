@@ -43,7 +43,11 @@ import {
   Calendar,
   X,
   RefreshCw,
-  Select
+  CheckSquare,
+  Check,
+  List,
+  ArrowLeft,
+  ArrowRight
 } from "lucide-react";
 import jsPDF from "jspdf";
 import type { SaleWithItems, ReturnWithItems, Color, Variant, Product } from "@shared/schema";
@@ -89,12 +93,17 @@ export default function Returns() {
   const [selectedReturn, setSelectedReturn] = useState<ReturnWithItems | null>(null);
   const [showReturnDialog, setShowReturnDialog] = useState(false);
   const [viewDetailsOpen, setViewDetailsOpen] = useState(false);
-  const [returnForm, setReturnForm] = useState<ReturnFormData>({
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(10);
+
+  const returnFormInitialState: ReturnFormData = {
     returnType: "full",
     selectedItems: {},
     restockItems: {},
     reason: ""
-  });
+  };
+
+  const [returnForm, setReturnForm] = useState<ReturnFormData>(returnFormInitialState);
 
   const { data: returns = [], isLoading: returnsLoading } = useQuery<ReturnWithItems[]>({
     queryKey: ["/api/returns"],
@@ -108,14 +117,18 @@ export default function Returns() {
   // Reset form when dialog closes
   useEffect(() => {
     if (!showReturnDialog) {
-      setReturnForm({
-        returnType: "full",
-        selectedItems: {},
-        restockItems: {},
-        reason: ""
-      });
+      setReturnForm(returnFormInitialState);
     }
   }, [showReturnDialog]);
+
+  // Paginate returns for history tab
+  const paginatedReturns = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    return filteredReturns.slice(startIndex, endIndex);
+  }, [filteredReturns, currentPage, itemsPerPage]);
+
+  const totalPages = Math.ceil(filteredReturns.length / itemsPerPage);
 
   const filteredReturns = useMemo(() => {
     return returns.filter(ret =>
@@ -582,7 +595,7 @@ export default function Returns() {
                       {searchResults.map((sale) => (
                         <Card 
                           key={sale.id} 
-                          className="cursor-pointer hover-elevate"
+                          className="cursor-pointer hover:shadow-md transition-shadow"
                           onClick={() => handleSelectSale(sale)}
                           data-testid={`card-sale-${sale.id}`}
                         >
@@ -749,7 +762,7 @@ export default function Returns() {
             </div>
           </div>
 
-          {/* Returns Table */}
+          {/* Returns Table with Pagination */}
           <Card>
             <CardHeader>
               <CardTitle>Return History</CardTitle>
@@ -776,7 +789,7 @@ export default function Returns() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    filteredReturns.map((ret) => (
+                    paginatedReturns.map((ret) => (
                       <TableRow key={ret.id}>
                         <TableCell>{formatDateShort(ret.createdAt)}</TableCell>
                         <TableCell className="font-mono font-semibold">
@@ -834,6 +847,36 @@ export default function Returns() {
                   )}
                 </TableBody>
               </Table>
+
+              {/* Pagination Controls */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between mt-4">
+                  <div className="text-sm text-muted-foreground">
+                    Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, filteredReturns.length)} of {filteredReturns.length} entries
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                      disabled={currentPage === 1}
+                    >
+                      <ArrowLeft className="h-4 w-4" />
+                    </Button>
+                    <span className="text-sm font-medium">
+                      Page {currentPage} of {totalPages}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                      disabled={currentPage === totalPages}
+                    >
+                      <ArrowRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -882,7 +925,7 @@ export default function Returns() {
                   onClick={handleSelectAllItems}
                   disabled={selectedItemsCount === totalItemsCount}
                 >
-                  <Select className="h-4 w-4 mr-1" />
+                  <CheckSquare className="h-4 w-4 mr-1" />
                   Select All
                 </Button>
                 <Button 
@@ -899,6 +942,7 @@ export default function Returns() {
                   variant="outline" 
                   onClick={() => handleQuickSelect(25)}
                 >
+                  <List className="h-4 w-4 mr-1" />
                   25% Items
                 </Button>
                 <Button 
@@ -906,6 +950,7 @@ export default function Returns() {
                   variant="outline" 
                   onClick={() => handleQuickSelect(50)}
                 >
+                  <List className="h-4 w-4 mr-1" />
                   50% Items
                 </Button>
                 <Button 
@@ -913,6 +958,7 @@ export default function Returns() {
                   variant="outline" 
                   onClick={() => handleQuickSelect(75)}
                 >
+                  <List className="h-4 w-4 mr-1" />
                   75% Items
                 </Button>
               </div>
