@@ -1,7 +1,7 @@
-// unpaid-bills.tsx - Fixed Calculation Version with Real-time Updates
+// unpaid-bills.tsx - Fixed Calculation Version
 import { useState, useMemo, useEffect } from "react";
 import { useLocation } from "wouter";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -66,14 +66,12 @@ import {
   Wallet,
   IndianRupee,
   SortAsc,
-  SortDesc,
-  Edit,
-  Loader2
+  SortDesc
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { usePermissions } from "@/hooks/use-permissions";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { Sale, SaleItem } from "@shared/schema";
+import type { Sale } from "@shared/schema";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
 import {
@@ -141,50 +139,11 @@ type FilterType = {
   paymentStatus: "all" | "overdue" | "due_soon" | "no_due_date";
 };
 
-// Glass styles as constant to avoid re-renders
-const glassStyles = `
-  .glass-card {
-    background: rgba(255, 255, 255, 0.8);
-    backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-  }
-  .glass-destructive {
-    background: rgba(239, 68, 68, 0.1);
-    backdrop-filter: blur(10px);
-    border: 1px solid rgba(239, 68, 68, 0.2);
-  }
-  .glass-warning {
-    background: rgba(245, 158, 11, 0.1);
-    backdrop-filter: blur(10px);
-    border: 1px solid rgba(245, 158, 11, 0.2);
-  }
-  .glass-success {
-    background: rgba(34, 197, 94, 0.1);
-    backdrop-filter: blur(10px);
-    border: 1px solid rgba(34, 197, 94, 0.2);
-  }
-  .glass-outline {
-    background: rgba(255, 255, 255, 0.1);
-    backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.3);
-  }
-  .hover-elevate {
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-  .hover-elevate:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
-  }
-  .gradient-bg {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  }
-`;
-
 export default function UnpaidBills() {
   const { formatDateShort } = useDateFormat();
   const { receiptSettings } = useReceiptSettings();
   const [, setLocation] = useLocation();
+  const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentNotes, setPaymentNotes] = useState("");
@@ -220,19 +179,10 @@ export default function UnpaidBills() {
   
   // Filter state
   const [filterOpen, setFilterOpen] = useState(false);
+  const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
   
-  // Edit sale item state
-  const [editSaleItemDialogOpen, setEditSaleItemDialogOpen] = useState(false);
-  const [editingSaleItem, setEditingSaleItem] = useState<SaleItem | null>(null);
-  const [saleItemForm, setSaleItemForm] = useState({
-    quantity: "",
-    rate: "",
-    subtotal: ""
-  });
-
   const { toast } = useToast();
   const { canEditPayment, canDeletePayment, canEditSales } = usePermissions();
-  const queryClient = useQueryClient();
 
   const { data: customerSuggestions = [] } = useQuery<CustomerSuggestion[]>({
     queryKey: ["/api/customers/suggestions"],
@@ -253,34 +203,25 @@ export default function UnpaidBills() {
     paymentStatus: "all"
   });
 
-  // Enhanced query with real-time refetching
-  const { 
-    data: unpaidSales = [], 
-    isLoading, 
-    refetch: refetchUnpaidSales,
-    isRefetching 
-  } = useQuery<Sale[]>({
+  const { data: unpaidSales = [], isLoading, refetch: refetchUnpaidSales } = useQuery<Sale[]>({
     queryKey: ["/api/sales/unpaid"],
     refetchInterval: 30000, // Auto-refresh every 30 seconds
     refetchOnWindowFocus: true, // Refresh when tab becomes active
-    staleTime: 10000, // Consider data stale after 10 seconds
   });
 
   // Fetch payment history for a specific customer
   const { data: paymentHistory = [], refetch: refetchPaymentHistory } = useQuery<PaymentRecord[]>({
     queryKey: [`/api/payment-history/customer/${viewingPaymentHistoryCustomerPhone}`],
     enabled: !!viewingPaymentHistoryCustomerPhone,
-    staleTime: 5000,
   });
 
   // Fetch balance notes for all sales of a customer
   const { data: balanceNotes = [], refetch: refetchBalanceNotes } = useQuery<BalanceNote[]>({
     queryKey: [`/api/customer/${viewingNotesCustomerPhone}/notes`],
     enabled: !!viewingNotesCustomerPhone,
-    staleTime: 5000,
   });
 
-  // Auto-refresh data when dialogs open or close
+  // Auto-refresh data when dialogs open
   useEffect(() => {
     if (paymentHistoryDialogOpen && viewingPaymentHistoryCustomerPhone) {
       refetchPaymentHistory();
@@ -293,28 +234,24 @@ export default function UnpaidBills() {
     }
   }, [notesDialogOpen, viewingNotesCustomerPhone]);
 
-  // Fixed: Proper record payment mutation
   const recordPaymentMutation = useMutation({
     mutationFn: async (data: { saleId: string; amount: number; paymentMethod: string; notes?: string }) => {
-      const response = await apiRequest("POST", `/api/sales/${data.saleId}/payment`, { 
+      return await apiRequest("POST", `/api/sales/${data.saleId}/payment`, { 
         amount: data.amount,
         paymentMethod: data.paymentMethod,
         notes: data.notes 
       });
-      return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/customers/suggestions"] });
-      
-      if (selectedCustomerPhone) {
-        queryClient.invalidateQueries({ queryKey: [`/api/sales/customer/${selectedCustomerPhone}`] });
-        queryClient.invalidateQueries({ queryKey: [`/api/payment-history/customer/${selectedCustomerPhone}`] });
-        queryClient.invalidateQueries({ queryKey: [`/api/customer/${selectedCustomerPhone}/notes`] });
+      if (selectedSaleId) {
+        queryClient.invalidateQueries({ queryKey: [`/api/sales/${selectedSaleId}`] });
       }
-      
+      if (viewingPaymentHistoryCustomerPhone) {
+        queryClient.invalidateQueries({ queryKey: [`/api/payment-history/customer/${viewingPaymentHistoryCustomerPhone}`] });
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
+      refetchUnpaidSales();
       toast({ 
         title: "Payment recorded successfully",
         description: `Payment of Rs. ${parseFloat(paymentAmount).toLocaleString()} has been recorded.`
@@ -323,11 +260,6 @@ export default function UnpaidBills() {
       setPaymentAmount("");
       setPaymentNotes("");
       setPaymentMethod("cash");
-      
-      refetchUnpaidSales();
-      if (selectedCustomerPhone) {
-        refetchPaymentHistory();
-      }
     },
     onError: (error: Error) => {
       console.error("Payment recording error:", error);
@@ -339,26 +271,22 @@ export default function UnpaidBills() {
     },
   });
 
-  // Fixed: Add note mutation
   const addNoteMutation = useMutation({
     mutationFn: async (data: { customerPhone: string; note: string }) => {
-      const response = await apiRequest("POST", `/api/customer/${data.customerPhone}/notes`, {
+      return await apiRequest("POST", `/api/customer/${data.customerPhone}/notes`, {
         note: data.note
       });
-      return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
-      queryClient.invalidateQueries({ queryKey: [`/api/customer/${viewingNotesCustomerPhone}/notes`] });
-      queryClient.invalidateQueries({ queryKey: ["/api/customers/suggestions"] });
-      
+      if (viewingNotesCustomerPhone) {
+        queryClient.invalidateQueries({ queryKey: [`/api/customer/${viewingNotesCustomerPhone}/notes`] });
+      }
+      refetchUnpaidSales();
+      refetchBalanceNotes();
       toast({ title: "Note added successfully" });
       setNotesDialogOpen(false);
       setNewNote("");
-      
-      refetchUnpaidSales();
-      refetchBalanceNotes();
     },
     onError: (error: Error) => {
       console.error("Add note error:", error);
@@ -366,24 +294,14 @@ export default function UnpaidBills() {
     },
   });
 
-  // Fixed: Manual balance mutation
   const createManualBalanceMutation = useMutation({
     mutationFn: async (data: { customerName: string; customerPhone: string; totalAmount: string; dueDate?: string; notes?: string }) => {
-      const response = await apiRequest("POST", "/api/sales/manual-balance", {
-        customerName: data.customerName,
-        customerPhone: data.customerPhone,
-        totalAmount: data.totalAmount,
-        dueDate: data.dueDate || null,
-        notes: data.notes || ""
-      });
-      return response.json();
+      return await apiRequest("POST", "/api/sales/manual-balance", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/customers/suggestions"] });
-      
+      refetchUnpaidSales();
       toast({ 
         title: "New pending balance added successfully",
         description: "A new separate bill has been created for this customer"
@@ -396,43 +314,30 @@ export default function UnpaidBills() {
         dueDate: "",
         notes: ""
       });
-      
-      refetchUnpaidSales();
     },
     onError: (error: Error) => {
       console.error("Create manual balance error:", error);
-      toast({ 
-        title: "Failed to add pending balance", 
-        description: error.message,
-        variant: "destructive" 
-      });
+      toast({ title: "Failed to add pending balance", variant: "destructive" });
     },
   });
 
-  // Fixed: Update due date mutation
   const updateDueDateMutation = useMutation({
     mutationFn: async (data: { saleId: string; dueDate?: string; notes?: string }) => {
-      const response = await apiRequest("PATCH", `/api/sales/${data.saleId}/due-date`, {
+      return await apiRequest("PATCH", `/api/sales/${data.saleId}/due-date`, {
         dueDate: data.dueDate || null,
         notes: data.notes
       });
-      return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/customers/suggestions"] });
-      
-      if (selectedCustomerPhone) {
-        queryClient.invalidateQueries({ queryKey: [`/api/sales/customer/${selectedCustomerPhone}`] });
+      if (selectedSaleId) {
+        queryClient.invalidateQueries({ queryKey: [`/api/sales/${selectedSaleId}`] });
       }
-      
+      refetchUnpaidSales();
       toast({ title: "Due date updated successfully" });
       setDueDateDialogOpen(false);
       setEditingSaleId(null);
       setDueDateForm({ dueDate: "", notes: "" });
-      
-      refetchUnpaidSales();
     },
     onError: (error: Error) => {
       console.error("Update due date error:", error);
@@ -440,101 +345,6 @@ export default function UnpaidBills() {
     },
   });
 
-  // Fixed: Update sale item mutation
-  const updateSaleItemMutation = useMutation({
-    mutationFn: async (data: { saleItemId: string; quantity: number; rate: number; subtotal: number }) => {
-      const response = await apiRequest("PATCH", `/api/sale-items/${data.saleItemId}`, {
-        quantity: data.quantity,
-        rate: data.rate,
-        subtotal: data.subtotal
-      });
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/customers/suggestions"] });
-      
-      if (selectedCustomerPhone) {
-        queryClient.invalidateQueries({ queryKey: [`/api/sales/customer/${selectedCustomerPhone}`] });
-      }
-      
-      toast({ 
-        title: "Sale item updated successfully",
-        description: "The sale item has been updated and totals recalculated."
-      });
-      
-      setEditSaleItemDialogOpen(false);
-      setEditingSaleItem(null);
-      setSaleItemForm({ quantity: "", rate: "", subtotal: "" });
-      
-      refetchUnpaidSales();
-    },
-    onError: (error: Error) => {
-      console.error("Update sale item error:", error);
-      toast({ 
-        title: "Failed to update sale item", 
-        description: error.message,
-        variant: "destructive" 
-      });
-    },
-  });
-
-  // Fixed: Handle sale item editing
-  const handleEditSaleItem = (saleItem: SaleItem) => {
-    setEditingSaleItem(saleItem);
-    setSaleItemForm({
-      quantity: saleItem.quantity.toString(),
-      rate: parseFloat(saleItem.rate).toString(),
-      subtotal: parseFloat(saleItem.subtotal).toString()
-    });
-    setEditSaleItemDialogOpen(true);
-  };
-
-  // Fixed: Calculate subtotal
-  const calculateSubtotal = (quantity: string, rate: string) => {
-    const qty = parseFloat(quantity) || 0;
-    const rt = parseFloat(rate) || 0;
-    return (qty * rt).toString();
-  };
-
-  // Fixed: Handle form changes
-  const handleSaleItemFormChange = (field: string, value: string) => {
-    const newForm = { ...saleItemForm, [field]: value };
-    
-    if (field === 'quantity' || field === 'rate') {
-      newForm.subtotal = calculateSubtotal(
-        field === 'quantity' ? value : saleItemForm.quantity,
-        field === 'rate' ? value : saleItemForm.rate
-      );
-    }
-    
-    setSaleItemForm(newForm);
-  };
-
-  // Fixed: Save sale item changes
-  const handleSaveSaleItem = () => {
-    if (!editingSaleItem) return;
-
-    const quantity = parseFloat(saleItemForm.quantity);
-    const rate = parseFloat(saleItemForm.rate);
-    const subtotal = parseFloat(saleItemForm.subtotal);
-
-    if (quantity <= 0 || rate <= 0 || subtotal <= 0) {
-      toast({ title: "Please enter valid positive values", variant: "destructive" });
-      return;
-    }
-
-    updateSaleItemMutation.mutate({
-      saleItemId: editingSaleItem.id,
-      quantity,
-      rate,
-      subtotal
-    });
-  };
-
-  // Fixed: Record payment with proper validation
   const handleRecordPayment = async () => {
     if (!selectedCustomer || !paymentAmount) {
       toast({ title: "Please enter payment amount", variant: "destructive" });
@@ -568,8 +378,8 @@ export default function UnpaidBills() {
     for (const bill of sortedBills) {
       if (remainingPayment <= 0) break;
       
-      const billTotal = parseFloat(bill.totalAmount || "0");
-      const billPaid = parseFloat(bill.amountPaid || "0");
+      const billTotal = parseFloat(bill.totalAmount);
+      const billPaid = parseFloat(bill.amountPaid);
       const billOutstanding = billTotal - billPaid;
       
       if (billOutstanding > 0) {
@@ -582,26 +392,35 @@ export default function UnpaidBills() {
     // Apply all payments
     try {
       for (const payment of paymentsToApply) {
-        await recordPaymentMutation.mutateAsync({
-          saleId: payment.saleId,
+        await apiRequest("POST", `/api/sales/${payment.saleId}/payment`, { 
           amount: payment.amount,
           paymentMethod: paymentMethod,
-          notes: paymentNotes
+          notes: paymentNotes 
         });
       }
       
+      queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
+      if (viewingPaymentHistoryCustomerPhone) {
+        queryClient.invalidateQueries({ queryKey: [`/api/payment-history/customer/${viewingPaymentHistoryCustomerPhone}`] });
+      }
+      refetchUnpaidSales();
+      refetchPaymentHistory();
       toast({ 
         title: `Payment recorded successfully`,
         description: `Payment of Rs. ${Math.round(amount).toLocaleString()} has been applied to ${paymentsToApply.length} bill(s).`
       });
-      
+      setPaymentDialogOpen(false);
+      setPaymentAmount("");
+      setPaymentNotes("");
+      setPaymentMethod("cash");
+      setSelectedCustomerPhone(null);
     } catch (error) {
       console.error("Payment processing error:", error);
       toast({ title: "Failed to record payment", variant: "destructive" });
     }
   };
 
-  // Fixed: Add note with validation
   const handleAddNote = () => {
     if (!viewingNotesCustomerPhone || !newNote.trim()) {
       toast({ title: "Please enter a note", variant: "destructive" });
@@ -614,27 +433,20 @@ export default function UnpaidBills() {
     });
   };
 
-  // Fixed: Due date status with proper validation
   const getDueDateStatus = (dueDate: Date | string | null) => {
     if (!dueDate) return "no_due_date";
     
-    try {
-      const due = new Date(dueDate);
-      if (isNaN(due.getTime())) return "no_due_date";
-      
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      due.setHours(0, 0, 0, 0);
-      
-      const diffTime = due.getTime() - today.getTime();
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      
-      if (diffDays < 0) return "overdue";
-      if (diffDays <= 7) return "due_soon";
-      return "future";
-    } catch {
-      return "no_due_date";
-    }
+    const due = new Date(dueDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    due.setHours(0, 0, 0, 0);
+    
+    const diffTime = due.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (diffDays < 0) return "overdue";
+    if (diffDays <= 7) return "due_soon";
+    return "future";
   };
 
   const getDueDateBadge = (dueDate: Date | string | null) => {
@@ -661,14 +473,11 @@ export default function UnpaidBills() {
     }
   };
 
-  // Fixed: Consolidated customers calculation
   const consolidatedCustomers = useMemo(() => {
     const customerMap = new Map<string, ConsolidatedCustomer>();
     
     unpaidSales.forEach(sale => {
       const phone = sale.customerPhone;
-      if (!phone) return;
-      
       const existing = customerMap.get(phone);
       
       const totalAmount = parseFloat(sale.totalAmount || "0");
@@ -705,7 +514,6 @@ export default function UnpaidBills() {
     return Array.from(customerMap.values());
   }, [unpaidSales]);
 
-  // Fixed: Filtered and sorted customers with performance optimization
   const filteredAndSortedCustomers = useMemo(() => {
     let filtered = [...consolidatedCustomers];
 
@@ -753,7 +561,6 @@ export default function UnpaidBills() {
         return customer.bills.some(bill => {
           if (!bill.dueDate) return false;
           const dueDate = new Date(bill.dueDate);
-          if (isNaN(dueDate.getTime())) return false;
           
           if (fromDate && toDate) {
             return dueDate >= fromDate && dueDate <= toDate;
@@ -790,11 +597,6 @@ export default function UnpaidBills() {
     return filtered;
   }, [consolidatedCustomers, filters]);
 
-  // Performance optimization: Limit displayed customers
-  const optimizedFilteredCustomers = useMemo(() => {
-    return filteredAndSortedCustomers.slice(0, 100); // Limit to 100 customers for performance
-  }, [filteredAndSortedCustomers]);
-
   const hasActiveFilters = filters.search || filters.amountRange.min || filters.amountRange.max || 
                           filters.daysOverdue || filters.dueDate.from || filters.dueDate.to || 
                           filters.paymentStatus !== "all";
@@ -820,169 +622,201 @@ export default function UnpaidBills() {
     }
   }, [selectedCustomerPhone]);
 
-  // Fixed: PDF generation with error handling
-  const generateDetailedPDFStatement = (customer: ConsolidatedCustomer) => {
-    try {
-      const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: 'a4'
-      });
+  // Generate PDF Statement as Blob
+  const generateStatementPDFBlob = (customer: ConsolidatedCustomer): Blob => {
+    const pdf = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
 
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-      const margin = 15;
-      let yPos = margin;
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const margin = 15;
+    let yPos = margin;
 
-      // Header
-      pdf.setFillColor(102, 126, 234);
-      pdf.rect(0, 0, pageWidth, 35, 'F');
+    // Header
+    pdf.setFillColor(102, 126, 234);
+    pdf.rect(0, 0, pageWidth, 35, 'F');
+    
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFontSize(20);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('ACCOUNT STATEMENT', pageWidth / 2, 15, { align: 'center' });
+    
+    pdf.setFontSize(10);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(receiptSettings.businessName, pageWidth / 2, 23, { align: 'center' });
+    pdf.text(receiptSettings.address, pageWidth / 2, 29, { align: 'center' });
+    
+    pdf.setTextColor(0, 0, 0);
+    yPos = 45;
+
+    // Customer Info
+    pdf.setFontSize(10);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('Customer:', margin, yPos);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(customer.customerName, margin + 25, yPos);
+    yPos += 6;
+
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('Phone:', margin, yPos);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(customer.customerPhone, margin + 25, yPos);
+    yPos += 6;
+
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('Date:', margin, yPos);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(formatDateShort(new Date()), margin + 25, yPos);
+    yPos += 10;
+
+    // Summary Box
+    pdf.setFillColor(240, 240, 240);
+    pdf.rect(margin, yPos, pageWidth - 2 * margin, 20, 'F');
+    yPos += 5;
+    
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'bold');
+    const colWidth = (pageWidth - 2 * margin) / 3;
+    pdf.text('Total Amount', margin + colWidth / 2, yPos, { align: 'center' });
+    pdf.text('Amount Paid', margin + colWidth + colWidth / 2, yPos, { align: 'center' });
+    pdf.text('Outstanding', margin + 2 * colWidth + colWidth / 2, yPos, { align: 'center' });
+    yPos += 6;
+    
+    pdf.setFontSize(11);
+    pdf.text(`Rs. ${Math.round(customer.totalAmount).toLocaleString()}`, margin + colWidth / 2, yPos, { align: 'center' });
+    pdf.text(`Rs. ${Math.round(customer.totalPaid).toLocaleString()}`, margin + colWidth + colWidth / 2, yPos, { align: 'center' });
+    pdf.setTextColor(220, 38, 38);
+    pdf.text(`Rs. ${Math.round(customer.totalOutstanding).toLocaleString()}`, margin + 2 * colWidth + colWidth / 2, yPos, { align: 'center' });
+    pdf.setTextColor(0, 0, 0);
+    yPos += 15;
+
+    // Table Header
+    pdf.setFillColor(50, 50, 50);
+    pdf.rect(margin, yPos, pageWidth - 2 * margin, 8, 'F');
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFontSize(8);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('DATE', margin + 3, yPos + 5.5);
+    pdf.text('BILL NO', margin + 30, yPos + 5.5);
+    pdf.text('TOTAL', margin + 70, yPos + 5.5);
+    pdf.text('PAID', margin + 100, yPos + 5.5);
+    pdf.text('DUE', margin + 130, yPos + 5.5);
+    pdf.text('STATUS', pageWidth - margin - 20, yPos + 5.5);
+    yPos += 10;
+    pdf.setTextColor(0, 0, 0);
+
+    // Bill Rows
+    customer.bills.forEach((bill, index) => {
+      if (yPos > pageHeight - 30) {
+        pdf.addPage();
+        yPos = margin;
+      }
+
+      const billTotal = parseFloat(bill.totalAmount || "0");
+      const billPaid = parseFloat(bill.amountPaid || "0");
+      const billDue = billTotal - billPaid;
+      const dueDateStatus = getDueDateStatus(bill.dueDate);
       
-      pdf.setTextColor(255, 255, 255);
-      pdf.setFontSize(20);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('ACCOUNT STATEMENT', pageWidth / 2, 15, { align: 'center' });
+      const bgColor = index % 2 === 0 ? [250, 250, 250] : [255, 255, 255];
+      pdf.setFillColor(bgColor[0], bgColor[1], bgColor[2]);
+      pdf.rect(margin, yPos - 3, pageWidth - 2 * margin, 8, 'F');
       
-      pdf.setFontSize(10);
-      pdf.setFont('helvetica', 'normal');
-      pdf.text(receiptSettings.businessName || 'Paint Store', pageWidth / 2, 23, { align: 'center' });
-      pdf.text(receiptSettings.address || '', pageWidth / 2, 29, { align: 'center' });
-      
-      pdf.setTextColor(0, 0, 0);
-      yPos = 45;
-
-      // Customer Info
-      pdf.setFontSize(10);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('Customer:', margin, yPos);
-      pdf.setFont('helvetica', 'normal');
-      pdf.text(customer.customerName, margin + 25, yPos);
-      yPos += 6;
-
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('Phone:', margin, yPos);
-      pdf.setFont('helvetica', 'normal');
-      pdf.text(customer.customerPhone, margin + 25, yPos);
-      yPos += 6;
-
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('Date:', margin, yPos);
-      pdf.setFont('helvetica', 'normal');
-      pdf.text(formatDateShort(new Date()), margin + 25, yPos);
-      yPos += 10;
-
-      // Summary Box
-      pdf.setFillColor(240, 240, 240);
-      pdf.rect(margin, yPos, pageWidth - 2 * margin, 20, 'F');
-      yPos += 5;
-      
-      pdf.setFontSize(9);
-      pdf.setFont('helvetica', 'bold');
-      const colWidth = (pageWidth - 2 * margin) / 3;
-      pdf.text('Total Amount', margin + colWidth / 2, yPos, { align: 'center' });
-      pdf.text('Amount Paid', margin + colWidth + colWidth / 2, yPos, { align: 'center' });
-      pdf.text('Outstanding', margin + 2 * colWidth + colWidth / 2, yPos, { align: 'center' });
-      yPos += 6;
-      
-      pdf.setFontSize(11);
-      pdf.text(`Rs. ${Math.round(customer.totalAmount).toLocaleString()}`, margin + colWidth / 2, yPos, { align: 'center' });
-      pdf.text(`Rs. ${Math.round(customer.totalPaid).toLocaleString()}`, margin + colWidth + colWidth / 2, yPos, { align: 'center' });
-      pdf.setTextColor(220, 38, 38);
-      pdf.text(`Rs. ${Math.round(customer.totalOutstanding).toLocaleString()}`, margin + 2 * colWidth + colWidth / 2, yPos, { align: 'center' });
-      pdf.setTextColor(0, 0, 0);
-      yPos += 15;
-
-      // Table Header
-      pdf.setFillColor(50, 50, 50);
-      pdf.rect(margin, yPos, pageWidth - 2 * margin, 8, 'F');
-      pdf.setTextColor(255, 255, 255);
       pdf.setFontSize(8);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('DATE', margin + 3, yPos + 5.5);
-      pdf.text('BILL NO', margin + 30, yPos + 5.5);
-      pdf.text('TOTAL', margin + 70, yPos + 5.5);
-      pdf.text('PAID', margin + 100, yPos + 5.5);
-      pdf.text('DUE', margin + 130, yPos + 5.5);
-      pdf.text('STATUS', pageWidth - margin - 20, yPos + 5.5);
-      yPos += 10;
-      pdf.setTextColor(0, 0, 0);
-
-      // Bill Rows
-      customer.bills.forEach((bill, index) => {
-        if (yPos > pageHeight - 30) {
-          pdf.addPage();
-          yPos = margin;
-        }
-
-        const billTotal = parseFloat(bill.totalAmount || "0");
-        const billPaid = parseFloat(bill.amountPaid || "0");
-        const billDue = billTotal - billPaid;
-        const dueDateStatus = getDueDateStatus(bill.dueDate);
-        
-        const bgColor = index % 2 === 0 ? [250, 250, 250] : [255, 255, 255];
-        pdf.setFillColor(bgColor[0], bgColor[1], bgColor[2]);
-        pdf.rect(margin, yPos - 3, pageWidth - 2 * margin, 8, 'F');
-        
-        pdf.setFontSize(8);
-        pdf.setFont('helvetica', 'normal');
-        pdf.text(formatDateShort(new Date(bill.createdAt)), margin + 3, yPos + 2);
-        pdf.text(bill.id.slice(-8).toUpperCase(), margin + 30, yPos + 2);
-        pdf.text(`Rs. ${Math.round(billTotal).toLocaleString()}`, margin + 70, yPos + 2);
-        pdf.text(`Rs. ${Math.round(billPaid).toLocaleString()}`, margin + 100, yPos + 2);
-        pdf.text(`Rs. ${Math.round(billDue).toLocaleString()}`, margin + 130, yPos + 2);
-        
-        const statusText = dueDateStatus === 'overdue' ? 'Overdue' : 
-                          dueDateStatus === 'due_soon' ? 'Due Soon' : 
-                          dueDateStatus === 'future' ? 'Upcoming' : 'Pending';
-        pdf.text(statusText, pageWidth - margin - 20, yPos + 2);
-        
-        yPos += 8;
-      });
-
-      // Footer
-      yPos += 10;
-      pdf.setFillColor(102, 126, 234);
-      pdf.roundedRect(pageWidth - margin - 70, yPos - 5, 70, 15, 2, 2, 'F');
-      pdf.setTextColor(255, 255, 255);
-      pdf.setFontSize(10);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('BALANCE DUE:', pageWidth - margin - 65, yPos + 3);
-      pdf.text(`Rs. ${Math.round(customer.totalOutstanding).toLocaleString()}`, pageWidth - margin - 5, yPos + 3, { align: 'right' });
-
-      const pdfBlob = pdf.output('blob');
-      const url = URL.createObjectURL(pdfBlob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `Statement-${customer.customerName.replace(/\s+/g, '_')}-${formatDateShort(new Date()).replace(/\//g, '-')}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(formatDateShort(new Date(bill.createdAt)), margin + 3, yPos + 2);
+      pdf.text(bill.id.slice(-8).toUpperCase(), margin + 30, yPos + 2);
+      pdf.text(`Rs. ${Math.round(billTotal).toLocaleString()}`, margin + 70, yPos + 2);
+      pdf.text(`Rs. ${Math.round(billPaid).toLocaleString()}`, margin + 100, yPos + 2);
+      pdf.text(`Rs. ${Math.round(billDue).toLocaleString()}`, margin + 130, yPos + 2);
       
-      toast({ 
-        title: "Statement Downloaded",
-        description: `PDF Statement for ${customer.customerName} has been downloaded`
-      });
-    } catch (error) {
-      console.error("PDF generation error:", error);
-      toast({ 
-        title: "Failed to generate PDF",
-        description: "Please try again",
-        variant: "destructive"
-      });
-    }
+      const statusText = dueDateStatus === 'overdue' ? 'Overdue' : 
+                        dueDateStatus === 'due_soon' ? 'Due Soon' : 
+                        dueDateStatus === 'future' ? 'Upcoming' : 'Pending';
+      pdf.text(statusText, pageWidth - margin - 20, yPos + 2);
+      
+      yPos += 8;
+    });
+
+    // Footer
+    yPos += 10;
+    pdf.setFillColor(102, 126, 234);
+    pdf.roundedRect(pageWidth - margin - 70, yPos - 5, 70, 15, 2, 2, 'F');
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFontSize(10);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('BALANCE DUE:', pageWidth - margin - 65, yPos + 3);
+    pdf.text(`Rs. ${Math.round(customer.totalOutstanding).toLocaleString()}`, pageWidth - margin - 5, yPos + 3, { align: 'right' });
+
+    return pdf.output('blob');
   };
+
+  // Generate PDF Statement with Download functionality
+  const generateDetailedPDFStatement = (customer: ConsolidatedCustomer) => {
+    const pdfBlob = generateStatementPDFBlob(customer);
+    const url = URL.createObjectURL(pdfBlob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Statement-${customer.customerName.replace(/\s+/g, '_')}-${formatDateShort(new Date()).replace(/\//g, '-')}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    toast({ 
+      title: "Statement Downloaded",
+      description: `PDF Statement for ${customer.customerName} has been downloaded`
+    });
+  };
+
+  const glassStyles = `
+    .glass-card {
+      background: rgba(255, 255, 255, 0.8);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    }
+    .glass-destructive {
+      background: rgba(239, 68, 68, 0.1);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(239, 68, 68, 0.2);
+    }
+    .glass-warning {
+      background: rgba(245, 158, 11, 0.1);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(245, 158, 11, 0.2);
+    }
+    .glass-success {
+      background: rgba(34, 197, 94, 0.1);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(34, 197, 94, 0.2);
+    }
+    .glass-outline {
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+    }
+    .hover-elevate {
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .hover-elevate:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+    }
+    .gradient-bg {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    .premium-border {
+      border: 1px solid;
+      border-image: linear-gradient(135deg, #667eea 0%, #764ba2 100%) 1;
+    }
+  `;
 
   const totalOutstanding = consolidatedCustomers.reduce((sum, customer) => sum + customer.totalOutstanding, 0);
   const totalCustomers = consolidatedCustomers.length;
   const averageOutstanding = totalCustomers > 0 ? totalOutstanding / totalCustomers : 0;
-
-  const isAnyMutationLoading = 
-    recordPaymentMutation.isPending || 
-    addNoteMutation.isPending || 
-    createManualBalanceMutation.isPending || 
-    updateDueDateMutation.isPending ||
-    updateSaleItemMutation.isPending;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50 p-6 space-y-6">
@@ -1034,7 +868,6 @@ export default function UnpaidBills() {
               <Button 
                 variant="outline" 
                 onClick={() => setManualBalanceDialogOpen(true)}
-                disabled={isAnyMutationLoading}
                 className="flex items-center gap-2 glass-card border-white/20 hover:border-purple-300 transition-all duration-300"
               >
                 <Plus className="h-4 w-4" />
@@ -1049,7 +882,7 @@ export default function UnpaidBills() {
                   generateDetailedPDFStatement(consolidatedCustomers[0]);
                 }
               }}
-              disabled={consolidatedCustomers.length === 0 || isAnyMutationLoading}
+              disabled={consolidatedCustomers.length === 0}
             >
               <Download className="h-4 w-4" />
               Download Statement
@@ -1066,7 +899,6 @@ export default function UnpaidBills() {
               value={filters.search}
               onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
               className="pl-10 glass-card border-white/20 focus:border-purple-300 transition-colors"
-              disabled={isAnyMutationLoading}
             />
           </div>
 
@@ -1074,7 +906,6 @@ export default function UnpaidBills() {
           <Select
             value={filters.sortBy}
             onValueChange={(value: any) => setFilters(prev => ({ ...prev, sortBy: value }))}
-            disabled={isAnyMutationLoading}
           >
             <SelectTrigger className="w-[180px] glass-card border-white/20">
               <SelectValue placeholder="Sort by" />
@@ -1091,11 +922,7 @@ export default function UnpaidBills() {
           {/* Filter Button */}
           <DropdownMenu open={filterOpen} onOpenChange={setFilterOpen}>
             <DropdownMenuTrigger asChild>
-              <Button 
-                variant="outline" 
-                className="flex items-center gap-2 glass-card border-white/20 hover:border-purple-300"
-                disabled={isAnyMutationLoading}
-              >
+              <Button variant="outline" className="flex items-center gap-2 glass-card border-white/20 hover:border-purple-300">
                 <Filter className="h-4 w-4" />
                 Filters
                 {hasActiveFilters && (
@@ -1224,18 +1051,6 @@ export default function UnpaidBills() {
         </div>
       </div>
 
-      {/* Loading Overlay */}
-      {(isAnyMutationLoading || isRefetching) && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="glass-card rounded-2xl p-6 flex items-center gap-3">
-            <Loader2 className="h-6 w-6 animate-spin text-purple-600" />
-            <span className="text-slate-800 font-medium">
-              {isAnyMutationLoading ? "Processing..." : "Refreshing data..."}
-            </span>
-          </div>
-        </div>
-      )}
-
       {/* Filter Summary */}
       {hasActiveFilters && (
         <div className="glass-card rounded-xl p-4 border border-white/20">
@@ -1285,12 +1100,12 @@ export default function UnpaidBills() {
       {/* Results Count */}
       <div className="flex items-center justify-between px-2">
         <p className="text-sm text-slate-600">
-          Showing <span className="font-semibold text-slate-800">{optimizedFilteredCustomers.length}</span> of {consolidatedCustomers.length} customers
+          Showing <span className="font-semibold text-slate-800">{filteredAndSortedCustomers.length}</span> of {consolidatedCustomers.length} customers
         </p>
         {hasActiveFilters && (
           <p className="text-sm text-slate-600">
             Filtered Outstanding: <span className="font-semibold text-amber-600">
-              Rs. {Math.round(optimizedFilteredCustomers.reduce((sum, customer) => sum + customer.totalOutstanding, 0)).toLocaleString()}
+              Rs. {Math.round(filteredAndSortedCustomers.reduce((sum, customer) => sum + customer.totalOutstanding, 0)).toLocaleString()}
             </span>
           </p>
         )}
@@ -1309,7 +1124,7 @@ export default function UnpaidBills() {
             </div>
           ))}
         </div>
-      ) : optimizedFilteredCustomers.length === 0 ? (
+      ) : filteredAndSortedCustomers.length === 0 ? (
         <div className="glass-card rounded-2xl p-12 text-center border border-white/20">
           <div className="max-w-md mx-auto">
             <div className="gradient-bg w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4">
@@ -1333,7 +1148,7 @@ export default function UnpaidBills() {
         </div>
       ) : (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {optimizedFilteredCustomers.map((customer) => {
+          {filteredAndSortedCustomers.map((customer) => {
             const hasOverdue = customer.bills.some(bill => getDueDateStatus(bill.dueDate) === 'overdue');
             const hasDueSoon = customer.bills.some(bill => getDueDateStatus(bill.dueDate) === 'due_soon');
             const hasManualBalance = customer.bills.some(bill => bill.isManualBalance);
@@ -1343,9 +1158,11 @@ export default function UnpaidBills() {
                 key={customer.customerPhone} 
                 className="glass-card rounded-2xl p-6 border border-white/20 hover-elevate group cursor-pointer"
                 onClick={() => {
+                  // Refresh data before opening customer details
                   refetchUnpaidSales();
-                  setSelectedCustomerPhone(customer.customerPhone);
+                  setLocation(`/customer/${encodeURIComponent(customer.customerPhone)}`);
                 }}
+                data-testid={`card-customer-${customer.customerPhone}`}
               >
                 {/* Header */}
                 <div className="flex items-start justify-between mb-4">
@@ -1464,6 +1281,7 @@ export default function UnpaidBills() {
                     size="sm"
                     onClick={(e) => {
                       e.stopPropagation();
+                      // Refresh data before showing details
                       refetchUnpaidSales();
                       setSelectedCustomerPhone(customer.customerPhone);
                     }}
@@ -1479,9 +1297,12 @@ export default function UnpaidBills() {
       )}
 
       {/* Customer Bills Details Dialog */}
-      <Dialog open={!!selectedCustomerPhone} onOpenChange={(open) => {
+      <Dialog open={!!selectedCustomerPhone && !paymentDialogOpen} onOpenChange={(open) => {
         if (!open) {
           setSelectedCustomerPhone(null);
+        } else {
+          // Refresh data when dialog opens
+          refetchUnpaidSales();
         }
       }}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto glass-card border-white/20">
@@ -1548,18 +1369,6 @@ export default function UnpaidBills() {
                   <Download className="h-4 w-4" />
                   Download Statement
                 </Button>
-                {canEditPayment && (
-                  <Button
-                    onClick={() => {
-                      setPaymentDialogOpen(true);
-                      setPaymentAmount(Math.round(selectedCustomer.totalOutstanding).toString());
-                    }}
-                    className="flex items-center gap-2 gradient-bg text-white ml-auto"
-                  >
-                    <Banknote className="h-4 w-4" />
-                    Record Payment
-                  </Button>
-                )}
               </div>
 
               {/* Bills List */}
@@ -1611,23 +1420,6 @@ export default function UnpaidBills() {
                             </div>
                           </div>
                           <div className="flex gap-2">
-                            {canEditSales && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => {
-                                  setEditingSaleId(bill.id);
-                                  setDueDateForm({
-                                    dueDate: bill.dueDate ? new Date(bill.dueDate).toISOString().split('T')[0] : "",
-                                    notes: bill.notes || ""
-                                  });
-                                  setDueDateDialogOpen(true);
-                                }}
-                                className="glass-card border-white/20"
-                              >
-                                <Edit className="h-3 w-3" />
-                              </Button>
-                            )}
                             {!isManual && (
                               <Link href={`/bill/${bill.id}`}>
                                 <Button variant="outline" size="sm" className="glass-card border-white/20">
@@ -1664,6 +1456,18 @@ export default function UnpaidBills() {
                 <Button variant="outline" onClick={() => setSelectedCustomerPhone(null)} className="glass-card border-white/20">
                   Close
                 </Button>
+                {canEditPayment && (
+                  <Button
+                    onClick={() => {
+                      setPaymentDialogOpen(true);
+                      setPaymentAmount(Math.round(selectedCustomer.totalOutstanding).toString());
+                    }}
+                    className="gradient-bg text-white"
+                  >
+                    <Banknote className="h-4 w-4 mr-2" />
+                    Record Payment
+                  </Button>
+                )}
               </DialogFooter>
             </div>
           )}
@@ -1758,14 +1562,7 @@ export default function UnpaidBills() {
                   disabled={recordPaymentMutation.isPending}
                   className="gradient-bg text-white"
                 >
-                  {recordPaymentMutation.isPending ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Processing...
-                    </>
-                  ) : (
-                    "Record Payment"
-                  )}
+                  {recordPaymentMutation.isPending ? "Processing..." : "Record Payment"}
                 </Button>
               </DialogFooter>
             </div>
@@ -1860,14 +1657,7 @@ export default function UnpaidBills() {
                 disabled={addNoteMutation.isPending || !newNote.trim()}
                 className="w-full gradient-bg text-white"
               >
-                {addNoteMutation.isPending ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Adding...
-                  </>
-                ) : (
-                  "Add Note"
-                )}
+                {addNoteMutation.isPending ? "Adding..." : "Add Note"}
               </Button>
             </div>
 
@@ -2053,170 +1843,7 @@ export default function UnpaidBills() {
                 disabled={createManualBalanceMutation.isPending}
                 className="gradient-bg text-white"
               >
-                {createManualBalanceMutation.isPending ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Adding...
-                  </>
-                ) : (
-                  "Add Balance"
-                )}
-              </Button>
-            </DialogFooter>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Due Date Edit Dialog */}
-      <Dialog open={dueDateDialogOpen} onOpenChange={setDueDateDialogOpen}>
-        <DialogContent className="sm:max-w-md glass-card border-white/20">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Calendar className="h-5 w-5" />
-              Update Due Date
-            </DialogTitle>
-            <DialogDescription>
-              Set or update the due date for this bill
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="dueDate">Due Date</Label>
-              <Input
-                id="dueDate"
-                type="date"
-                value={dueDateForm.dueDate}
-                onChange={(e) => setDueDateForm(prev => ({ ...prev, dueDate: e.target.value }))}
-                className="glass-card border-white/20"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="dueDateNotes">Notes (Optional)</Label>
-              <Textarea
-                id="dueDateNotes"
-                placeholder="Add notes about this due date..."
-                value={dueDateForm.notes}
-                onChange={(e) => setDueDateForm(prev => ({ ...prev, notes: e.target.value }))}
-                rows={3}
-                className="glass-card border-white/20"
-              />
-            </div>
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setDueDateDialogOpen(false);
-                  setEditingSaleId(null);
-                  setDueDateForm({ dueDate: "", notes: "" });
-                }}
-                className="glass-card border-white/20"
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={() => {
-                  if (editingSaleId) {
-                    updateDueDateMutation.mutate({
-                      saleId: editingSaleId,
-                      dueDate: dueDateForm.dueDate || undefined,
-                      notes: dueDateForm.notes || undefined
-                    });
-                  }
-                }}
-                disabled={updateDueDateMutation.isPending}
-                className="gradient-bg text-white"
-              >
-                {updateDueDateMutation.isPending ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Updating...
-                  </>
-                ) : (
-                  "Update Due Date"
-                )}
-              </Button>
-            </DialogFooter>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit Sale Item Dialog */}
-      <Dialog open={editSaleItemDialogOpen} onOpenChange={setEditSaleItemDialogOpen}>
-        <DialogContent className="sm:max-w-md glass-card border-white/20">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Edit className="h-5 w-5" />
-              Edit Sale Item
-            </DialogTitle>
-            <DialogDescription>
-              Update the quantity, rate, and subtotal for this sale item
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="quantity">Quantity</Label>
-              <Input
-                id="quantity"
-                type="number"
-                min="1"
-                value={saleItemForm.quantity}
-                onChange={(e) => handleSaleItemFormChange('quantity', e.target.value)}
-                className="glass-card border-white/20"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="rate">Rate (Rs.)</Label>
-              <Input
-                id="rate"
-                type="number"
-                min="0"
-                step="0.01"
-                value={saleItemForm.rate}
-                onChange={(e) => handleSaleItemFormChange('rate', e.target.value)}
-                className="glass-card border-white/20"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="subtotal">Subtotal (Rs.)</Label>
-              <Input
-                id="subtotal"
-                type="number"
-                min="0"
-                step="0.01"
-                value={saleItemForm.subtotal}
-                onChange={(e) => handleSaleItemFormChange('subtotal', e.target.value)}
-                className="glass-card border-white/20 bg-slate-50"
-                readOnly
-              />
-              <p className="text-xs text-slate-600">
-                Subtotal is automatically calculated from quantity × rate
-              </p>
-            </div>
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setEditSaleItemDialogOpen(false);
-                  setEditingSaleItem(null);
-                  setSaleItemForm({ quantity: "", rate: "", subtotal: "" });
-                }}
-                className="glass-card border-white/20"
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handleSaveSaleItem}
-                disabled={updateSaleItemMutation.isPending}
-                className="gradient-bg text-white"
-              >
-                {updateSaleItemMutation.isPending ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Updating...
-                  </>
-                ) : (
-                  "Update Item"
-                )}
+                {createManualBalanceMutation.isPending ? "Adding..." : "Add Balance"}
               </Button>
             </DialogFooter>
           </div>

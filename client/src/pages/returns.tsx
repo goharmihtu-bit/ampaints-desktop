@@ -1,4 +1,3 @@
-// returns.tsx - COMPLETE CORRECTED VERSION
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -73,47 +72,27 @@ export default function Returns() {
     restoreStock: true,
   });
 
-  // FIXED: Proper API endpoints and error handling
   const { data: returns = [], isLoading: returnsLoading, refetch: refetchReturns } = useQuery<ReturnWithItems[]>({
     queryKey: ["/api/returns"],
-    retry: 2,
-    staleTime: 30000,
   });
 
   const { data: sales = [], isLoading: salesLoading } = useQuery<SaleWithItems[]>({
     queryKey: ["/api/sales"],
-    retry: 2,
-    staleTime: 30000,
   });
 
   const { data: colors = [], isLoading: colorsLoading } = useQuery<ColorWithVariantAndProduct[]>({
     queryKey: ["/api/colors"],
-    retry: 2,
-    staleTime: 30000,
   });
 
-  // FIXED: Proper filtering with error handling
   const filteredReturns = useMemo(() => {
-    if (!returns || !Array.isArray(returns)) return [];
-    
     return returns.filter(ret =>
-      ret.customerName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      ret.customerPhone?.includes(searchQuery) ||
-      ret.id?.toLowerCase().includes(searchQuery)
+      ret.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      ret.customerPhone.includes(searchQuery) ||
+      ret.id.toLowerCase().includes(searchQuery)
     );
   }, [returns, searchQuery]);
 
-  // FIXED: Safe stats calculation
   const stats: ReturnStats = useMemo(() => {
-    if (!returns || !Array.isArray(returns)) {
-      return {
-        totalReturns: 0,
-        totalRefunded: 0,
-        itemReturns: 0,
-        billReturns: 0,
-      };
-    }
-
     return {
       totalReturns: returns.length,
       totalRefunded: returns.reduce((sum, ret) => sum + parseFloat(ret.totalRefund || "0"), 0),
@@ -122,68 +101,50 @@ export default function Returns() {
     };
   }, [returns]);
 
-  // FIXED: Safe search results
   const searchResults = useMemo(() => {
-    if (!searchPhone.trim() || !sales || !Array.isArray(sales)) return [];
-    
+    if (!searchPhone.trim()) return [];
     return sales.filter(sale => 
-      sale.customerPhone?.includes(searchPhone) || 
-      sale.customerName?.toLowerCase().includes(searchPhone.toLowerCase())
+      sale.customerPhone.includes(searchPhone) || 
+      sale.customerName.toLowerCase().includes(searchPhone.toLowerCase())
     );
   }, [sales, searchPhone]);
 
-  // FIXED: Create return mutation with proper error handling
   const createReturnMutation = useMutation({
     mutationFn: async (data: { returnData: any; items: any[] }) => {
       const response = await apiRequest("POST", "/api/returns", data);
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Failed to process return" }));
-        throw new Error(errorData.error || "Failed to process return");
-      }
       return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/returns"] });
       queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
       queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
-      
       setShowReturnDialog(false);
       setSelectedSale(null);
       setSelectedItems({});
       setRestockItems({});
       setReturnReason("");
-      
       toast({
-        title: "Return Processed Successfully",
-        description: "Return has been processed and stock has been updated",
+        title: "Return Processed",
+        description: "Return has been successfully processed and stock has been updated",
       });
     },
-    onError: (error: Error) => {
-      console.error("Return processing error:", error);
+    onError: (error: any) => {
       toast({
-        title: "Return Failed",
-        description: error.message || "Failed to process return. Please try again.",
+        title: "Error",
+        description: error.message || "Failed to process return",
         variant: "destructive",
       });
     },
   });
 
-  // FIXED: Quick return mutation with proper error handling
   const quickReturnMutation = useMutation({
     mutationFn: async (data: QuickReturnForm) => {
       const response = await apiRequest("POST", "/api/returns/quick", data);
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Failed to process quick return" }));
-        throw new Error(errorData.error || "Failed to process quick return");
-      }
       return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/returns"] });
       queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
-      
       setShowQuickReturnDialog(false);
       setQuickReturnForm({
         customerName: "",
@@ -194,33 +155,21 @@ export default function Returns() {
         reason: "",
         restoreStock: true,
       });
-      
       toast({
         title: "Quick Return Processed",
         description: "Item has been returned successfully and stock has been updated",
       });
     },
-    onError: (error: Error) => {
-      console.error("Quick return error:", error);
+    onError: (error: any) => {
       toast({
-        title: "Quick Return Failed",
-        description: error.message || "Failed to process quick return. Please try again.",
+        title: "Error",
+        description: error.message || "Failed to process quick return",
         variant: "destructive",
       });
     },
   });
 
-  // FIXED: Safe sale selection
   const handleSelectSale = (sale: SaleWithItems) => {
-    if (!sale || !sale.saleItems) {
-      toast({
-        title: "Invalid Sale",
-        description: "Selected sale data is incomplete",
-        variant: "destructive",
-      });
-      return;
-    }
-
     setSelectedSale(sale);
     setShowReturnDialog(true);
     setReturnType("full");
@@ -229,35 +178,28 @@ export default function Returns() {
     setReturnReason("");
     
     // Pre-select all items for full return
-    const items: Record<string, number> = {};
-    const restock: Record<string, boolean> = {};
-    
-    sale.saleItems.forEach(item => {
-      if (item.id) {
-        items[item.id] = item.quantity || 0;
+    if (sale.saleItems) {
+      const items: Record<string, number> = {};
+      const restock: Record<string, boolean> = {};
+      sale.saleItems.forEach(item => {
+        items[item.id] = item.quantity;
         restock[item.id] = true;
-      }
-    });
-    
-    setSelectedItems(items);
-    setRestockItems(restock);
+      });
+      setSelectedItems(items);
+      setRestockItems(restock);
+    }
   };
 
-  // FIXED: Safe quantity changes
   const handleItemQuantityChange = (itemId: string, maxQty: number, delta: number) => {
-    if (!itemId || maxQty <= 0) return;
-    
     setSelectedItems(prev => {
       const current = prev[itemId] || 0;
       const newQty = Math.max(0, Math.min(maxQty, current + delta));
-      
       if (newQty === 0) {
         const { [itemId]: _, ...rest } = prev;
         return rest;
       }
       return { ...prev, [itemId]: newQty };
     });
-    
     setReturnType("partial");
   };
 
@@ -268,18 +210,15 @@ export default function Returns() {
     }));
   };
 
-  // FIXED: Safe select/deselect all
   const handleSelectAllItems = () => {
-    if (!selectedSale?.saleItems) return;
+    if (!selectedSale) return;
     
     const items: Record<string, number> = {};
     const restock: Record<string, boolean> = {};
     
-    selectedSale.saleItems.forEach(item => {
-      if (item.id) {
-        items[item.id] = item.quantity || 0;
-        restock[item.id] = true;
-      }
+    selectedSale.saleItems?.forEach(item => {
+      items[item.id] = item.quantity;
+      restock[item.id] = true;
     });
     
     setSelectedItems(items);
@@ -293,32 +232,20 @@ export default function Returns() {
     setReturnType("partial");
   };
 
-  // FIXED: Submit return with validation
   const handleSubmitReturn = () => {
-    if (!selectedSale) {
-      toast({
-        title: "No Sale Selected",
-        description: "Please select a sale first",
-        variant: "destructive",
-      });
-      return;
-    }
+    if (!selectedSale) return;
 
     const itemsToReturn = Object.entries(selectedItems)
-      .filter(([itemId, qty]) => qty > 0 && itemId)
+      .filter(([_, qty]) => qty > 0)
       .map(([itemId, quantity]) => {
         const saleItem = selectedSale.saleItems?.find(i => i.id === itemId);
         if (!saleItem) return null;
-        
-        const rate = parseFloat(saleItem.rate || "0");
-        const subtotal = quantity * rate;
-        
         return {
           colorId: saleItem.colorId,
           saleItemId: saleItem.id,
           quantity,
-          rate: rate.toString(),
-          subtotal: subtotal.toString(),
+          rate: parseFloat(saleItem.rate),
+          subtotal: quantity * parseFloat(saleItem.rate),
           stockRestored: restockItems[itemId] ?? true,
         };
       })
@@ -327,15 +254,13 @@ export default function Returns() {
     if (itemsToReturn.length === 0) {
       toast({
         title: "No Items Selected",
-        description: "Please select at least one item to return",
+        description: "Select at least one item to return",
         variant: "destructive",
       });
       return;
     }
 
-    const totalRefund = itemsToReturn.reduce((sum, item) => {
-      return sum + (item ? parseFloat(item.subtotal) : 0);
-    }, 0);
+    const totalRefund = itemsToReturn.reduce((sum, item) => sum + (item?.subtotal || 0), 0);
 
     createReturnMutation.mutate({
       returnData: {
@@ -343,7 +268,7 @@ export default function Returns() {
         customerName: selectedSale.customerName,
         customerPhone: selectedSale.customerPhone,
         returnType: returnType === "full" ? "full_bill" : "item",
-        totalRefund: totalRefund.toString(),
+        totalRefund,
         reason: returnReason || null,
         status: "completed",
       },
@@ -351,30 +276,11 @@ export default function Returns() {
     });
   };
 
-  // FIXED: Quick return with validation
   const handleQuickReturnSubmit = () => {
-    if (!quickReturnForm.customerName?.trim()) {
+    if (!quickReturnForm.customerName || !quickReturnForm.customerPhone || !quickReturnForm.colorId) {
       toast({
-        title: "Customer Name Required",
-        description: "Please enter customer name",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (!quickReturnForm.customerPhone?.trim()) {
-      toast({
-        title: "Customer Phone Required",
-        description: "Please enter customer phone number",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (!quickReturnForm.colorId) {
-      toast({
-        title: "Item Required",
-        description: "Please select an item to return",
+        title: "Missing Information",
+        description: "Please fill in all required fields",
         variant: "destructive",
       });
       return;
@@ -389,199 +295,147 @@ export default function Returns() {
       return;
     }
 
-    if (quickReturnForm.rate <= 0) {
-      toast({
-        title: "Invalid Rate",
-        description: "Rate must be greater than 0",
-        variant: "destructive",
-      });
-      return;
-    }
-
     quickReturnMutation.mutate(quickReturnForm);
   };
 
-  // FIXED: Safe color selection
   const handleColorSelect = (colorId: string) => {
-    const selectedColor = colors?.find(c => c.id === colorId);
+    const selectedColor = colors.find(c => c.id === colorId);
     if (selectedColor) {
-      const rate = selectedColor.rateOverride ? 
-        parseFloat(selectedColor.rateOverride) : 
-        parseFloat(selectedColor.variant?.rate || "0");
-      
+      const rate = selectedColor.rateOverride ? parseFloat(selectedColor.rateOverride) : parseFloat(selectedColor.variant.rate);
       setQuickReturnForm(prev => ({
         ...prev,
         colorId,
-        rate: rate || 0,
+        rate,
       }));
     }
   };
 
-  // FIXED: Safe item details formatting
   const formatItemDetails = (item: any) => {
-    if (!item?.color) return `Item #${item?.colorId || "Unknown"}`;
-    
+    if (!item.color) return `Item #${item.colorId}`;
     const color = item.color;
     const variant = color.variant;
     const product = variant?.product;
-    
-    return `${product?.company || ""} ${product?.productName || ""} - ${variant?.packingSize || ""} - ${color.colorCode} ${color.colorName}`.trim();
+    return `${product?.company || ""} ${product?.productName || ""} - ${variant?.packingSize || ""} - ${color.colorCode} ${color.colorName}`;
   };
 
-  // FIXED: Safe view details
   const handleViewDetails = (returnRecord: ReturnWithItems) => {
-    if (!returnRecord) return;
-    
     setSelectedReturn(returnRecord);
     setViewDetailsOpen(true);
   };
 
-  // FIXED: PDF generation with error handling
   const downloadReturnPDF = (returnRecord: ReturnWithItems) => {
-    try {
-      const pdf = new jsPDF({
-        orientation: "portrait",
-        unit: "mm",
-        format: "a4"
-      });
+    const pdf = new jsPDF({
+      orientation: "portrait",
+      unit: "mm",
+      format: "a4"
+    });
 
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const margin = 15;
-      let yPos = margin;
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const margin = 15;
+    let yPos = margin;
 
-      // Header
-      pdf.setFillColor(102, 126, 234);
-      pdf.rect(0, 0, pageWidth, 30, "F");
+    // Header
+    pdf.setFillColor(102, 126, 234);
+    pdf.rect(0, 0, pageWidth, 30, "F");
 
-      pdf.setTextColor(255, 255, 255);
-      pdf.setFontSize(16);
-      pdf.setFont("helvetica", "bold");
-      pdf.text("RETURN DOCUMENT", pageWidth / 2, 12, { align: "center" });
-      pdf.setFontSize(9);
-      pdf.text("PaintPulse", pageWidth / 2, 20, { align: "center" });
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFontSize(16);
+    pdf.setFont("helvetica", "bold");
+    pdf.text("RETURN DOCUMENT", pageWidth / 2, 12, { align: "center" });
+    pdf.setFontSize(9);
+    pdf.text("PaintPulse", pageWidth / 2, 20, { align: "center" });
 
-      pdf.setTextColor(0, 0, 0);
-      yPos = 40;
+    pdf.setTextColor(0, 0, 0);
+    yPos = 40;
 
-      // Return Info
-      pdf.setFontSize(10);
-      pdf.setFont("helvetica", "bold");
-      pdf.text("Return Details:", margin, yPos);
-      yPos += 6;
+    // Return Info
+    pdf.setFontSize(10);
+    pdf.setFont("helvetica", "bold");
+    pdf.text("Return Details:", margin, yPos);
+    yPos += 6;
 
-      pdf.setFontSize(9);
-      pdf.setFont("helvetica", "normal");
-      pdf.text(`Return ID: ${returnRecord.id?.slice(0, 8).toUpperCase() || "N/A"}`, margin, yPos);
-      yPos += 5;
-      pdf.text(`Date: ${formatDateShort(returnRecord.createdAt)}`, margin, yPos);
-      yPos += 5;
-      pdf.text(`Status: ${returnRecord.status?.toUpperCase() || "N/A"}`, margin, yPos);
-      yPos += 5;
-      pdf.text(`Type: ${returnRecord.returnType === "full_bill" ? "FULL BILL RETURN" : "ITEM RETURN"}`, margin, yPos);
-      yPos += 10;
+    pdf.setFontSize(9);
+    pdf.setFont("helvetica", "normal");
+    pdf.text(`Return ID: ${returnRecord.id.slice(0, 8).toUpperCase()}`, margin, yPos);
+    yPos += 5;
+    pdf.text(`Date: ${formatDateShort(returnRecord.createdAt)}`, margin, yPos);
+    yPos += 5;
+    pdf.text(`Status: ${returnRecord.status.toUpperCase()}`, margin, yPos);
+    yPos += 5;
+    pdf.text(`Type: ${returnRecord.returnType === "full_bill" ? "FULL BILL RETURN" : "ITEM RETURN"}`, margin, yPos);
+    yPos += 10;
 
-      // Customer Info
-      pdf.setFont("helvetica", "bold");
-      pdf.text("Customer Information:", margin, yPos);
-      yPos += 6;
+    // Customer Info
+    pdf.setFont("helvetica", "bold");
+    pdf.text("Customer Information:", margin, yPos);
+    yPos += 6;
 
-      pdf.setFont("helvetica", "normal");
-      pdf.text(`Name: ${returnRecord.customerName || "N/A"}`, margin, yPos);
-      yPos += 5;
-      pdf.text(`Phone: ${returnRecord.customerPhone || "N/A"}`, margin, yPos);
-      yPos += 10;
+    pdf.setFont("helvetica", "normal");
+    pdf.text(`Name: ${returnRecord.customerName}`, margin, yPos);
+    yPos += 5;
+    pdf.text(`Phone: ${returnRecord.customerPhone}`, margin, yPos);
+    yPos += 10;
 
-      // Returned Items Table
-      pdf.setFont("helvetica", "bold");
-      pdf.text("Returned Items:", margin, yPos);
-      yPos += 8;
+    // Returned Items Table
+    pdf.setFont("helvetica", "bold");
+    pdf.text("Returned Items:", margin, yPos);
+    yPos += 8;
 
-      // Table header
-      pdf.setFillColor(50, 50, 50);
+    // Table header
+    pdf.setFillColor(50, 50, 50);
+    pdf.rect(margin, yPos, pageWidth - 2 * margin, 8, "F");
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFontSize(8);
+
+    pdf.text("Product", margin + 3, yPos + 5);
+    pdf.text("Qty", margin + 70, yPos + 5);
+    pdf.text("Rate", margin + 90, yPos + 5);
+    pdf.text("Subtotal", pageWidth - margin - 20, yPos + 5, { align: "right" });
+    yPos += 10;
+
+    pdf.setTextColor(0, 0, 0);
+
+    // Table rows
+    returnRecord.returnItems.forEach((item, index) => {
+      if (yPos > 250) {
+        pdf.addPage();
+        yPos = margin;
+      }
+
+      const bgColor = index % 2 === 0 ? [250, 250, 250] : [255, 255, 255];
+      pdf.setFillColor(bgColor[0], bgColor[1], bgColor[2]);
       pdf.rect(margin, yPos, pageWidth - 2 * margin, 8, "F");
-      pdf.setTextColor(255, 255, 255);
+
       pdf.setFontSize(8);
-
-      pdf.text("Product", margin + 3, yPos + 5);
-      pdf.text("Qty", margin + 70, yPos + 5);
-      pdf.text("Rate", margin + 90, yPos + 5);
-      pdf.text("Subtotal", pageWidth - margin - 20, yPos + 5, { align: "right" });
-      yPos += 10;
-
-      pdf.setTextColor(0, 0, 0);
-
-      // Table rows
-      returnRecord.returnItems?.forEach((item, index) => {
-        if (yPos > 250) {
-          pdf.addPage();
-          yPos = margin;
-        }
-
-        const bgColor = index % 2 === 0 ? [250, 250, 250] : [255, 255, 255];
-        pdf.setFillColor(bgColor[0], bgColor[1], bgColor[2]);
-        pdf.rect(margin, yPos, pageWidth - 2 * margin, 8, "F");
-
-        pdf.setFontSize(8);
-        const productName = item.color ? 
-          `${item.color.variant?.product?.productName || "Unknown"} - ${item.color.colorName || "Unknown"} (${item.color.colorCode || "N/A"})` :
-          "Unknown Item";
-        
-        pdf.text(productName.substring(0, 40), margin + 3, yPos + 5);
-        pdf.text((item.quantity || 0).toString(), margin + 70, yPos + 5);
-        pdf.text(`Rs.${Math.round(parseFloat(item.rate || "0"))}`, margin + 90, yPos + 5);
-        pdf.text(`Rs.${Math.round(parseFloat(item.subtotal || "0"))}`, pageWidth - margin - 3, yPos + 5, {
-          align: "right"
-        });
-
-        yPos += 8;
+      const productName = `${item.color.variant.product.productName} - ${item.color.colorName} (${item.color.colorCode})`;
+      pdf.text(productName.substring(0, 40), margin + 3, yPos + 5);
+      pdf.text(item.quantity.toString(), margin + 70, yPos + 5);
+      pdf.text(`Rs.${Math.round(parseFloat(item.rate))}`, margin + 90, yPos + 5);
+      pdf.text(`Rs.${Math.round(parseFloat(item.subtotal))}`, pageWidth - margin - 3, yPos + 5, {
+        align: "right"
       });
 
-      yPos += 10;
-
-      // Summary
-      pdf.setFont("helvetica", "bold");
-      pdf.text("Return Summary:", margin, yPos);
       yPos += 8;
+    });
 
-      pdf.setFont("helvetica", "normal");
-      pdf.text(`Total Items Returned: ${returnRecord.returnItems?.length || 0}`, margin, yPos);
-      yPos += 5;
-      pdf.text(`Total Refund Amount: Rs.${Math.round(parseFloat(returnRecord.totalRefund || "0"))}`, margin, yPos);
+    yPos += 10;
 
-      const fileName = `Return-${returnRecord.id?.slice(0, 8).toUpperCase() || "Unknown"}-${formatDateShort(returnRecord.createdAt).replace(/\//g, "-")}.pdf`;
-      pdf.save(fileName);
-      
-      toast({
-        title: "Return Document Downloaded",
-        description: "PDF has been downloaded successfully.",
-      });
-    } catch (error) {
-      console.error("PDF generation error:", error);
-      toast({
-        title: "PDF Download Failed",
-        description: "Failed to generate PDF document",
-        variant: "destructive",
-      });
-    }
+    // Summary
+    pdf.setFont("helvetica", "bold");
+    pdf.text("Return Summary:", margin, yPos);
+    yPos += 8;
+
+    pdf.setFont("helvetica", "normal");
+    pdf.text(`Total Items Returned: ${returnRecord.returnItems.length}`, margin, yPos);
+    yPos += 5;
+    pdf.text(`Total Refund Amount: Rs.${Math.round(parseFloat(returnRecord.totalRefund || "0"))}`, margin, yPos);
+
+    pdf.save(`Return-${returnRecord.id.slice(0, 8).toUpperCase()}-${formatDateShort(returnRecord.createdAt).replace(/\//g, "-")}.pdf`);
+    toast({
+      title: "Return Document Downloaded",
+      description: "PDF has been downloaded successfully.",
+    });
   };
-
-  // Loading states
-  if (salesLoading || returnsLoading) {
-    return (
-      <div className="p-6 space-y-6">
-        <div className="flex flex-col gap-2">
-          <Skeleton className="h-8 w-64" />
-          <Skeleton className="h-4 w-96" />
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {[1, 2, 3, 4].map(i => (
-            <Skeleton key={i} className="h-24" />
-          ))}
-        </div>
-        <Skeleton className="h-64 w-full" />
-      </div>
-    );
-  }
 
   return (
     <div className="p-6 space-y-6">
@@ -619,9 +473,20 @@ export default function Returns() {
                       onChange={(e) => setSearchPhone(e.target.value)}
                     />
                   </div>
+                  <Button 
+                    onClick={() => setSearchPhone(searchPhone)}
+                    disabled={salesLoading}
+                  >
+                    {salesLoading ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Search className="w-4 h-4" />
+                    )}
+                    <span className="ml-2">Search</span>
+                  </Button>
                 </div>
 
-                {searchResults.length > 0 ? (
+                {searchResults.length > 0 && (
                   <div className="space-y-2">
                     <Label className="text-sm font-medium">Found Sales ({searchResults.length})</Label>
                     <ScrollArea className="h-[300px] rounded-md border">
@@ -644,7 +509,7 @@ export default function Returns() {
                                   </div>
                                 </div>
                                 <div className="text-right shrink-0">
-                                  <div className="font-medium">Rs. {parseFloat(sale.totalAmount || "0").toLocaleString()}</div>
+                                  <div className="font-medium">Rs. {parseFloat(sale.totalAmount).toLocaleString()}</div>
                                   <Badge 
                                     variant={sale.paymentStatus === "paid" ? "default" : "secondary"}
                                     className="mt-1"
@@ -658,11 +523,6 @@ export default function Returns() {
                         ))}
                       </div>
                     </ScrollArea>
-                  </div>
-                ) : searchPhone && (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p>No sales found for "{searchPhone}"</p>
                   </div>
                 )}
               </CardContent>
@@ -774,28 +634,28 @@ export default function Returns() {
               <CardTitle>Return History</CardTitle>
             </CardHeader>
             <CardContent>
-              {filteredReturns.length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground">
-                  <RotateCcw className="h-16 w-16 mx-auto mb-4 opacity-50" />
-                  <p className="text-lg font-medium">No returns found</p>
-                  <p className="text-sm">Process your first return using the Bill Returns tab</p>
-                </div>
-              ) : (
-                <Table>
-                  <TableHeader>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Return ID</TableHead>
+                    <TableHead>Customer</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead className="text-right">Refund Amount</TableHead>
+                    <TableHead>Items</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredReturns.length === 0 ? (
                     <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Return ID</TableHead>
-                      <TableHead>Customer</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead className="text-right">Refund Amount</TableHead>
-                      <TableHead>Items</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Actions</TableHead>
+                      <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                        No returns found
+                      </TableCell>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredReturns.map((ret) => (
+                  ) : (
+                    filteredReturns.map((ret) => (
                       <TableRow key={ret.id}>
                         <TableCell>{formatDateShort(ret.createdAt)}</TableCell>
                         <TableCell className="font-mono font-semibold">
@@ -822,7 +682,7 @@ export default function Returns() {
                           Rs.{Math.round(parseFloat(ret.totalRefund || "0")).toLocaleString()}
                         </TableCell>
                         <TableCell>
-                          <Badge variant="outline">{ret.returnItems?.length || 0} items</Badge>
+                          <Badge variant="outline">{ret.returnItems.length} items</Badge>
                         </TableCell>
                         <TableCell>
                           <Badge
@@ -849,10 +709,10 @@ export default function Returns() {
                           </Button>
                         </TableCell>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
+                    ))
+                  )}
+                </TableBody>
+              </Table>
             </CardContent>
           </Card>
         </TabsContent>
@@ -885,7 +745,7 @@ export default function Returns() {
                 </div>
                 <div>
                   <Label className="text-xs text-muted-foreground">Bill Total</Label>
-                  <p className="font-medium">Rs. {parseFloat(selectedSale.totalAmount || "0").toLocaleString()}</p>
+                  <p className="font-medium">Rs. {parseFloat(selectedSale.totalAmount).toLocaleString()}</p>
                 </div>
               </div>
 
@@ -908,7 +768,6 @@ export default function Returns() {
                   {selectedSale.saleItems?.map((item) => {
                     const returnQty = selectedItems[item.id] || 0;
                     const isReturning = returnQty > 0;
-                    const maxQty = item.quantity || 0;
                     
                     return (
                       <div 
@@ -919,7 +778,7 @@ export default function Returns() {
                           <div className="flex-1 min-w-0">
                             <p className="font-medium text-sm truncate">{formatItemDetails(item)}</p>
                             <p className="text-xs text-muted-foreground">
-                              Rate: Rs. {parseFloat(item.rate || "0").toLocaleString()} x {maxQty} = Rs. {parseFloat(item.subtotal || "0").toLocaleString()}
+                              Rate: Rs. {parseFloat(item.rate).toLocaleString()} x {item.quantity} = Rs. {parseFloat(item.subtotal).toLocaleString()}
                             </p>
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
@@ -927,7 +786,7 @@ export default function Returns() {
                               size="icon" 
                               variant="outline"
                               className="h-7 w-7"
-                              onClick={() => handleItemQuantityChange(item.id, maxQty, -1)}
+                              onClick={() => handleItemQuantityChange(item.id, item.quantity, -1)}
                               disabled={returnQty === 0}
                             >
                               <Minus className="h-3 w-3" />
@@ -939,8 +798,8 @@ export default function Returns() {
                               size="icon" 
                               variant="outline"
                               className="h-7 w-7"
-                              onClick={() => handleItemQuantityChange(item.id, maxQty, 1)}
-                              disabled={returnQty >= maxQty}
+                              onClick={() => handleItemQuantityChange(item.id, item.quantity, 1)}
+                              disabled={returnQty >= item.quantity}
                             >
                               <Plus className="h-3 w-3" />
                             </Button>
@@ -958,7 +817,7 @@ export default function Returns() {
                               Restore to stock ({returnQty} units)
                             </Label>
                             <span className="text-xs text-destructive ml-auto">
-                              - Rs. {(returnQty * parseFloat(item.rate || "0")).toLocaleString()}
+                              - Rs. {(returnQty * parseFloat(item.rate)).toLocaleString()}
                             </span>
                           </div>
                         )}
@@ -1082,9 +941,9 @@ export default function Returns() {
                       <SelectValue placeholder="Select an item to return" />
                     </SelectTrigger>
                     <SelectContent>
-                      {colors?.map((color) => (
+                      {colors.map((color) => (
                         <SelectItem key={color.id} value={color.id}>
-                          {color.variant?.product?.company} {color.variant?.product?.productName} - {color.variant?.packingSize} - {color.colorCode} {color.colorName}
+                          {color.variant.product.company} {color.variant.product.productName} - {color.variant.packingSize} - {color.colorCode} {color.colorName}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -1195,7 +1054,7 @@ export default function Returns() {
                     <div>Item:</div>
                     <div className="font-medium">
                       {quickReturnForm.colorId 
-                        ? colors?.find(c => c.id === quickReturnForm.colorId)?.colorName 
+                        ? colors.find(c => c.id === quickReturnForm.colorId)?.colorName 
                         : "Not selected"}
                     </div>
                     
@@ -1254,7 +1113,7 @@ export default function Returns() {
       <Dialog open={viewDetailsOpen} onOpenChange={setViewDetailsOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Return Details - #{selectedReturn?.id?.slice(0, 8).toUpperCase()}</DialogTitle>
+            <DialogTitle>Return Details - #{selectedReturn?.id.slice(0, 8).toUpperCase()}</DialogTitle>
           </DialogHeader>
 
           {selectedReturn && (
@@ -1309,7 +1168,7 @@ export default function Returns() {
                     <div>
                       <span className="text-muted-foreground">Sale ID:</span>
                       <p className="font-mono font-semibold">
-                        #{selectedReturn.sale.id?.slice(0, 8).toUpperCase()}
+                        #{selectedReturn.sale.id.slice(0, 8).toUpperCase()}
                       </p>
                     </div>
                     <div>
@@ -1318,11 +1177,11 @@ export default function Returns() {
                     </div>
                     <div>
                       <span className="text-muted-foreground">Total Amount:</span>
-                      <p className="font-medium">Rs.{Math.round(parseFloat(selectedReturn.sale.totalAmount || "0")).toLocaleString()}</p>
+                      <p className="font-medium">Rs.{Math.round(parseFloat(selectedReturn.sale.totalAmount)).toLocaleString()}</p>
                     </div>
                     <div>
                       <span className="text-muted-foreground">Amount Paid:</span>
-                      <p className="font-medium">Rs.{Math.round(parseFloat(selectedReturn.sale.amountPaid || "0")).toLocaleString()}</p>
+                      <p className="font-medium">Rs.{Math.round(parseFloat(selectedReturn.sale.amountPaid)).toLocaleString()}</p>
                     </div>
                   </div>
                 </div>
@@ -1332,26 +1191,26 @@ export default function Returns() {
               <div className="border-t pt-4">
                 <h3 className="font-semibold mb-3 flex items-center gap-2">
                   <Package className="h-4 w-4" />
-                  Returned Items ({selectedReturn.returnItems?.length || 0})
+                  Returned Items ({selectedReturn.returnItems.length})
                 </h3>
                 <div className="space-y-3">
-                  {selectedReturn.returnItems?.map((item) => (
+                  {selectedReturn.returnItems.map((item) => (
                     <Card key={item.id} className="p-4">
                       <div className="space-y-2">
                         <div className="flex justify-between items-start">
                           <div>
                             <p className="font-semibold">
-                              {item.color?.variant?.product?.productName || "Unknown Product"}
+                              {item.color.variant.product.productName}
                             </p>
                             <p className="text-sm text-muted-foreground">
-                              {item.color?.colorName || "Unknown"} ({item.color?.colorCode || "N/A"})
+                              {item.color.colorName} ({item.color.colorCode})
                             </p>
                             <p className="text-xs text-muted-foreground mt-1">
-                              Size: {item.color?.variant?.packingSize || "N/A"}
+                              Size: {item.color.variant.packingSize}
                             </p>
                           </div>
                           <div className="text-right">
-                            <Badge variant="outline">{item.quantity || 0} units</Badge>
+                            <Badge variant="outline">{item.quantity} units</Badge>
                             {item.stockRestored && (
                               <div className="flex items-center gap-1 text-xs text-green-600 mt-2">
                                 <CheckCircle className="h-3 w-3" />
@@ -1362,11 +1221,11 @@ export default function Returns() {
                         </div>
                         <div className="flex justify-between text-sm">
                           <span className="text-muted-foreground">Rate:</span>
-                          <span className="font-mono">Rs.{Math.round(parseFloat(item.rate || "0")).toLocaleString()}</span>
+                          <span className="font-mono">Rs.{Math.round(parseFloat(item.rate)).toLocaleString()}</span>
                         </div>
                         <div className="flex justify-between text-sm font-semibold border-t pt-2">
                           <span>Refund Amount:</span>
-                          <span className="text-red-600">Rs.{Math.round(parseFloat(item.subtotal || "0")).toLocaleString()}</span>
+                          <span className="text-red-600">Rs.{Math.round(parseFloat(item.subtotal)).toLocaleString()}</span>
                         </div>
                       </div>
                     </Card>
