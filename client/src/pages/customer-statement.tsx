@@ -94,7 +94,7 @@ const safeParseFloat = (value: string | number | null | undefined): number => {
   return isNaN(num) ? 0 : num
 }
 
-// Utility function to round numbers for consistent display
+// Utility function to round numbers for display
 const roundNumber = (num: number): number => {
   return Math.round(num * 100) / 100
 }
@@ -292,21 +292,12 @@ export default function CustomerStatement() {
 
   const customerName = allSales[0]?.customerName || "Customer"
 
+  // Corrected and improved stats calculations
   const stats = useMemo(() => {
     const totalPurchases = allSales.reduce((sum, s) => sum + safeParseFloat(s.totalAmount), 0)
     const totalPaid = allSales.reduce((sum, s) => sum + safeParseFloat(s.amountPaid), 0)
     const totalOutstanding = Math.max(0, totalPurchases - totalPaid)
-
-    // Verify payment history matches calculated paid amount (reconciliation check)
     const totalPaymentsReceived = paymentHistory.reduce((sum, p) => sum + safeParseFloat(p.amount), 0)
-
-    // Log discrepancy if exists (for debugging)
-    if (Math.abs(totalPaid - totalPaymentsReceived) > 0.01) {
-      console.log("[v0] Payment reconciliation notice:", {
-        calculatedPaid: totalPaid,
-        recordedPayments: totalPaymentsReceived,
-      })
-    }
 
     return {
       totalBills: allSales.length,
@@ -319,11 +310,11 @@ export default function CustomerStatement() {
     }
   }, [allSales, paidSales, unpaidSales, paymentHistory])
 
-  // FIXED: Correctly calculates running balance including cash loans
+  // Corrected and improved transactions calculation
   const transactions = useMemo((): Transaction[] => {
     const txns: Transaction[] = []
 
-    // Collect all bills in chronological order (oldest first)
+    // First, collect all bills in chronological order
     const billTransactions: Transaction[] = allSalesWithItems.map((sale) => {
       const saleItems: SaleItemDisplay[] =
         sale.saleItems?.map((item) => ({
@@ -346,9 +337,9 @@ export default function CustomerStatement() {
         type: sale.isManualBalance ? "cash_loan" : "bill",
         description: sale.isManualBalance ? "Manual Balance" : `Bill #${sale.id.slice(0, 8)}`,
         reference: sale.id.slice(0, 8).toUpperCase(),
-        debit: totalAmt, // Total amount of the bill/loan
+        debit: totalAmt,
         credit: 0,
-        balance: 0, // Will be calculated later
+        balance: 0,
         paid: paidAmt,
         totalAmount: totalAmt,
         outstanding: outstandingAmt,
@@ -360,7 +351,7 @@ export default function CustomerStatement() {
       }
     })
 
-    // Collect all payments in chronological order
+    // Then collect all payments
     const paymentTransactions: Transaction[] = paymentHistory.map((payment) => ({
       id: `payment-${payment.id}`,
       date: new Date(payment.createdAt),
@@ -368,8 +359,8 @@ export default function CustomerStatement() {
       description: `Payment Received (${payment.paymentMethod.toUpperCase()})`,
       reference: payment.id.slice(0, 8).toUpperCase(),
       debit: 0,
-      credit: safeParseFloat(payment.amount), // Payment amount received
-      balance: 0, // Will be calculated later
+      credit: safeParseFloat(payment.amount),
+      balance: 0,
       paid: 0,
       totalAmount: 0,
       outstanding: 0,
@@ -377,27 +368,31 @@ export default function CustomerStatement() {
       saleId: payment.saleId,
     }))
 
-    // Combine all transactions and sort by date (oldest first for correct balance calculation)
+    // Combine and sort by date (oldest first)
     txns.push(...billTransactions, ...paymentTransactions)
     txns.sort((a, b) => a.date.getTime() - b.date.getTime())
 
-    // FIXED: Simple and correct balance calculation
+    // Calculate running balance correctly
     let runningBalance = 0
+    const balanceByTransaction: { [key: string]: number } = {}
+
     txns.forEach((txn) => {
       if (txn.type === "payment") {
-        // Payments reduce the balance
-        runningBalance = Math.max(0, runningBalance - txn.credit)
+        // Payments reduce the outstanding balance
+        runningBalance -= txn.credit
       } else {
-        // Bills and cash loans both increase the balance
-        // For cash loans, we use the full amount (debit) since they represent money given to customer
-        // For bills, we use the outstanding amount (remaining to be paid)
-        const amountToAdd = txn.type === "cash_loan" ? txn.debit : txn.outstanding
-        runningBalance += amountToAdd
+        // Bills and cash loans add to outstanding
+        runningBalance += txn.outstanding
       }
-      txn.balance = runningBalance
+      balanceByTransaction[txn.id] = runningBalance
     })
 
-    // Return in reverse chronological order (newest first for UI display)
+    // Update transactions with calculated balances
+    txns.forEach((txn) => {
+      txn.balance = balanceByTransaction[txn.id] || 0
+    })
+
+    // Return in reverse order (newest first for display)
     return txns.reverse()
   }, [allSalesWithItems, paymentHistory])
 
@@ -432,16 +427,6 @@ export default function CustomerStatement() {
       toast({
         title: "Invalid Amount",
         description: "Please enter a valid payment amount",
-        variant: "destructive",
-      })
-      return
-    }
-
-    // Validate payment doesn't exceed outstanding balance
-    if (amount > selectedSaleOutstanding + 0.01) {
-      toast({
-        title: "Payment Exceeds Outstanding",
-        description: `Payment amount (Rs. ${amount.toLocaleString()}) exceeds outstanding balance (Rs. ${Math.round(selectedSaleOutstanding).toLocaleString()})`,
         variant: "destructive",
       })
       return
@@ -490,7 +475,7 @@ export default function CustomerStatement() {
     if (isNaN(amount) || amount <= 0) {
       toast({
         title: "Invalid Amount",
-        description: "Please enter a valid amount greater than zero",
+        description: "Please enter a valid amount",
         variant: "destructive",
       })
       return
@@ -516,7 +501,7 @@ export default function CustomerStatement() {
     ? safeParseFloat(selectedSale.totalAmount) - safeParseFloat(selectedSale.amountPaid)
     : 0
 
-  const generatePDFContent = (returnBlob = false): jsPDF | Blob | null => {
+  const generateBankStatement = async () => {
     const pdf = new jsPDF({
       orientation: "portrait",
       unit: "mm",
@@ -528,24 +513,39 @@ export default function CustomerStatement() {
     const margin = 15
     let yPos = margin
 
-    // Draw header
-    pdf.setFillColor(102, 126, 234)
-    pdf.rect(0, 0, pageWidth, 35, "F")
+    const drawHeader = () => {
+      pdf.setFillColor(102, 126, 234)
+      pdf.rect(0, 0, pageWidth, 35, "F")
 
-    pdf.setTextColor(255, 255, 255)
-    pdf.setFontSize(20)
-    pdf.setFont("helvetica", "bold")
-    pdf.text("ACCOUNT STATEMENT", pageWidth / 2, 15, { align: "center" })
+      pdf.setTextColor(255, 255, 255)
+      pdf.setFontSize(20)
+      pdf.setFont("helvetica", "bold")
+      pdf.text("ACCOUNT STATEMENT", pageWidth / 2, 15, { align: "center" })
 
-    pdf.setFontSize(10)
-    pdf.setFont("helvetica", "normal")
-    pdf.text(receiptSettings.businessName, pageWidth / 2, 23, { align: "center" })
-    pdf.text(receiptSettings.address, pageWidth / 2, 29, { align: "center" })
+      pdf.setFontSize(10)
+      pdf.setFont("helvetica", "normal")
+      pdf.text(receiptSettings.businessName, pageWidth / 2, 23, { align: "center" })
+      pdf.text(receiptSettings.address, pageWidth / 2, 29, { align: "center" })
 
-    pdf.setTextColor(0, 0, 0)
-    yPos = 45
+      pdf.setTextColor(0, 0, 0)
+      yPos = 45
+    }
 
-    // Customer info
+    const addSectionHeader = (text: string) => {
+      if (yPos > pageHeight - 30) {
+        pdf.addPage()
+        yPos = margin
+      }
+      pdf.setFillColor(240, 240, 240)
+      pdf.rect(margin, yPos - 4, pageWidth - 2 * margin, 8, "F")
+      pdf.setFontSize(11)
+      pdf.setFont("helvetica", "bold")
+      pdf.text(text, margin + 3, yPos + 2)
+      yPos += 10
+    }
+
+    drawHeader()
+
     pdf.setFontSize(10)
     pdf.setFont("helvetica", "bold")
     pdf.text("Account Holder:", margin, yPos)
@@ -565,7 +565,232 @@ export default function CustomerStatement() {
     pdf.text(formatDateShort(new Date()), margin + 35, yPos)
     yPos += 10
 
-    // Summary section
+    pdf.setDrawColor(200, 200, 200)
+    pdf.line(margin, yPos, pageWidth - margin, yPos)
+    yPos += 8
+
+    addSectionHeader("ACCOUNT SUMMARY")
+
+    const summaryData = [
+      ["Total Bills:", stats.totalBills.toString(), "Total Purchases:", `Rs. ${stats.totalPurchases.toLocaleString()}`],
+      ["Paid Bills:", stats.paidBills.toString(), "Total Paid:", `Rs. ${stats.totalPaid.toLocaleString()}`],
+      ["Unpaid Bills:", stats.unpaidBills.toString(), "Outstanding:", `Rs. ${stats.totalOutstanding.toLocaleString()}`],
+    ]
+
+    pdf.setFontSize(9)
+    summaryData.forEach((row) => {
+      pdf.setFont("helvetica", "bold")
+      pdf.text(row[0], margin + 5, yPos)
+      pdf.setFont("helvetica", "normal")
+      pdf.text(row[1], margin + 35, yPos)
+      pdf.setFont("helvetica", "bold")
+      pdf.text(row[2], margin + 70, yPos)
+      pdf.setFont("helvetica", "normal")
+      pdf.text(row[3], margin + 105, yPos)
+      yPos += 6
+    })
+    yPos += 8
+
+    addSectionHeader("TRANSACTION HISTORY")
+
+    const addLedgerRow = (cols: string[], isHeader = false, bgColor?: [number, number, number]) => {
+      if (yPos > pageHeight - 15) {
+        pdf.addPage()
+        yPos = margin + 5
+      }
+
+      const colWidths = [22, 45, 25, 25, 25, 28]
+      let xPos = margin
+
+      if (bgColor) {
+        pdf.setFillColor(...bgColor)
+        pdf.rect(margin, yPos - 4, pageWidth - 2 * margin, 7, "F")
+      }
+
+      pdf.setFontSize(isHeader ? 8 : 7)
+      pdf.setFont("helvetica", isHeader ? "bold" : "normal")
+
+      cols.forEach((col, i) => {
+        const align = i >= 2 ? "right" : "left"
+        const textX = align === "right" ? xPos + colWidths[i] - 2 : xPos + 2
+        pdf.text(col, textX, yPos, { align: align as "left" | "right" })
+        xPos += colWidths[i]
+      })
+
+      yPos += 6
+    }
+
+    addLedgerRow(["DATE", "DESCRIPTION", "AMOUNT", "PAID", "DUE", "BALANCE"], true, [220, 220, 220])
+
+    for (const txn of transactions) {
+      const dateStr = formatDateShort(txn.date)
+      const outstanding = txn.type !== "payment" ? Math.max(0, txn.totalAmount - txn.paid) : 0
+      let amountStr = "-"
+      let paidStr = "-"
+      let dueStr = "-"
+
+      if (txn.type === "payment") {
+        paidStr = `Rs. ${Math.round(txn.credit).toLocaleString()}`
+      } else {
+        amountStr = `Rs. ${Math.round(txn.totalAmount).toLocaleString()}`
+        paidStr = txn.paid > 0 ? `Rs. ${Math.round(txn.paid).toLocaleString()}` : "-"
+        dueStr = outstanding > 0 ? `Rs. ${Math.round(outstanding).toLocaleString()}` : "CLEAR"
+      }
+
+      const balanceStr = `Rs. ${Math.round(txn.balance).toLocaleString()}`
+
+      const bgColor: [number, number, number] =
+        txn.type === "payment"
+          ? [220, 245, 220]
+          : txn.type === "cash_loan"
+            ? [255, 240, 210]
+            : txn.status === "paid"
+              ? [210, 235, 255]
+              : [245, 245, 250]
+
+      addLedgerRow([dateStr, txn.description, amountStr, paidStr, dueStr, balanceStr], false, bgColor)
+
+      if (txn.items && txn.items.length > 0) {
+        const items = txn.items
+
+        pdf.setFont("helvetica", "normal")
+        pdf.setFontSize(6)
+
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i]
+          if (yPos > pageHeight - 15) {
+            pdf.addPage()
+            yPos = margin + 5
+          }
+
+          pdf.setFillColor(bgColor[0], bgColor[1], bgColor[2])
+          pdf.rect(margin, yPos - 3, pageWidth - 2 * margin, 5, "F")
+
+          pdf.setTextColor(50, 50, 70)
+          const productInfo = `     - ${item.productName} | ${item.variantName} | ${item.colorName}${item.colorCode ? ` [${item.colorCode}]` : ""}    ${item.quantity} x Rs.${Math.round(item.rate).toLocaleString()} = Rs.${Math.round(item.subtotal).toLocaleString()}`
+          pdf.text(productInfo, margin + 5, yPos)
+          yPos += 4
+        }
+        pdf.setTextColor(0, 0, 0)
+      }
+
+      if (txn.notes && txn.type !== "payment") {
+        pdf.setFillColor(bgColor[0], bgColor[1], bgColor[2])
+        pdf.rect(margin, yPos - 3, pageWidth - 2 * margin, 5, "F")
+
+        pdf.setFontSize(6)
+        pdf.setTextColor(70, 70, 70)
+        pdf.text(`     Note: ${txn.notes}`, margin + 5, yPos)
+        pdf.setTextColor(0, 0, 0)
+        yPos += 5
+      }
+
+      pdf.setDrawColor(200, 200, 200)
+      pdf.line(margin, yPos - 1, pageWidth - margin, yPos - 1)
+      yPos += 2
+    }
+
+    yPos += 10
+    pdf.setDrawColor(100, 100, 100)
+    pdf.line(margin, yPos, pageWidth - margin, yPos)
+    yPos += 8
+
+    pdf.setFontSize(12)
+    pdf.setFont("helvetica", "bold")
+    const closingBalance = transactions.length > 0 ? transactions[0].balance : 0
+    pdf.text(`CLOSING BALANCE: Rs. ${Math.round(closingBalance).toLocaleString()}`, pageWidth - margin, yPos, {
+      align: "right",
+    })
+    yPos += 15
+
+    pdf.setFontSize(9)
+    pdf.setFont("helvetica", "normal")
+    pdf.setTextColor(100, 100, 100)
+    pdf.text("This is a computer-generated statement and does not require a signature.", pageWidth / 2, yPos, {
+      align: "center",
+    })
+    yPos += 5
+    pdf.text("Thank you for your business!", pageWidth / 2, yPos, { align: "center" })
+
+    pdf.save(`Statement-${customerName.replace(/\s+/g, "-")}-${new Date().toISOString().slice(0, 10)}.pdf`)
+
+    toast({
+      title: "Statement Downloaded",
+      description: "Bank-style statement has been downloaded as PDF.",
+    })
+  }
+
+  const formatPhoneForWhatsApp = (phone: string): string | null => {
+    if (!phone || phone.trim().length < 10) {
+      return null
+    }
+    let cleaned = phone.replace(/[^\d+]/g, "")
+    if (cleaned.length < 10) {
+      return null
+    }
+    if (cleaned.startsWith("0")) {
+      cleaned = "92" + cleaned.slice(1)
+    } else if (!cleaned.startsWith("92") && !cleaned.startsWith("+92")) {
+      cleaned = "92" + cleaned
+    }
+    cleaned = cleaned.replace(/^\+/, "")
+    if (cleaned.length < 12) {
+      return null
+    }
+    return cleaned
+  }
+
+  const generateStatementPDFBlob = (): Blob | null => {
+    const pdf = new jsPDF({
+      orientation: "portrait",
+      unit: "mm",
+      format: "a4",
+    })
+
+    const pageWidth = pdf.internal.pageSize.getWidth()
+    const pageHeight = pdf.internal.pageSize.getHeight()
+    const margin = 15
+    let yPos = margin
+
+    const drawHeader = () => {
+      pdf.setFillColor(102, 126, 234)
+      pdf.rect(0, 0, pageWidth, 35, "F")
+
+      pdf.setTextColor(255, 255, 255)
+      pdf.setFontSize(20)
+      pdf.setFont("helvetica", "bold")
+      pdf.text("ACCOUNT STATEMENT", pageWidth / 2, 15, { align: "center" })
+
+      pdf.setFontSize(10)
+      pdf.setFont("helvetica", "normal")
+      pdf.text(receiptSettings.businessName, pageWidth / 2, 23, { align: "center" })
+      pdf.text(receiptSettings.address, pageWidth / 2, 29, { align: "center" })
+
+      pdf.setTextColor(0, 0, 0)
+      yPos = 45
+    }
+
+    drawHeader()
+
+    pdf.setFontSize(10)
+    pdf.setFont("helvetica", "bold")
+    pdf.text("Account Holder:", margin, yPos)
+    pdf.setFont("helvetica", "normal")
+    pdf.text(customerName, margin + 35, yPos)
+    yPos += 6
+
+    pdf.setFont("helvetica", "bold")
+    pdf.text("Phone:", margin, yPos)
+    pdf.setFont("helvetica", "normal")
+    pdf.text(customerPhone, margin + 35, yPos)
+    yPos += 6
+
+    pdf.setFont("helvetica", "bold")
+    pdf.text("Statement Date:", margin, yPos)
+    pdf.setFont("helvetica", "normal")
+    pdf.text(formatDateShort(new Date()), margin + 35, yPos)
+    yPos += 10
+
     pdf.setFillColor(240, 240, 240)
     pdf.rect(margin, yPos, pageWidth - 2 * margin, 20, "F")
     yPos += 5
@@ -586,7 +811,6 @@ export default function CustomerStatement() {
     })
     yPos += 15
 
-    // Transaction header
     pdf.setFillColor(50, 50, 50)
     pdf.rect(margin, yPos, pageWidth - 2 * margin, 8, "F")
     pdf.setTextColor(255, 255, 255)
@@ -600,7 +824,6 @@ export default function CustomerStatement() {
     yPos += 10
     pdf.setTextColor(0, 0, 0)
 
-    // Transaction rows (display in reverse for newest first)
     const sortedTransactions = [...transactions].reverse()
     sortedTransactions.forEach((tx, index) => {
       if (yPos > pageHeight - 30) {
@@ -626,9 +849,7 @@ export default function CustomerStatement() {
         tx.credit > 0 ? `Rs. ${Math.round(tx.credit).toLocaleString()}` : "-",
         pageWidth - margin - 30,
         yPos + 2,
-        {
-          align: "right",
-        },
+        { align: "right" },
       )
       pdf.setFont("helvetica", "bold")
       pdf.text(`Rs. ${Math.round(tx.balance).toLocaleString()}`, pageWidth - margin - 3, yPos + 2, { align: "right" })
@@ -641,7 +862,6 @@ export default function CustomerStatement() {
     pdf.line(margin, yPos, pageWidth - margin, yPos)
     yPos += 10
 
-    // Closing balance
     pdf.setFillColor(102, 126, 234)
     pdf.roundedRect(pageWidth - margin - 70, yPos - 5, 70, 15, 2, 2, "F")
     pdf.setTextColor(255, 255, 255)
@@ -650,43 +870,7 @@ export default function CustomerStatement() {
     pdf.text("CLOSING BALANCE:", pageWidth - margin - 65, yPos + 3)
     pdf.text(`Rs. ${stats.totalOutstanding.toLocaleString()}`, pageWidth - margin - 5, yPos + 3, { align: "right" })
 
-    if (returnBlob) {
-      return pdf.output("blob")
-    }
-    return pdf
-  }
-
-  const generateBankStatement = async () => {
-    const pdf = generatePDFContent(false) as jsPDF
-    pdf.save(`Statement-${customerName.replace(/\s+/g, "-")}-${new Date().toISOString().slice(0, 10)}.pdf`)
-
-    toast({
-      title: "Statement Downloaded",
-      description: "Account statement has been downloaded as PDF.",
-    })
-  }
-
-  const formatPhoneForWhatsApp = (phone: string): string | null => {
-    if (!phone || phone.trim().length < 10) {
-      return null
-    }
-    let cleaned = phone.replace(/[^\d+]/g, "")
-    if (cleaned.length < 10) {
-      return null
-    }
-    if (cleaned.startsWith("0")) {
-      cleaned = "92" + cleaned.slice(1)
-    } else if (!cleaned.startsWith("92") && !cleaned.startsWith("+92")) {
-      // Try to preserve country code if present
-      if (!cleaned.startsWith("+")) {
-        cleaned = "92" + cleaned
-      }
-    }
-    cleaned = cleaned.replace(/^\+/, "")
-    if (cleaned.length < 12) {
-      return null
-    }
-    return cleaned
+    return pdf.output("blob")
   }
 
   const shareToWhatsApp = async () => {
@@ -695,13 +879,13 @@ export default function CustomerStatement() {
     if (!whatsappPhone) {
       toast({
         title: "Invalid Phone Number",
-        description: "Customer phone number is invalid for WhatsApp. Please verify the number.",
+        description: "Customer phone number is invalid for WhatsApp. Please check the number.",
         variant: "destructive",
       })
       return
     }
 
-    const pdfBlob = generatePDFContent(true) as Blob
+    const pdfBlob = generateStatementPDFBlob()
     if (!pdfBlob) return
 
     const fileName = `Statement-${customerName.replace(/\s+/g, "_")}-${formatDateShort(new Date()).replace(/\//g, "-")}.pdf`
