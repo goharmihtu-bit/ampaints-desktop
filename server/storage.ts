@@ -1565,11 +1565,16 @@ export class DatabaseStorage implements IStorage {
     dueDate: Date | null
     notes?: string
   }): Promise<ExtendedSale> {
+    const amount = Number.parseFloat(data.totalAmount)
+    if (isNaN(amount) || amount <= 0) {
+      throw new Error("Invalid manual balance amount: must be a positive number")
+    }
+
     const sale: ExtendedSale = {
       id: crypto.randomUUID(),
       customerName: data.customerName,
       customerPhone: data.customerPhone,
-      totalAmount: data.totalAmount,
+      totalAmount: amount.toString(),
       amountPaid: "0",
       paymentStatus: "unpaid",
       dueDate: data.dueDate,

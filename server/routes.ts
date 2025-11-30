@@ -1675,10 +1675,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return
       }
 
-      // Validate payment doesn't exceed outstanding
-      const totalAmount = Number.parseFloat(sale.totalAmount)
-      const amountPaid = Number.parseFloat(sale.amountPaid)
-      const outstanding = totalAmount - amountPaid
+      const totalAmount = Number.parseFloat(sale.totalAmount || "0")
+      const amountPaid = Number.parseFloat(sale.amountPaid || "0")
+      const outstanding = Math.max(0, totalAmount - amountPaid)
+
+      console.log("[Payment Debug]", {
+        saleId: req.params.id,
+        totalAmount,
+        amountPaid,
+        outstanding,
+        paymentAmount: amount,
+      })
 
       if (amount > outstanding) {
         res.status(400).json({
@@ -2281,22 +2288,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/cloud/test-connection", verifyAuditToken, async (req, res) => {
     try {
       const { connectionUrl } = req.body
-      if (!connectionUrl) {
-        res.status(400).json({ error: "Connection URL is required" })
+
+      if (!connectionUrl || typeof connectionUrl !== "string" || !connectionUrl.trim()) {
+        console.log("[v0] Missing or invalid connection URL")
+        res.status(400).json({
+          error: "Connection URL is required and must be a valid string",
+          ok: false,
+        })
         return
       }
 
-      let cleanUrl = connectionUrl
-      if (cleanUrl.includes("channel_binding=require")) {
-        cleanUrl = cleanUrl.replace("&channel_binding=require", "").replace("?channel_binding=require", "")
+      try {
+        new URL(connectionUrl)
+      } catch (e) {
+        console.log("[v0] Invalid URL format:", e)
+        res.status(400).json({
+          error: "Invalid connection URL format. Must start with 'postgresql://'",
+          ok: false,
+        })
+        return
       }
 
+      let cleanUrl = connectionUrl.trim()
+
+      if (cleanUrl.includes("channel_binding=require")) {
+        cleanUrl = cleanUrl.replace(/[?&]channel_binding=require/g, "")
+      }
+
+      console.log("[v0] Testing connection to cloud database...")
       const { sql, type } = await getCloudSqlClient(cleanUrl)
 
       // Test with a simple query
       const result = await sql`SELECT version() as db_version, now() as server_time`
 
-      console.log(`[Cloud] Connection test successful (${type}):`, result)
+      console.log(`[v0] Cloud connection successful (${type}):`, {
+        version: result[0]?.db_version?.substring(0, 50),
+        time: result[0]?.server_time,
+      })
 
       res.json({
         ok: true,
@@ -2308,12 +2336,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         },
       })
     } catch (error: any) {
-      console.error("Cloud connection test failed:", error)
+      console.error("[v0] Cloud connection test failed:", {
+        message: error.message,
+        code: error.code,
+        name: error.name,
+      })
 
       let errorMessage = "Connection failed"
       if (error.message?.includes("SSL") || error.message?.includes("ssl")) {
         errorMessage = "SSL connection error. Check that sslmode=require is set and credentials are correct."
-      } else if (error.message?.includes("authentication") || error.message?.includes("role")) {
+      } else if (
+        error.message?.includes("authentication") ||
+        error.message?.includes("role") ||
+        error.message?.includes("FATAL")
+      ) {
         errorMessage = "Authentication failed. Check username and password in the connection URL."
       } else if (error.message?.includes("getaddrinfo") || error.message?.includes("ENOTFOUND")) {
         errorMessage = "Cannot reach database server. Check the hostname in your connection URL."
@@ -2321,6 +2357,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         errorMessage = "Connection refused. Check if the server is running and the port is correct."
       } else if (error.message?.includes("timeout")) {
         errorMessage = "Connection timeout. The server is not responding. Check network connectivity."
+      } else if (error.message?.includes("no password")) {
+        errorMessage =
+          "Password not provided in connection URL. Include it in the format: postgresql://user:password@host/db"
       }
 
       res.status(400).json({

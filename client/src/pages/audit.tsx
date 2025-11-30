@@ -402,6 +402,18 @@ export default function Audit() {
       return
     }
 
+    try {
+      new URL(cloudUrl)
+    } catch {
+      setCloudConnectionStatus("error")
+      toast({
+        title: "Invalid URL Format",
+        description: "Please enter a valid PostgreSQL connection URL starting with 'postgresql://'",
+        variant: "destructive",
+      })
+      return
+    }
+
     setCloudConnectionStatus("testing")
     try {
       const data = await authenticatedRequest("/api/cloud/test-connection", {
@@ -413,7 +425,7 @@ export default function Audit() {
         setCloudConnectionStatus("success")
         toast({
           title: "Connection Successful",
-          description: "Successfully connected to cloud database.",
+          description: `Successfully connected to ${data.details?.provider || "cloud database"}`,
         })
       } else {
         setCloudConnectionStatus("error")
@@ -422,9 +434,11 @@ export default function Audit() {
           description: data.error || "Could not connect to cloud database.",
           variant: "destructive",
         })
+        console.log("[v0] Connection error details:", data.details)
       }
     } catch (error: any) {
       setCloudConnectionStatus("error")
+      console.log("[v0] Connection error:", error)
       toast({
         title: "Connection Failed",
         description: error.message || "Could not connect to cloud database.",

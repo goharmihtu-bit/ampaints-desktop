@@ -349,6 +349,18 @@ export default function UnpaidBills() {
   const validatePayment = (amount: number, customer: ConsolidatedCustomer | null): string | null => {
     if (!customer) return "Customer not selected"
     if (amount <= 0) return "Payment amount must be positive"
+
+    console.log("[v0] Payment validation", {
+      amount,
+      customerOutstanding: customer.totalOutstanding,
+      bills: customer.bills.map((b) => ({
+        id: b.id,
+        totalAmount: b.totalAmount,
+        amountPaid: b.amountPaid,
+        isManualBalance: b.isManualBalance,
+      })),
+    })
+
     if (amount > customer.totalOutstanding) {
       return `Payment amount exceeds outstanding balance. Payment: Rs. ${Math.round(amount).toLocaleString()} | Outstanding: Rs. ${Math.round(customer.totalOutstanding).toLocaleString()}`
     }
@@ -377,6 +389,8 @@ export default function UnpaidBills() {
     }
 
     try {
+      await refetchUnpaidSales()
+
       // Sort bills by date (oldest first) and apply payment
       const sortedBills = [...selectedCustomer.bills].sort(
         (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
@@ -388,9 +402,17 @@ export default function UnpaidBills() {
       for (const bill of sortedBills) {
         if (remainingPayment <= 0) break
 
-        const billTotal = Number.parseFloat(bill.totalAmount)
-        const billPaid = Number.parseFloat(bill.amountPaid)
-        const billOutstanding = billTotal - billPaid
+        const billTotal = Number.parseFloat(bill.totalAmount || "0")
+        const billPaid = Number.parseFloat(bill.amountPaid || "0")
+        const billOutstanding = Math.max(0, billTotal - billPaid)
+
+        console.log("[v0] Processing bill", {
+          billId: bill.id,
+          billTotal,
+          billPaid,
+          billOutstanding,
+          isManual: bill.isManualBalance,
+        })
 
         if (billOutstanding > 0) {
           const paymentForThisBill = Math.min(remainingPayment, billOutstanding)
