@@ -1,13 +1,15 @@
+"use client"
+
 // unpaid-bills.tsx - COMPLETE FIXED VERSION
-import { useState, useMemo, useEffect } from "react";
-import { useLocation } from "wouter";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { Textarea } from "@/components/ui/textarea";
+import { useState, useMemo, useEffect } from "react"
+import { useLocation } from "wouter"
+import { useQuery, useMutation } from "@tanstack/react-query"
+import { Card, CardContent } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Badge } from "@/components/ui/badge"
+import { Textarea } from "@/components/ui/textarea"
 import {
   Dialog,
   DialogContent,
@@ -15,44 +17,22 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "@/components/ui/dialog"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import { 
-  CreditCard, 
-  Calendar, 
-  User, 
-  Phone, 
-  Plus, 
-  Trash2, 
-  Eye, 
-  Search, 
-  Banknote, 
-  Printer, 
+  CreditCard,
+  Calendar,
+  User,
+  Phone,
+  Plus,
+  Eye,
+  Search,
+  Banknote,
+  Printer,
   Receipt,
   Filter,
   X,
-  ChevronDown,
-  FileText,
   History,
   MessageSquare,
   Download,
@@ -61,356 +41,361 @@ import {
   CheckCircle,
   MoreHorizontal,
   Sparkles,
-  TrendingUp,
-  BarChart3,
   Wallet,
-  IndianRupee,
-  SortAsc,
-  SortDesc
-} from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
-import { usePermissions } from "@/hooks/use-permissions";
-import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { Sale } from "@shared/schema";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Link } from "wouter";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useDateFormat } from "@/hooks/use-date-format";
-import { useReceiptSettings } from "@/hooks/use-receipt-settings";
-import jsPDF from "jspdf";
+} from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
+import { usePermissions } from "@/hooks/use-permissions"
+import { queryClient, apiRequest } from "@/lib/queryClient"
+import type { Sale } from "@shared/schema"
+import { Skeleton } from "@/components/ui/skeleton"
+import { Link } from "wouter"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { useDateFormat } from "@/hooks/use-date-format"
+import { useReceiptSettings } from "@/hooks/use-receipt-settings"
+import jsPDF from "jspdf"
 
 // FIXED: Complete interface definitions
 interface CustomerSuggestion {
-  customerName: string;
-  customerPhone: string;
-  lastSaleDate: string;
-  totalSpent: number;
-  transactionCount: number;
+  customerName: string
+  customerPhone: string
+  lastSaleDate: string
+  totalSpent: number
+  transactionCount: number
 }
 
 interface PaymentRecord {
-  id: string;
-  saleId: string;
-  amount: string;
-  paymentDate: string;
-  paymentMethod: string;
-  notes?: string;
-  createdAt: string;
+  id: string
+  saleId: string
+  amount: string
+  paymentDate: string
+  paymentMethod: string
+  notes?: string
+  createdAt: string
 }
 
 interface BalanceNote {
-  id: string;
-  saleId: string;
-  note: string;
-  createdBy: string;
-  createdAt: string;
+  id: string
+  saleId: string
+  note: string
+  createdBy: string
+  createdAt: string
 }
 
 // FIXED: Extended Sale interface with missing properties
 interface ExtendedSale extends Sale {
-  dueDate?: string | Date | null;
-  isManualBalance?: boolean;
-  notes?: string | null;
+  dueDate?: string | Date | null
+  isManualBalance?: boolean
+  notes?: string | null
 }
 
 type ConsolidatedCustomer = {
-  customerPhone: string;
-  customerName: string;
-  bills: ExtendedSale[];
-  totalAmount: number;
-  totalPaid: number;
-  totalOutstanding: number;
-  oldestBillDate: Date;
-  daysOverdue: number;
-  paymentHistory: PaymentRecord[];
-  balanceNotes: BalanceNote[];
-};
+  customerPhone: string
+  customerName: string
+  bills: ExtendedSale[]
+  totalAmount: number
+  totalPaid: number
+  totalOutstanding: number
+  oldestBillDate: Date
+  daysOverdue: number
+  paymentHistory: PaymentRecord[]
+  balanceNotes: BalanceNote[]
+}
 
 type FilterType = {
-  search: string;
+  search: string
   amountRange: {
-    min: string;
-    max: string;
-  };
-  daysOverdue: string;
+    min: string
+    max: string
+  }
+  daysOverdue: string
   dueDate: {
-    from: string;
-    to: string;
-  };
-  sortBy: "oldest" | "newest" | "highest" | "lowest" | "name";
-  paymentStatus: "all" | "overdue" | "due_soon" | "no_due_date";
-};
+    from: string
+    to: string
+  }
+  sortBy: "oldest" | "newest" | "highest" | "lowest" | "name"
+  paymentStatus: "all" | "overdue" | "due_soon" | "no_due_date"
+}
 
 export default function UnpaidBills() {
-  const { formatDateShort } = useDateFormat();
-  const { receiptSettings } = useReceiptSettings();
-  const [, setLocation] = useLocation();
-  const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
-  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
-  const [paymentAmount, setPaymentAmount] = useState("");
-  const [paymentNotes, setPaymentNotes] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState("cash");
-  
+  const { formatDateShort } = useDateFormat()
+  const { receiptSettings } = useReceiptSettings()
+  const [, setLocation] = useLocation()
+  const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null)
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false)
+  const [paymentAmount, setPaymentAmount] = useState("")
+  const [paymentNotes, setPaymentNotes] = useState("")
+  const [paymentMethod, setPaymentMethod] = useState("cash")
+
   // Manual balance state
-  const [manualBalanceDialogOpen, setManualBalanceDialogOpen] = useState(false);
+  const [manualBalanceDialogOpen, setManualBalanceDialogOpen] = useState(false)
   const [manualBalanceForm, setManualBalanceForm] = useState({
     customerName: "",
     customerPhone: "",
     totalAmount: "",
     dueDate: "",
-    notes: ""
-  });
-  const [customerSuggestionsOpen, setCustomerSuggestionsOpen] = useState(false);
-  
+    notes: "",
+  })
+  const [customerSuggestionsOpen, setCustomerSuggestionsOpen] = useState(false)
+
   // Due date edit state
-  const [dueDateDialogOpen, setDueDateDialogOpen] = useState(false);
-  const [editingSaleId, setEditingSaleId] = useState<string | null>(null);
+  const [dueDateDialogOpen, setDueDateDialogOpen] = useState(false)
+  const [editingSaleId, setEditingSaleId] = useState<string | null>(null)
   const [dueDateForm, setDueDateForm] = useState({
     dueDate: "",
-    notes: ""
-  });
+    notes: "",
+  })
 
   // Notes state
-  const [notesDialogOpen, setNotesDialogOpen] = useState(false);
-  const [newNote, setNewNote] = useState("");
-  const [viewingNotesCustomerPhone, setViewingNotesCustomerPhone] = useState<string | null>(null);
+  const [notesDialogOpen, setNotesDialogOpen] = useState(false)
+  const [newNote, setNewNote] = useState("")
+  const [viewingNotesCustomerPhone, setViewingNotesCustomerPhone] = useState<string | null>(null)
 
   // Payment history state
-  const [paymentHistoryDialogOpen, setPaymentHistoryDialogOpen] = useState(false);
-  const [viewingPaymentHistoryCustomerPhone, setViewingPaymentHistoryCustomerPhone] = useState<string | null>(null);
-  
+  const [paymentHistoryDialogOpen, setPaymentHistoryDialogOpen] = useState(false)
+  const [viewingPaymentHistoryCustomerPhone, setViewingPaymentHistoryCustomerPhone] = useState<string | null>(null)
+
   // Filter state
-  const [filterOpen, setFilterOpen] = useState(false);
-  const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
-  
-  const { toast } = useToast();
-  const { canEditPayment, canDeletePayment, canEditSales } = usePermissions();
+  const [filterOpen, setFilterOpen] = useState(false)
+  const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false)
+
+  const { toast } = useToast()
+  const { canEditPayment, canDeletePayment, canEditSales } = usePermissions()
 
   const { data: customerSuggestions = [] } = useQuery<CustomerSuggestion[]>({
     queryKey: ["/api/customers/suggestions"],
-  });
+  })
 
   const [filters, setFilters] = useState<FilterType>({
     search: "",
     amountRange: {
       min: "",
-      max: ""
+      max: "",
     },
     daysOverdue: "",
     dueDate: {
       from: "",
-      to: ""
+      to: "",
     },
     sortBy: "oldest",
-    paymentStatus: "all"
-  });
+    paymentStatus: "all",
+  })
 
   // FIXED: Proper typing for unpaid sales
-  const { data: unpaidSales = [], isLoading, refetch: refetchUnpaidSales } = useQuery<ExtendedSale[]>({
+  const {
+    data: unpaidSales = [],
+    isLoading,
+    refetch: refetchUnpaidSales,
+  } = useQuery<ExtendedSale[]>({
     queryKey: ["/api/sales/unpaid"],
     refetchInterval: 30000, // Auto-refresh every 30 seconds
     refetchOnWindowFocus: true, // Refresh when tab becomes active
-  });
+  })
 
   // Fetch payment history for a specific customer
   const { data: paymentHistory = [], refetch: refetchPaymentHistory } = useQuery<PaymentRecord[]>({
     queryKey: [`/api/payment-history/customer/${viewingPaymentHistoryCustomerPhone}`],
     enabled: !!viewingPaymentHistoryCustomerPhone,
-  });
+  })
 
   // Fetch balance notes for all sales of a customer
   const { data: balanceNotes = [], refetch: refetchBalanceNotes } = useQuery<BalanceNote[]>({
     queryKey: [`/api/customer/${viewingNotesCustomerPhone}/notes`],
     enabled: !!viewingNotesCustomerPhone,
-  });
+  })
 
   // FIXED: Auto-refresh data when dialogs open with cleanup
   useEffect(() => {
     if (paymentHistoryDialogOpen && viewingPaymentHistoryCustomerPhone) {
-      refetchPaymentHistory();
+      refetchPaymentHistory()
     }
-  }, [paymentHistoryDialogOpen, viewingPaymentHistoryCustomerPhone, refetchPaymentHistory]);
+  }, [paymentHistoryDialogOpen, viewingPaymentHistoryCustomerPhone, refetchPaymentHistory])
 
   useEffect(() => {
     if (notesDialogOpen && viewingNotesCustomerPhone) {
-      refetchBalanceNotes();
+      refetchBalanceNotes()
     }
-  }, [notesDialogOpen, viewingNotesCustomerPhone, refetchBalanceNotes]);
+  }, [notesDialogOpen, viewingNotesCustomerPhone, refetchBalanceNotes])
 
-  // FIXED: Proper payment mutation with error handling
   const recordPaymentMutation = useMutation({
     mutationFn: async (data: { saleId: string; amount: number; paymentMethod: string; notes?: string }) => {
-      const response = await apiRequest("POST", `/api/sales/${data.saleId}/payment`, { 
+      const response = await apiRequest("POST", `/api/sales/${data.saleId}/payment`, {
         amount: data.amount,
         paymentMethod: data.paymentMethod,
-        notes: data.notes 
-      });
-      return response.json();
+        notes: data.notes,
+      })
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || "Failed to record payment")
+      }
+      return response.json()
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] })
       if (selectedSaleId) {
-        queryClient.invalidateQueries({ queryKey: [`/api/sales/${selectedSaleId}`] });
+        queryClient.invalidateQueries({ queryKey: [`/api/sales/${selectedSaleId}`] })
       }
-      if (viewingPaymentHistoryCustomerPhone) {
-        queryClient.invalidateQueries({ queryKey: [`/api/payment-history/customer/${viewingPaymentHistoryCustomerPhone}`] });
+      // Invalidate customer-specific queries if customer is selected
+      if (selectedCustomer) {
+        queryClient.invalidateQueries({ queryKey: [`/api/sales/customer/${selectedCustomer.customerPhone}`] })
+        queryClient.invalidateQueries({ queryKey: [`/api/payment-history/customer/${selectedCustomer.customerPhone}`] })
       }
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
-      refetchUnpaidSales();
-      toast({ 
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] })
+      refetchUnpaidSales()
+      toast({
         title: "Payment recorded successfully",
-        description: `Payment of Rs. ${parseFloat(paymentAmount).toLocaleString()} has been recorded.`
-      });
-      setPaymentDialogOpen(false);
-      setPaymentAmount("");
-      setPaymentNotes("");
-      setPaymentMethod("cash");
+        description: `Payment of Rs. ${Number.parseFloat(paymentAmount).toLocaleString()} has been recorded.`,
+      })
+      setPaymentDialogOpen(false)
+      setPaymentAmount("")
+      setPaymentNotes("")
+      setPaymentMethod("cash")
+      setSelectedSaleId(null) // Clear selectedSaleId after successful payment
     },
     onError: (error: Error) => {
-      console.error("Payment recording error:", error);
-      toast({ 
-        title: "Failed to record payment", 
-        description: error.message,
-        variant: "destructive" 
-      });
+      console.error("Payment recording error:", error)
+      toast({
+        title: "Failed to record payment",
+        description: error.message || "Please try again",
+        variant: "destructive",
+      })
     },
-  });
+  })
 
   const addNoteMutation = useMutation({
     mutationFn: async (data: { customerPhone: string; note: string }) => {
       const response = await apiRequest("POST", `/api/customer/${data.customerPhone}/notes`, {
-        note: data.note
-      });
-      return response.json();
+        note: data.note,
+      })
+      return response.json()
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] })
       if (viewingNotesCustomerPhone) {
-        queryClient.invalidateQueries({ queryKey: [`/api/customer/${viewingNotesCustomerPhone}/notes`] });
+        queryClient.invalidateQueries({ queryKey: [`/api/customer/${viewingNotesCustomerPhone}/notes`] })
       }
-      refetchUnpaidSales();
-      refetchBalanceNotes();
-      toast({ title: "Note added successfully" });
-      setNotesDialogOpen(false);
-      setNewNote("");
+      refetchUnpaidSales()
+      refetchBalanceNotes()
+      toast({ title: "Note added successfully" })
+      setNotesDialogOpen(false)
+      setNewNote("")
     },
     onError: (error: Error) => {
-      console.error("Add note error:", error);
-      toast({ title: "Failed to add note", variant: "destructive" });
+      console.error("Add note error:", error)
+      toast({ title: "Failed to add note", variant: "destructive" })
     },
-  });
+  })
 
   const createManualBalanceMutation = useMutation({
-    mutationFn: async (data: { customerName: string; customerPhone: string; totalAmount: string; dueDate?: string; notes?: string }) => {
-      const response = await apiRequest("POST", "/api/sales/manual-balance", data);
-      return response.json();
+    mutationFn: async (data: {
+      customerName: string
+      customerPhone: string
+      totalAmount: string
+      dueDate?: string
+      notes?: string
+    }) => {
+      const response = await apiRequest("POST", "/api/sales/manual-balance", data)
+      return response.json()
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
-      refetchUnpaidSales();
-      toast({ 
+      queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] })
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] })
+      refetchUnpaidSales()
+      toast({
         title: "New pending balance added successfully",
-        description: "A new separate bill has been created for this customer"
-      });
-      setManualBalanceDialogOpen(false);
+        description: "A new separate bill has been created for this customer",
+      })
+      setManualBalanceDialogOpen(false)
       setManualBalanceForm({
         customerName: "",
         customerPhone: "",
         totalAmount: "",
         dueDate: "",
-        notes: ""
-      });
+        notes: "",
+      })
     },
     onError: (error: Error) => {
-      console.error("Create manual balance error:", error);
-      toast({ title: "Failed to add pending balance", variant: "destructive" });
+      console.error("Create manual balance error:", error)
+      toast({ title: "Failed to add pending balance", variant: "destructive" })
     },
-  });
+  })
 
   const updateDueDateMutation = useMutation({
     mutationFn: async (data: { saleId: string; dueDate?: string; notes?: string }) => {
       const response = await apiRequest("PATCH", `/api/sales/${data.saleId}/due-date`, {
         dueDate: data.dueDate || null,
-        notes: data.notes
-      });
-      return response.json();
+        notes: data.notes,
+      })
+      return response.json()
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] })
       if (selectedSaleId) {
-        queryClient.invalidateQueries({ queryKey: [`/api/sales/${selectedSaleId}`] });
+        queryClient.invalidateQueries({ queryKey: [`/api/sales/${selectedSaleId}`] })
       }
-      refetchUnpaidSales();
-      toast({ title: "Due date updated successfully" });
-      setDueDateDialogOpen(false);
-      setEditingSaleId(null);
-      setDueDateForm({ dueDate: "", notes: "" });
+      refetchUnpaidSales()
+      toast({ title: "Due date updated successfully" })
+      setDueDateDialogOpen(false)
+      setEditingSaleId(null)
+      setDueDateForm({ dueDate: "", notes: "" })
     },
     onError: (error: Error) => {
-      console.error("Update due date error:", error);
-      toast({ title: "Failed to update due date", variant: "destructive" });
+      console.error("Update due date error:", error)
+      toast({ title: "Failed to update due date", variant: "destructive" })
     },
-  });
+  })
 
   // FIXED: Proper payment validation and processing
   const validatePayment = (amount: number, customer: ConsolidatedCustomer | null): string | null => {
-    if (!customer) return "Customer not selected";
-    if (amount <= 0) return "Payment amount must be positive";
+    if (!customer) return "Customer not selected"
+    if (amount <= 0) return "Payment amount must be positive"
     if (amount > customer.totalOutstanding) {
-      return `Payment amount exceeds outstanding balance. Payment: Rs. ${Math.round(amount).toLocaleString()} | Outstanding: Rs. ${Math.round(customer.totalOutstanding).toLocaleString()}`;
+      return `Payment amount exceeds outstanding balance. Payment: Rs. ${Math.round(amount).toLocaleString()} | Outstanding: Rs. ${Math.round(customer.totalOutstanding).toLocaleString()}`
     }
-    return null;
-  };
+    return null
+  }
 
   const handleRecordPayment = async () => {
     if (!selectedCustomer) {
-      toast({ title: "Please select a customer", variant: "destructive" });
-      return;
+      toast({ title: "Please select a customer", variant: "destructive" })
+      return
     }
 
     if (!paymentAmount) {
-      toast({ title: "Please enter payment amount", variant: "destructive" });
-      return;
+      toast({ title: "Please enter payment amount", variant: "destructive" })
+      return
     }
 
-    const amount = parseFloat(paymentAmount);
-    const validationError = validatePayment(amount, selectedCustomer);
+    const amount = Number.parseFloat(paymentAmount)
+    const validationError = validatePayment(amount, selectedCustomer)
     if (validationError) {
-      toast({ 
+      toast({
         title: validationError,
-        variant: "destructive" 
-      });
-      return;
+        variant: "destructive",
+      })
+      return
     }
 
     try {
       // Sort bills by date (oldest first) and apply payment
-      const sortedBills = [...selectedCustomer.bills].sort((a, b) => 
-        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-      );
+      const sortedBills = [...selectedCustomer.bills].sort(
+        (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+      )
 
-      let remainingPayment = amount;
-      const paymentsToApply: { saleId: string; amount: number }[] = [];
+      let remainingPayment = amount
+      const paymentsToApply: { saleId: string; amount: number }[] = []
 
       for (const bill of sortedBills) {
-        if (remainingPayment <= 0) break;
-        
-        const billTotal = parseFloat(bill.totalAmount);
-        const billPaid = parseFloat(bill.amountPaid);
-        const billOutstanding = billTotal - billPaid;
-        
+        if (remainingPayment <= 0) break
+
+        const billTotal = Number.parseFloat(bill.totalAmount)
+        const billPaid = Number.parseFloat(bill.amountPaid)
+        const billOutstanding = billTotal - billPaid
+
         if (billOutstanding > 0) {
-          const paymentForThisBill = Math.min(remainingPayment, billOutstanding);
-          paymentsToApply.push({ saleId: bill.id, amount: paymentForThisBill });
-          remainingPayment -= paymentForThisBill;
+          const paymentForThisBill = Math.min(remainingPayment, billOutstanding)
+          paymentsToApply.push({ saleId: bill.id, amount: paymentForThisBill })
+          remainingPayment -= paymentForThisBill
         }
       }
 
@@ -420,96 +405,106 @@ export default function UnpaidBills() {
           saleId: payment.saleId,
           amount: payment.amount,
           paymentMethod: paymentMethod,
-          notes: paymentNotes 
-        });
+          notes: paymentNotes,
+        })
       }
-      
+
       // Success handled in mutation onSuccess
     } catch (error) {
-      console.error("Payment processing error:", error);
-      toast({ 
-        title: "Failed to record payment", 
+      console.error("Payment processing error:", error)
+      toast({
+        title: "Failed to record payment",
         description: "Please try again",
-        variant: "destructive" 
-      });
+        variant: "destructive",
+      })
     }
-  };
+  }
 
   const handleAddNote = () => {
     if (!viewingNotesCustomerPhone || !newNote.trim()) {
-      toast({ title: "Please enter a note", variant: "destructive" });
-      return;
+      toast({ title: "Please enter a note", variant: "destructive" })
+      return
     }
 
     addNoteMutation.mutate({
       customerPhone: viewingNotesCustomerPhone,
-      note: newNote.trim()
-    });
-  };
+      note: newNote.trim(),
+    })
+  }
 
   // FIXED: Proper due date status calculation
   const getDueDateStatus = (dueDate: Date | string | null): "no_due_date" | "overdue" | "due_soon" | "future" => {
-    if (!dueDate) return "no_due_date";
-    
-    const due = new Date(dueDate);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    due.setHours(0, 0, 0, 0);
-    
-    const diffTime = due.getTime() - today.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
-    if (diffDays < 0) return "overdue";
-    if (diffDays <= 7) return "due_soon";
-    return "future";
-  };
+    if (!dueDate) return "no_due_date"
+
+    const due = new Date(dueDate)
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    due.setHours(0, 0, 0, 0)
+
+    const diffTime = due.getTime() - today.getTime()
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+
+    if (diffDays < 0) return "overdue"
+    if (diffDays <= 7) return "due_soon"
+    return "future"
+  }
 
   const getDueDateBadge = (dueDate: Date | string | null) => {
-    const status = getDueDateStatus(dueDate);
-    
+    const status = getDueDateStatus(dueDate)
+
     switch (status) {
       case "overdue":
-        return <Badge variant="destructive" className="flex items-center gap-1 glass-destructive">
-          <AlertTriangle className="h-3 w-3" />
-          Overdue
-        </Badge>;
+        return (
+          <Badge variant="destructive" className="flex items-center gap-1 glass-destructive">
+            <AlertTriangle className="h-3 w-3" />
+            Overdue
+          </Badge>
+        )
       case "due_soon":
-        return <Badge variant="secondary" className="flex items-center gap-1 glass-warning">
-          <Clock className="h-3 w-3" />
-          Due Soon
-        </Badge>;
+        return (
+          <Badge variant="secondary" className="flex items-center gap-1 glass-warning">
+            <Clock className="h-3 w-3" />
+            Due Soon
+          </Badge>
+        )
       case "future":
-        return <Badge variant="outline" className="flex items-center gap-1 glass-success">
-          <Calendar className="h-3 w-3" />
-          Upcoming
-        </Badge>;
+        return (
+          <Badge variant="outline" className="flex items-center gap-1 glass-success">
+            <Calendar className="h-3 w-3" />
+            Upcoming
+          </Badge>
+        )
       default:
-        return <Badge variant="outline" className="glass-outline">No Due Date</Badge>;
+        return (
+          <Badge variant="outline" className="glass-outline">
+            No Due Date
+          </Badge>
+        )
     }
-  };
+  }
 
   // FIXED: Proper memoization with correct dependencies
   const consolidatedCustomers = useMemo(() => {
-    const customerMap = new Map<string, ConsolidatedCustomer>();
-    
-    unpaidSales.forEach(sale => {
-      const phone = sale.customerPhone;
-      const existing = customerMap.get(phone);
-      
-      const totalAmount = parseFloat(sale.totalAmount || "0");
-      const totalPaid = parseFloat(sale.amountPaid || "0");
-      const outstanding = totalAmount - totalPaid;
-      const billDate = new Date(sale.createdAt);
-      const daysOverdue = Math.max(0, Math.ceil((new Date().getTime() - billDate.getTime()) / (1000 * 60 * 60 * 24)));
-      
+    const customerMap = new Map<string, ConsolidatedCustomer>()
+
+    unpaidSales.forEach((sale) => {
+      const phone = sale.customerPhone
+      const existing = customerMap.get(phone)
+
+      const totalAmount = Number.parseFloat(sale.totalAmount || "0")
+      const totalPaid = Number.parseFloat(sale.amountPaid || "0")
+      const outstanding = totalAmount - totalPaid
+      const billDate = new Date(sale.createdAt)
+      const daysOverdue = Math.max(0, Math.ceil((new Date().getTime() - billDate.getTime()) / (1000 * 60 * 60 * 24)))
+
       if (existing) {
-        existing.bills.push(sale as ExtendedSale);
-        existing.totalAmount += totalAmount;
-        existing.totalPaid += totalPaid;
-        existing.totalOutstanding += outstanding;
+        existing.bills.push(sale as ExtendedSale)
+        existing.totalAmount += totalAmount
+        existing.totalPaid += totalPaid
+        existing.totalOutstanding += outstanding
         if (billDate < existing.oldestBillDate) {
-          existing.oldestBillDate = billDate;
-          existing.daysOverdue = daysOverdue;
+          existing.oldestBillDate = billDate
+          existing.daysOverdue = daysOverdue
         }
       } else {
         customerMap.set(phone, {
@@ -522,100 +517,105 @@ export default function UnpaidBills() {
           oldestBillDate: billDate,
           daysOverdue,
           paymentHistory: [],
-          balanceNotes: []
-        });
+          balanceNotes: [],
+        })
       }
-    });
-    
-    return Array.from(customerMap.values());
-  }, [unpaidSales]);
+    })
+
+    return Array.from(customerMap.values())
+  }, [unpaidSales])
 
   const filteredAndSortedCustomers = useMemo(() => {
-    let filtered = [...consolidatedCustomers];
+    let filtered = [...consolidatedCustomers]
 
     // Apply search filter
     if (filters.search) {
-      const searchLower = filters.search.toLowerCase();
-      filtered = filtered.filter(customer => 
-        customer.customerName.toLowerCase().includes(searchLower) ||
-        customer.customerPhone.includes(searchLower)
-      );
+      const searchLower = filters.search.toLowerCase()
+      filtered = filtered.filter(
+        (customer) =>
+          customer.customerName.toLowerCase().includes(searchLower) || customer.customerPhone.includes(searchLower),
+      )
     }
 
     // Apply amount range filter
     if (filters.amountRange.min) {
-      const min = parseFloat(filters.amountRange.min);
-      filtered = filtered.filter(customer => customer.totalOutstanding >= min);
+      const min = Number.parseFloat(filters.amountRange.min)
+      filtered = filtered.filter((customer) => customer.totalOutstanding >= min)
     }
     if (filters.amountRange.max) {
-      const max = parseFloat(filters.amountRange.max);
-      filtered = filtered.filter(customer => customer.totalOutstanding <= max);
+      const max = Number.parseFloat(filters.amountRange.max)
+      filtered = filtered.filter((customer) => customer.totalOutstanding <= max)
     }
 
     // Apply days overdue filter
     if (filters.daysOverdue) {
-      const days = parseInt(filters.daysOverdue);
-      filtered = filtered.filter(customer => customer.daysOverdue >= days);
+      const days = Number.parseInt(filters.daysOverdue)
+      filtered = filtered.filter((customer) => customer.daysOverdue >= days)
     }
 
     // Apply payment status filter
     if (filters.paymentStatus !== "all") {
-      filtered = filtered.filter(customer => {
-        return customer.bills.some(bill => {
-          const dueDateStatus = getDueDateStatus(bill.dueDate);
-          return dueDateStatus === filters.paymentStatus;
-        });
-      });
+      filtered = filtered.filter((customer) => {
+        return customer.bills.some((bill) => {
+          const dueDateStatus = getDueDateStatus(bill.dueDate)
+          return dueDateStatus === filters.paymentStatus
+        })
+      })
     }
 
     // Apply due date filter
     if (filters.dueDate.from || filters.dueDate.to) {
-      const fromDate = filters.dueDate.from ? new Date(filters.dueDate.from) : null;
-      const toDate = filters.dueDate.to ? new Date(filters.dueDate.to) : null;
-      
-      filtered = filtered.filter(customer => {
-        return customer.bills.some(bill => {
-          if (!bill.dueDate) return false;
-          const dueDate = new Date(bill.dueDate);
-          
+      const fromDate = filters.dueDate.from ? new Date(filters.dueDate.from) : null
+      const toDate = filters.dueDate.to ? new Date(filters.dueDate.to) : null
+
+      filtered = filtered.filter((customer) => {
+        return customer.bills.some((bill) => {
+          if (!bill.dueDate) return false
+          const dueDate = new Date(bill.dueDate)
+
           if (fromDate && toDate) {
-            return dueDate >= fromDate && dueDate <= toDate;
+            return dueDate >= fromDate && dueDate <= toDate
           } else if (fromDate) {
-            return dueDate >= fromDate;
+            return dueDate >= fromDate
           } else if (toDate) {
-            return dueDate <= toDate;
+            return dueDate <= toDate
           }
-          return false;
-        });
-      });
+          return false
+        })
+      })
     }
 
     // Apply sorting
     switch (filters.sortBy) {
       case "newest":
-        filtered.sort((a, b) => b.oldestBillDate.getTime() - a.oldestBillDate.getTime());
-        break;
+        filtered.sort((a, b) => b.oldestBillDate.getTime() - a.oldestBillDate.getTime())
+        break
       case "highest":
-        filtered.sort((a, b) => b.totalOutstanding - a.totalOutstanding);
-        break;
+        filtered.sort((a, b) => b.totalOutstanding - a.totalOutstanding)
+        break
       case "lowest":
-        filtered.sort((a, b) => a.totalOutstanding - b.totalOutstanding);
-        break;
+        filtered.sort((a, b) => a.totalOutstanding - b.totalOutstanding)
+        break
       case "name":
-        filtered.sort((a, b) => a.customerName.localeCompare(b.customerName));
-        break;
+        filtered.sort((a, b) => a.customerName.localeCompare(b.customerName))
+        break
       case "oldest":
       default:
-        filtered.sort((a, b) => a.oldestBillDate.getTime() - b.oldestBillDate.getTime());
-        break;
+        filtered.sort((a, b) => a.oldestBillDate.getTime() - b.oldestBillDate.getTime())
+        break
     }
 
-    return filtered;
-  }, [consolidatedCustomers, filters]);
+    return filtered
+  }, [consolidatedCustomers, filters])
 
-  const hasActiveFilters = filters.search || filters.amountRange.min || filters.amountRange.max || 
-                          filters.daysOverdue || filters.dueDate.from || filters.dueDate.to || 
-                          filters.paymentStatus !== "all";
+  const hasActiveFilters =
+    filters.search ||
+    filters.amountRange.min ||
+    filters.amountRange.max ||
+    filters.daysOverdue ||
+    filters.dueDate.from ||
+    filters.dueDate.to ||
+    filters.paymentStatus !== "all"
 
   const clearFilters = () => {
     setFilters({
@@ -624,177 +624,193 @@ export default function UnpaidBills() {
       daysOverdue: "",
       dueDate: { from: "", to: "" },
       sortBy: "oldest",
-      paymentStatus: "all"
-    });
-  };
+      paymentStatus: "all",
+    })
+  }
 
-  const [selectedCustomerPhone, setSelectedCustomerPhone] = useState<string | null>(null);
-  const selectedCustomer = consolidatedCustomers.find(c => c.customerPhone === selectedCustomerPhone);
+  const [selectedCustomerPhone, setSelectedCustomerPhone] = useState<string | null>(null)
+  const selectedCustomer = consolidatedCustomers.find((c) => c.customerPhone === selectedCustomerPhone)
 
   // FIXED: Refresh data when customer details dialog opens with cleanup
   useEffect(() => {
     if (selectedCustomerPhone) {
-      refetchUnpaidSales();
+      refetchUnpaidSales()
     }
-  }, [selectedCustomerPhone, refetchUnpaidSales]);
+  }, [selectedCustomerPhone, refetchUnpaidSales])
 
   // Generate PDF Statement as Blob
   const generateStatementPDFBlob = (customer: ConsolidatedCustomer): Blob => {
     const pdf = new jsPDF({
-      orientation: 'portrait',
-      unit: 'mm',
-      format: 'a4'
-    });
+      orientation: "portrait",
+      unit: "mm",
+      format: "a4",
+    })
 
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    const pageHeight = pdf.internal.pageSize.getHeight();
-    const margin = 15;
-    let yPos = margin;
+    const pageWidth = pdf.internal.pageSize.getWidth()
+    const pageHeight = pdf.internal.pageSize.getHeight()
+    const margin = 15
+    let yPos = margin
 
     // Header
-    pdf.setFillColor(102, 126, 234);
-    pdf.rect(0, 0, pageWidth, 35, 'F');
-    
-    pdf.setTextColor(255, 255, 255);
-    pdf.setFontSize(20);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('ACCOUNT STATEMENT', pageWidth / 2, 15, { align: 'center' });
-    
-    pdf.setFontSize(10);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text(receiptSettings.businessName, pageWidth / 2, 23, { align: 'center' });
-    pdf.text(receiptSettings.address, pageWidth / 2, 29, { align: 'center' });
-    
-    pdf.setTextColor(0, 0, 0);
-    yPos = 45;
+    pdf.setFillColor(102, 126, 234)
+    pdf.rect(0, 0, pageWidth, 35, "F")
+
+    pdf.setTextColor(255, 255, 255)
+    pdf.setFontSize(20)
+    pdf.setFont("helvetica", "bold")
+    pdf.text("ACCOUNT STATEMENT", pageWidth / 2, 15, { align: "center" })
+
+    pdf.setFontSize(10)
+    pdf.setFont("helvetica", "normal")
+    pdf.text(receiptSettings.businessName, pageWidth / 2, 23, { align: "center" })
+    pdf.text(receiptSettings.address, pageWidth / 2, 29, { align: "center" })
+
+    pdf.setTextColor(0, 0, 0)
+    yPos = 45
 
     // Customer Info
-    pdf.setFontSize(10);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('Customer:', margin, yPos);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text(customer.customerName, margin + 25, yPos);
-    yPos += 6;
+    pdf.setFontSize(10)
+    pdf.setFont("helvetica", "bold")
+    pdf.text("Customer:", margin, yPos)
+    pdf.setFont("helvetica", "normal")
+    pdf.text(customer.customerName, margin + 25, yPos)
+    yPos += 6
 
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('Phone:', margin, yPos);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text(customer.customerPhone, margin + 25, yPos);
-    yPos += 6;
+    pdf.setFont("helvetica", "bold")
+    pdf.text("Phone:", margin, yPos)
+    pdf.setFont("helvetica", "normal")
+    pdf.text(customer.customerPhone, margin + 25, yPos)
+    yPos += 6
 
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('Date:', margin, yPos);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text(formatDateShort(new Date()), margin + 25, yPos);
-    yPos += 10;
+    pdf.setFont("helvetica", "bold")
+    pdf.text("Date:", margin, yPos)
+    pdf.setFont("helvetica", "normal")
+    pdf.text(formatDateShort(new Date()), margin + 25, yPos)
+    yPos += 10
 
     // Summary Box
-    pdf.setFillColor(240, 240, 240);
-    pdf.rect(margin, yPos, pageWidth - 2 * margin, 20, 'F');
-    yPos += 5;
-    
-    pdf.setFontSize(9);
-    pdf.setFont('helvetica', 'bold');
-    const colWidth = (pageWidth - 2 * margin) / 3;
-    pdf.text('Total Amount', margin + colWidth / 2, yPos, { align: 'center' });
-    pdf.text('Amount Paid', margin + colWidth + colWidth / 2, yPos, { align: 'center' });
-    pdf.text('Outstanding', margin + 2 * colWidth + colWidth / 2, yPos, { align: 'center' });
-    yPos += 6;
-    
-    pdf.setFontSize(11);
-    pdf.text(`Rs. ${Math.round(customer.totalAmount).toLocaleString()}`, margin + colWidth / 2, yPos, { align: 'center' });
-    pdf.text(`Rs. ${Math.round(customer.totalPaid).toLocaleString()}`, margin + colWidth + colWidth / 2, yPos, { align: 'center' });
-    pdf.setTextColor(220, 38, 38);
-    pdf.text(`Rs. ${Math.round(customer.totalOutstanding).toLocaleString()}`, margin + 2 * colWidth + colWidth / 2, yPos, { align: 'center' });
-    pdf.setTextColor(0, 0, 0);
-    yPos += 15;
+    pdf.setFillColor(240, 240, 240)
+    pdf.rect(margin, yPos, pageWidth - 2 * margin, 20, "F")
+    yPos += 5
+
+    pdf.setFontSize(9)
+    pdf.setFont("helvetica", "bold")
+    const colWidth = (pageWidth - 2 * margin) / 3
+    pdf.text("Total Amount", margin + colWidth / 2, yPos, { align: "center" })
+    pdf.text("Amount Paid", margin + colWidth + colWidth / 2, yPos, { align: "center" })
+    pdf.text("Outstanding", margin + 2 * colWidth + colWidth / 2, yPos, { align: "center" })
+    yPos += 6
+
+    pdf.setFontSize(11)
+    pdf.text(`Rs. ${Math.round(customer.totalAmount).toLocaleString()}`, margin + colWidth / 2, yPos, {
+      align: "center",
+    })
+    pdf.text(`Rs. ${Math.round(customer.totalPaid).toLocaleString()}`, margin + colWidth + colWidth / 2, yPos, {
+      align: "center",
+    })
+    pdf.setTextColor(220, 38, 38)
+    pdf.text(
+      `Rs. ${Math.round(customer.totalOutstanding).toLocaleString()}`,
+      margin + 2 * colWidth + colWidth / 2,
+      yPos,
+      { align: "center" },
+    )
+    pdf.setTextColor(0, 0, 0)
+    yPos += 15
 
     // Table Header
-    pdf.setFillColor(50, 50, 50);
-    pdf.rect(margin, yPos, pageWidth - 2 * margin, 8, 'F');
-    pdf.setTextColor(255, 255, 255);
-    pdf.setFontSize(8);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('DATE', margin + 3, yPos + 5.5);
-    pdf.text('BILL NO', margin + 30, yPos + 5.5);
-    pdf.text('TOTAL', margin + 70, yPos + 5.5);
-    pdf.text('PAID', margin + 100, yPos + 5.5);
-    pdf.text('DUE', margin + 130, yPos + 5.5);
-    pdf.text('STATUS', pageWidth - margin - 20, yPos + 5.5);
-    yPos += 10;
-    pdf.setTextColor(0, 0, 0);
+    pdf.setFillColor(50, 50, 50)
+    pdf.rect(margin, yPos, pageWidth - 2 * margin, 8, "F")
+    pdf.setTextColor(255, 255, 255)
+    pdf.setFontSize(8)
+    pdf.setFont("helvetica", "bold")
+    pdf.text("DATE", margin + 3, yPos + 5.5)
+    pdf.text("BILL NO", margin + 30, yPos + 5.5)
+    pdf.text("TOTAL", margin + 70, yPos + 5.5)
+    pdf.text("PAID", margin + 100, yPos + 5.5)
+    pdf.text("DUE", margin + 130, yPos + 5.5)
+    pdf.text("STATUS", pageWidth - margin - 20, yPos + 5.5)
+    yPos += 10
+    pdf.setTextColor(0, 0, 0)
 
     // Bill Rows
     customer.bills.forEach((bill, index) => {
       if (yPos > pageHeight - 30) {
-        pdf.addPage();
-        yPos = margin;
+        pdf.addPage()
+        yPos = margin
       }
 
-      const billTotal = parseFloat(bill.totalAmount || "0");
-      const billPaid = parseFloat(bill.amountPaid || "0");
-      const billDue = billTotal - billPaid;
-      const dueDateStatus = getDueDateStatus(bill.dueDate);
-      
-      const bgColor = index % 2 === 0 ? [250, 250, 250] : [255, 255, 255];
-      pdf.setFillColor(bgColor[0], bgColor[1], bgColor[2]);
-      pdf.rect(margin, yPos - 3, pageWidth - 2 * margin, 8, 'F');
-      
-      pdf.setFontSize(8);
-      pdf.setFont('helvetica', 'normal');
-      pdf.text(formatDateShort(new Date(bill.createdAt)), margin + 3, yPos + 2);
-      pdf.text(bill.id.slice(-8).toUpperCase(), margin + 30, yPos + 2);
-      pdf.text(`Rs. ${Math.round(billTotal).toLocaleString()}`, margin + 70, yPos + 2);
-      pdf.text(`Rs. ${Math.round(billPaid).toLocaleString()}`, margin + 100, yPos + 2);
-      pdf.text(`Rs. ${Math.round(billDue).toLocaleString()}`, margin + 130, yPos + 2);
-      
-      const statusText = dueDateStatus === 'overdue' ? 'Overdue' : 
-                        dueDateStatus === 'due_soon' ? 'Due Soon' : 
-                        dueDateStatus === 'future' ? 'Upcoming' : 'Pending';
-      pdf.text(statusText, pageWidth - margin - 20, yPos + 2);
-      
-      yPos += 8;
-    });
+      const billTotal = Number.parseFloat(bill.totalAmount || "0")
+      const billPaid = Number.parseFloat(bill.amountPaid || "0")
+      const billDue = billTotal - billPaid
+      const dueDateStatus = getDueDateStatus(bill.dueDate)
+
+      const bgColor = index % 2 === 0 ? [250, 250, 250] : [255, 255, 255]
+      pdf.setFillColor(bgColor[0], bgColor[1], bgColor[2])
+      pdf.rect(margin, yPos - 3, pageWidth - 2 * margin, 8, "F")
+
+      pdf.setFontSize(8)
+      pdf.setFont("helvetica", "normal")
+      pdf.text(formatDateShort(new Date(bill.createdAt)), margin + 3, yPos + 2)
+      pdf.text(bill.id.slice(-8).toUpperCase(), margin + 30, yPos + 2)
+      pdf.text(`Rs. ${Math.round(billTotal).toLocaleString()}`, margin + 70, yPos + 2)
+      pdf.text(`Rs. ${Math.round(billPaid).toLocaleString()}`, margin + 100, yPos + 2)
+      pdf.text(`Rs. ${Math.round(billDue).toLocaleString()}`, margin + 130, yPos + 2)
+
+      const statusText =
+        dueDateStatus === "overdue"
+          ? "Overdue"
+          : dueDateStatus === "due_soon"
+            ? "Due Soon"
+            : dueDateStatus === "future"
+              ? "Upcoming"
+              : "Pending"
+      pdf.text(statusText, pageWidth - margin - 20, yPos + 2)
+
+      yPos += 8
+    })
 
     // Footer
-    yPos += 10;
-    pdf.setFillColor(102, 126, 234);
-    pdf.roundedRect(pageWidth - margin - 70, yPos - 5, 70, 15, 2, 2, 'F');
-    pdf.setTextColor(255, 255, 255);
-    pdf.setFontSize(10);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('BALANCE DUE:', pageWidth - margin - 65, yPos + 3);
-    pdf.text(`Rs. ${Math.round(customer.totalOutstanding).toLocaleString()}`, pageWidth - margin - 5, yPos + 3, { align: 'right' });
+    yPos += 10
+    pdf.setFillColor(102, 126, 234)
+    pdf.roundedRect(pageWidth - margin - 70, yPos - 5, 70, 15, 2, 2, "F")
+    pdf.setTextColor(255, 255, 255)
+    pdf.setFontSize(10)
+    pdf.setFont("helvetica", "bold")
+    pdf.text("BALANCE DUE:", pageWidth - margin - 65, yPos + 3)
+    pdf.text(`Rs. ${Math.round(customer.totalOutstanding).toLocaleString()}`, pageWidth - margin - 5, yPos + 3, {
+      align: "right",
+    })
 
-    return pdf.output('blob');
-  };
+    return pdf.output("blob")
+  }
 
   // Generate PDF Statement with Download functionality
   const generateDetailedPDFStatement = (customer: ConsolidatedCustomer) => {
     try {
-      const pdfBlob = generateStatementPDFBlob(customer);
-      const url = URL.createObjectURL(pdfBlob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `Statement-${customer.customerName.replace(/\s+/g, '_')}-${formatDateShort(new Date()).replace(/\//g, '-')}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      
-      toast({ 
+      const pdfBlob = generateStatementPDFBlob(customer)
+      const url = URL.createObjectURL(pdfBlob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `Statement-${customer.customerName.replace(/\s+/g, "_")}-${formatDateShort(new Date()).replace(/\//g, "-")}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+
+      toast({
         title: "Statement Downloaded",
-        description: `PDF Statement for ${customer.customerName} has been downloaded`
-      });
+        description: `PDF Statement for ${customer.customerName} has been downloaded`,
+      })
     } catch (error) {
-      console.error("Error generating PDF:", error);
-      toast({ 
+      console.error("Error generating PDF:", error)
+      toast({
         title: "Failed to generate statement",
         description: "Please try again",
-        variant: "destructive"
-      });
+        variant: "destructive",
+      })
     }
-  };
+  }
 
   // FIXED: CSS styles with proper error handling
   const glassStyles = `
@@ -838,16 +854,16 @@ export default function UnpaidBills() {
       border: 1px solid;
       border-image: linear-gradient(135deg, #667eea 0%, #764ba2 100%) 1;
     }
-  `;
+  `
 
-  const totalOutstanding = consolidatedCustomers.reduce((sum, customer) => sum + customer.totalOutstanding, 0);
-  const totalCustomers = consolidatedCustomers.length;
-  const averageOutstanding = totalCustomers > 0 ? totalOutstanding / totalCustomers : 0;
+  const totalOutstanding = consolidatedCustomers.reduce((sum, customer) => sum + customer.totalOutstanding, 0)
+  const totalCustomers = consolidatedCustomers.length
+  const averageOutstanding = totalCustomers > 0 ? totalOutstanding / totalCustomers : 0
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50 p-6 space-y-6">
       <style>{glassStyles}</style>
-      
+
       {/* Header Section */}
       <div className="glass-card rounded-2xl p-6 border border-white/20 shadow-xl">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
@@ -865,7 +881,7 @@ export default function UnpaidBills() {
                 </p>
               </div>
             </div>
-            
+
             {/* Stats Overview */}
             <div className="flex items-center gap-6 flex-wrap">
               <div className="flex items-center gap-2 text-sm">
@@ -888,11 +904,11 @@ export default function UnpaidBills() {
               </div>
             </div>
           </div>
-          
+
           <div className="flex items-center gap-3 flex-wrap">
             {canEditSales && (
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 onClick={() => setManualBalanceDialogOpen(true)}
                 className="flex items-center gap-2 glass-card border-white/20 hover:border-purple-300 transition-all duration-300"
               >
@@ -901,11 +917,11 @@ export default function UnpaidBills() {
               </Button>
             )}
 
-            <Button 
+            <Button
               className="flex items-center gap-2 gradient-bg text-white hover:shadow-lg transition-all duration-300"
               onClick={() => {
                 if (consolidatedCustomers.length > 0) {
-                  generateDetailedPDFStatement(consolidatedCustomers[0]);
+                  generateDetailedPDFStatement(consolidatedCustomers[0])
                 }
               }}
               disabled={consolidatedCustomers.length === 0}
@@ -923,7 +939,7 @@ export default function UnpaidBills() {
             <Input
               placeholder="Search customers by name or phone..."
               value={filters.search}
-              onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
+              onChange={(e) => setFilters((prev) => ({ ...prev, search: e.target.value }))}
               className="pl-10 glass-card border-white/20 focus:border-purple-300 transition-colors"
             />
           </div>
@@ -931,7 +947,7 @@ export default function UnpaidBills() {
           {/* Sort Dropdown */}
           <Select
             value={filters.sortBy}
-            onValueChange={(value: any) => setFilters(prev => ({ ...prev, sortBy: value }))}
+            onValueChange={(value: any) => setFilters((prev) => ({ ...prev, sortBy: value }))}
           >
             <SelectTrigger className="w-[180px] glass-card border-white/20">
               <SelectValue placeholder="Sort by" />
@@ -948,12 +964,13 @@ export default function UnpaidBills() {
           {/* Filter Button */}
           <DropdownMenu open={filterOpen} onOpenChange={setFilterOpen}>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" className="flex items-center gap-2 glass-card border-white/20 hover:border-purple-300">
+              <Button
+                variant="outline"
+                className="flex items-center gap-2 glass-card border-white/20 hover:border-purple-300 bg-transparent"
+              >
                 <Filter className="h-4 w-4" />
                 Filters
-                {hasActiveFilters && (
-                  <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                )}
+                {hasActiveFilters && <div className="w-2 h-2 bg-red-500 rounded-full"></div>}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-80 glass-card border-white/20 p-0">
@@ -963,7 +980,7 @@ export default function UnpaidBills() {
                   <h4 className="font-semibold text-slate-800">Advanced Filters</h4>
                 </div>
               </div>
-              
+
               <div className="p-4 space-y-4 max-h-96 overflow-y-auto">
                 {/* Payment Status Filter */}
                 <div className="space-y-2">
@@ -973,17 +990,17 @@ export default function UnpaidBills() {
                       { value: "all", label: "All" },
                       { value: "overdue", label: "Overdue" },
                       { value: "due_soon", label: "Due Soon" },
-                      { value: "no_due_date", label: "No Due Date" }
+                      { value: "no_due_date", label: "No Due Date" },
                     ].map((status) => (
                       <Button
                         key={status.value}
                         variant={filters.paymentStatus === status.value ? "default" : "outline"}
                         size="sm"
-                        onClick={() => setFilters(prev => ({ ...prev, paymentStatus: status.value as any }))}
+                        onClick={() => setFilters((prev) => ({ ...prev, paymentStatus: status.value as any }))}
                         className={`text-xs ${
-                          filters.paymentStatus === status.value 
-                            ? 'gradient-bg text-white' 
-                            : 'glass-card border-white/20'
+                          filters.paymentStatus === status.value
+                            ? "gradient-bg text-white"
+                            : "glass-card border-white/20"
                         }`}
                       >
                         {status.label}
@@ -999,20 +1016,24 @@ export default function UnpaidBills() {
                     <Input
                       placeholder="Min"
                       value={filters.amountRange.min}
-                      onChange={(e) => setFilters(prev => ({
-                        ...prev,
-                        amountRange: { ...prev.amountRange, min: e.target.value }
-                      }))}
+                      onChange={(e) =>
+                        setFilters((prev) => ({
+                          ...prev,
+                          amountRange: { ...prev.amountRange, min: e.target.value },
+                        }))
+                      }
                       type="number"
                       className="glass-card border-white/20"
                     />
                     <Input
                       placeholder="Max"
                       value={filters.amountRange.max}
-                      onChange={(e) => setFilters(prev => ({
-                        ...prev,
-                        amountRange: { ...prev.amountRange, max: e.target.value }
-                      }))}
+                      onChange={(e) =>
+                        setFilters((prev) => ({
+                          ...prev,
+                          amountRange: { ...prev.amountRange, max: e.target.value },
+                        }))
+                      }
                       type="number"
                       className="glass-card border-white/20"
                     />
@@ -1025,7 +1046,7 @@ export default function UnpaidBills() {
                   <Input
                     placeholder="e.g., 30"
                     value={filters.daysOverdue}
-                    onChange={(e) => setFilters(prev => ({ ...prev, daysOverdue: e.target.value }))}
+                    onChange={(e) => setFilters((prev) => ({ ...prev, daysOverdue: e.target.value }))}
                     type="number"
                     className="glass-card border-white/20"
                   />
@@ -1038,20 +1059,24 @@ export default function UnpaidBills() {
                     <Input
                       placeholder="From"
                       value={filters.dueDate.from}
-                      onChange={(e) => setFilters(prev => ({
-                        ...prev,
-                        dueDate: { ...prev.dueDate, from: e.target.value }
-                      }))}
+                      onChange={(e) =>
+                        setFilters((prev) => ({
+                          ...prev,
+                          dueDate: { ...prev.dueDate, from: e.target.value },
+                        }))
+                      }
                       type="date"
                       className="glass-card border-white/20"
                     />
                     <Input
                       placeholder="To"
                       value={filters.dueDate.to}
-                      onChange={(e) => setFilters(prev => ({
-                        ...prev,
-                        dueDate: { ...prev.dueDate, to: e.target.value }
-                      }))}
+                      onChange={(e) =>
+                        setFilters((prev) => ({
+                          ...prev,
+                          dueDate: { ...prev.dueDate, to: e.target.value },
+                        }))
+                      }
                       type="date"
                       className="glass-card border-white/20"
                     />
@@ -1092,17 +1117,17 @@ export default function UnpaidBills() {
             )}
             {filters.paymentStatus !== "all" && (
               <Badge variant="outline" className="glass-card border-white/20">
-                Status: {filters.paymentStatus.replace('_', ' ')}
+                Status: {filters.paymentStatus.replace("_", " ")}
               </Badge>
             )}
             {filters.amountRange.min && (
               <Badge variant="outline" className="glass-card border-white/20">
-                Min: Rs. {parseFloat(filters.amountRange.min).toLocaleString()}
+                Min: Rs. {Number.parseFloat(filters.amountRange.min).toLocaleString()}
               </Badge>
             )}
             {filters.amountRange.max && (
               <Badge variant="outline" className="glass-card border-white/20">
-                Max: Rs. {parseFloat(filters.amountRange.max).toLocaleString()}
+                Max: Rs. {Number.parseFloat(filters.amountRange.max).toLocaleString()}
               </Badge>
             )}
             {filters.daysOverdue && (
@@ -1126,12 +1151,17 @@ export default function UnpaidBills() {
       {/* Results Count */}
       <div className="flex items-center justify-between px-2">
         <p className="text-sm text-slate-600">
-          Showing <span className="font-semibold text-slate-800">{filteredAndSortedCustomers.length}</span> of {consolidatedCustomers.length} customers
+          Showing <span className="font-semibold text-slate-800">{filteredAndSortedCustomers.length}</span> of{" "}
+          {consolidatedCustomers.length} customers
         </p>
         {hasActiveFilters && (
           <p className="text-sm text-slate-600">
-            Filtered Outstanding: <span className="font-semibold text-amber-600">
-              Rs. {Math.round(filteredAndSortedCustomers.reduce((sum, customer) => sum + customer.totalOutstanding, 0)).toLocaleString()}
+            Filtered Outstanding:{" "}
+            <span className="font-semibold text-amber-600">
+              Rs.{" "}
+              {Math.round(
+                filteredAndSortedCustomers.reduce((sum, customer) => sum + customer.totalOutstanding, 0),
+              ).toLocaleString()}
             </span>
           </p>
         )}
@@ -1160,10 +1190,12 @@ export default function UnpaidBills() {
               {hasActiveFilters ? "No customers match your filters" : "All clear! No unpaid bills"}
             </h3>
             <p className="text-slate-600 mb-6">
-              {hasActiveFilters ? "Try adjusting your filter criteria" : "All customer payments are up to date and accounted for"}
+              {hasActiveFilters
+                ? "Try adjusting your filter criteria"
+                : "All customer payments are up to date and accounted for"}
             </p>
             {hasActiveFilters && (
-              <Button 
+              <Button
                 onClick={clearFilters}
                 className="gradient-bg text-white hover:shadow-lg transition-all duration-300"
               >
@@ -1175,29 +1207,33 @@ export default function UnpaidBills() {
       ) : (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {filteredAndSortedCustomers.map((customer) => {
-            const hasOverdue = customer.bills.some(bill => getDueDateStatus(bill.dueDate) === 'overdue');
-            const hasDueSoon = customer.bills.some(bill => getDueDateStatus(bill.dueDate) === 'due_soon');
-            const hasManualBalance = customer.bills.some(bill => bill.isManualBalance);
-            
+            const hasOverdue = customer.bills.some((bill) => getDueDateStatus(bill.dueDate) === "overdue")
+            const hasDueSoon = customer.bills.some((bill) => getDueDateStatus(bill.dueDate) === "due_soon")
+            const hasManualBalance = customer.bills.some((bill) => bill.isManualBalance)
+
             return (
-              <div 
-                key={customer.customerPhone} 
+              <div
+                key={customer.customerPhone}
                 className="glass-card rounded-2xl p-6 border border-white/20 hover-elevate group cursor-pointer"
                 onClick={() => {
                   // Refresh data before opening customer details
-                  refetchUnpaidSales();
-                  setLocation(`/customer/${encodeURIComponent(customer.customerPhone)}`);
+                  refetchUnpaidSales()
+                  setLocation(`/customer/${encodeURIComponent(customer.customerPhone)}`)
                 }}
                 data-testid={`card-customer-${customer.customerPhone}`}
               >
                 {/* Header */}
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center gap-3">
-                    <div className={`p-2 rounded-xl ${
-                      hasOverdue ? 'bg-red-100 text-red-600' : 
-                      hasDueSoon ? 'bg-amber-100 text-amber-600' : 
-                      'bg-emerald-100 text-emerald-600'
-                    }`}>
+                    <div
+                      className={`p-2 rounded-xl ${
+                        hasOverdue
+                          ? "bg-red-100 text-red-600"
+                          : hasDueSoon
+                            ? "bg-amber-100 text-amber-600"
+                            : "bg-emerald-100 text-emerald-600"
+                      }`}
+                    >
                       <User className="h-4 w-4" />
                     </div>
                     <div>
@@ -1218,31 +1254,41 @@ export default function UnpaidBills() {
                     )}
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                        <Button variant="ghost" size="sm" className="opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
                           <MoreHorizontal className="h-4 w-4" />
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="glass-card border-white/20">
-                        <DropdownMenuItem onClick={(e) => {
-                          e.stopPropagation();
-                          generateDetailedPDFStatement(customer);
-                        }}>
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            generateDetailedPDFStatement(customer)
+                          }}
+                        >
                           <Download className="h-4 w-4 mr-2" />
                           Download Statement
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={(e) => {
-                          e.stopPropagation();
-                          setViewingPaymentHistoryCustomerPhone(customer.customerPhone);
-                          setPaymentHistoryDialogOpen(true);
-                        }}>
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setViewingPaymentHistoryCustomerPhone(customer.customerPhone)
+                            setPaymentHistoryDialogOpen(true)
+                          }}
+                        >
                           <History className="h-4 w-4 mr-2" />
                           Payment History
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={(e) => {
-                          e.stopPropagation();
-                          setViewingNotesCustomerPhone(customer.customerPhone);
-                          setNotesDialogOpen(true);
-                        }}>
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setViewingNotesCustomerPhone(customer.customerPhone)
+                            setNotesDialogOpen(true)
+                          }}
+                        >
                           <MessageSquare className="h-4 w-4 mr-2" />
                           View Notes
                         </DropdownMenuItem>
@@ -1257,8 +1303,8 @@ export default function UnpaidBills() {
                     <Calendar className="h-3 w-3" />
                     {formatDateShort(customer.oldestBillDate)}
                   </div>
-                  <Badge 
-                    variant={customer.daysOverdue > 30 ? "destructive" : "secondary"} 
+                  <Badge
+                    variant={customer.daysOverdue > 30 ? "destructive" : "secondary"}
                     className="glass-card border-white/20 ml-auto"
                   >
                     {customer.daysOverdue} days
@@ -1302,14 +1348,14 @@ export default function UnpaidBills() {
                 {/* Action Button */}
                 <div className="flex gap-2">
                   <Button
-                    className="flex-1 glass-card border-white/20 text-slate-700 hover:border-purple-300 transition-all"
+                    className="flex-1 glass-card border-white/20 text-slate-700 hover:border-purple-300 transition-all bg-transparent"
                     variant="outline"
                     size="sm"
                     onClick={(e) => {
-                      e.stopPropagation();
+                      e.stopPropagation()
                       // Refresh data before showing details
-                      refetchUnpaidSales();
-                      setSelectedCustomerPhone(customer.customerPhone);
+                      refetchUnpaidSales()
+                      setSelectedCustomerPhone(customer.customerPhone)
                     }}
                   >
                     <Eye className="h-4 w-4 mr-2" />
@@ -1317,29 +1363,30 @@ export default function UnpaidBills() {
                   </Button>
                 </div>
               </div>
-            );
+            )
           })}
         </div>
       )}
 
       {/* Customer Bills Details Dialog */}
-      <Dialog open={!!selectedCustomerPhone && !paymentDialogOpen} onOpenChange={(open) => {
-        if (!open) {
-          setSelectedCustomerPhone(null);
-        } else {
-          // Refresh data when dialog opens
-          refetchUnpaidSales();
-        }
-      }}>
+      <Dialog
+        open={!!selectedCustomerPhone && !paymentDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedCustomerPhone(null)
+          } else {
+            // Refresh data when dialog opens
+            refetchUnpaidSales()
+          }
+        }}
+      >
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto glass-card border-white/20">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <User className="h-5 w-5" />
               Customer Bills - {selectedCustomer?.customerName}
             </DialogTitle>
-            <DialogDescription>
-              Comprehensive view of all bills, payment history, and account notes
-            </DialogDescription>
+            <DialogDescription>Comprehensive view of all bills, payment history, and account notes</DialogDescription>
           </DialogHeader>
           {selectedCustomer && (
             <div className="space-y-6">
@@ -1368,8 +1415,8 @@ export default function UnpaidBills() {
                 <Button
                   variant="outline"
                   onClick={() => {
-                    setViewingPaymentHistoryCustomerPhone(selectedCustomer.customerPhone);
-                    setPaymentHistoryDialogOpen(true);
+                    setViewingPaymentHistoryCustomerPhone(selectedCustomer.customerPhone)
+                    setPaymentHistoryDialogOpen(true)
                   }}
                   className="flex items-center gap-2 glass-card border-white/20"
                 >
@@ -1379,8 +1426,8 @@ export default function UnpaidBills() {
                 <Button
                   variant="outline"
                   onClick={() => {
-                    setViewingNotesCustomerPhone(selectedCustomer.customerPhone);
-                    setNotesDialogOpen(true);
+                    setViewingNotesCustomerPhone(selectedCustomer.customerPhone)
+                    setNotesDialogOpen(true)
                   }}
                   className="flex items-center gap-2 glass-card border-white/20"
                 >
@@ -1401,13 +1448,16 @@ export default function UnpaidBills() {
               <div className="space-y-3">
                 <h3 className="font-medium text-slate-800">Bills ({selectedCustomer.bills.length})</h3>
                 {selectedCustomer.bills.map((bill) => {
-                  const billTotal = parseFloat(bill.totalAmount || "0");
-                  const billPaid = parseFloat(bill.amountPaid || "0");
-                  const billOutstanding = Math.round(billTotal - billPaid);
-                  const isManual = bill.isManualBalance;
-                  
+                  const billTotal = Number.parseFloat(bill.totalAmount || "0")
+                  const billPaid = Number.parseFloat(bill.amountPaid || "0")
+                  const billOutstanding = Math.round(billTotal - billPaid)
+                  const isManual = bill.isManualBalance
+
                   return (
-                    <Card key={bill.id} className={isManual ? "border-blue-200 bg-blue-50" : "glass-card border-white/20"}>
+                    <Card
+                      key={bill.id}
+                      className={isManual ? "border-blue-200 bg-blue-50" : "glass-card border-white/20"}
+                    >
                       <CardContent className="p-4">
                         <div className="flex items-center justify-between gap-4">
                           <div className="flex-1 space-y-2">
@@ -1440,7 +1490,9 @@ export default function UnpaidBills() {
                               {billOutstanding > 0 && (
                                 <div>
                                   <span className="text-slate-600">Due: </span>
-                                  <span className="text-red-600 font-semibold">Rs. {billOutstanding.toLocaleString()}</span>
+                                  <span className="text-red-600 font-semibold">
+                                    Rs. {billOutstanding.toLocaleString()}
+                                  </span>
                                 </div>
                               )}
                             </div>
@@ -1448,7 +1500,11 @@ export default function UnpaidBills() {
                           <div className="flex gap-2">
                             {!isManual && (
                               <Link href={`/bill/${bill.id}`}>
-                                <Button variant="outline" size="sm" className="glass-card border-white/20">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="glass-card border-white/20 bg-transparent"
+                                >
                                   <Printer className="h-4 w-4 mr-1" />
                                   Print
                                 </Button>
@@ -1458,7 +1514,7 @@ export default function UnpaidBills() {
                         </div>
                       </CardContent>
                     </Card>
-                  );
+                  )
                 })}
               </div>
 
@@ -1479,14 +1535,18 @@ export default function UnpaidBills() {
               </div>
 
               <DialogFooter>
-                <Button variant="outline" onClick={() => setSelectedCustomerPhone(null)} className="glass-card border-white/20">
+                <Button
+                  variant="outline"
+                  onClick={() => setSelectedCustomerPhone(null)}
+                  className="glass-card border-white/20"
+                >
                   Close
                 </Button>
                 {canEditPayment && (
                   <Button
                     onClick={() => {
-                      setPaymentDialogOpen(true);
-                      setPaymentAmount(Math.round(selectedCustomer.totalOutstanding).toString());
+                      setPaymentDialogOpen(true)
+                      setPaymentAmount(Math.round(selectedCustomer.totalOutstanding).toString())
                     }}
                     className="gradient-bg text-white"
                   >
@@ -1508,9 +1568,7 @@ export default function UnpaidBills() {
               <Banknote className="h-5 w-5" />
               Record Payment
             </DialogTitle>
-            <DialogDescription>
-              Process payment for {selectedCustomer?.customerName}
-            </DialogDescription>
+            <DialogDescription>Process payment for {selectedCustomer?.customerName}</DialogDescription>
           </DialogHeader>
           {selectedCustomer && (
             <div className="space-y-4">
@@ -1542,9 +1600,7 @@ export default function UnpaidBills() {
                   onChange={(e) => setPaymentAmount(e.target.value)}
                   className="glass-card border-white/20"
                 />
-                <p className="text-xs text-slate-600">
-                  Payment will be applied to oldest bills first
-                </p>
+                <p className="text-xs text-slate-600">Payment will be applied to oldest bills first</p>
               </div>
 
               <div className="space-y-2">
@@ -1576,8 +1632,8 @@ export default function UnpaidBills() {
               </div>
 
               <DialogFooter>
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   onClick={() => setPaymentDialogOpen(false)}
                   className="glass-card border-white/20"
                 >
@@ -1604,9 +1660,7 @@ export default function UnpaidBills() {
               <History className="h-5 w-5" />
               Payment History
             </DialogTitle>
-            <DialogDescription>
-              All payment records for this customer
-            </DialogDescription>
+            <DialogDescription>All payment records for this customer</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             {paymentHistory.length === 0 ? (
@@ -1623,16 +1677,16 @@ export default function UnpaidBills() {
                         <div className="space-y-1">
                           <div className="flex items-center gap-2">
                             <CheckCircle className="h-4 w-4 text-green-500" />
-                            <span className="font-medium">Rs. {parseFloat(payment.amount).toFixed(2)}</span>
-                            <Badge variant="outline" className="glass-card border-white/20">{payment.paymentMethod}</Badge>
+                            <span className="font-medium">Rs. {Number.parseFloat(payment.amount).toFixed(2)}</span>
+                            <Badge variant="outline" className="glass-card border-white/20">
+                              {payment.paymentMethod}
+                            </Badge>
                           </div>
                           <div className="text-sm text-slate-600">
                             {formatDateShort(payment.createdAt)} at {new Date(payment.createdAt).toLocaleTimeString()}
                           </div>
                           {payment.notes && (
-                            <div className="text-sm bg-slate-50 p-2 rounded-md mt-2">
-                              {payment.notes}
-                            </div>
+                            <div className="text-sm bg-slate-50 p-2 rounded-md mt-2">{payment.notes}</div>
                           )}
                         </div>
                       </div>
@@ -1642,8 +1696,8 @@ export default function UnpaidBills() {
               </div>
             )}
             <div className="flex justify-end">
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 onClick={() => setPaymentHistoryDialogOpen(false)}
                 className="glass-card border-white/20"
               >
@@ -1662,9 +1716,7 @@ export default function UnpaidBills() {
               <MessageSquare className="h-5 w-5" />
               Balance Notes
             </DialogTitle>
-            <DialogDescription>
-              Add and view notes for this customer's balance
-            </DialogDescription>
+            <DialogDescription>Add and view notes for this customer's balance</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             {/* Add New Note */}
@@ -1713,8 +1765,8 @@ export default function UnpaidBills() {
             </div>
 
             <div className="flex justify-end">
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 onClick={() => setNotesDialogOpen(false)}
                 className="glass-card border-white/20"
               >
@@ -1733,9 +1785,7 @@ export default function UnpaidBills() {
               <Plus className="h-5 w-5" />
               Add Pending Balance
             </DialogTitle>
-            <DialogDescription>
-              Create a pending balance entry without POS sale
-            </DialogDescription>
+            <DialogDescription>Create a pending balance entry without POS sale</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
@@ -1743,7 +1793,7 @@ export default function UnpaidBills() {
               <div className="relative">
                 <Input
                   value={manualBalanceForm.customerName}
-                  onChange={(e) => setManualBalanceForm(prev => ({ ...prev, customerName: e.target.value }))}
+                  onChange={(e) => setManualBalanceForm((prev) => ({ ...prev, customerName: e.target.value }))}
                   className="pr-12 glass-card border-white/20"
                   placeholder="Type or select customer"
                 />
@@ -1767,12 +1817,12 @@ export default function UnpaidBills() {
                             <CommandItem
                               key={customer.customerPhone}
                               onSelect={() => {
-                                setManualBalanceForm(prev => ({
+                                setManualBalanceForm((prev) => ({
                                   ...prev,
                                   customerName: customer.customerName,
-                                  customerPhone: customer.customerPhone
-                                }));
-                                setCustomerSuggestionsOpen(false);
+                                  customerPhone: customer.customerPhone,
+                                }))
+                                setCustomerSuggestionsOpen(false)
                               }}
                               className="flex flex-col items-start gap-2 py-3 px-4 cursor-pointer"
                             >
@@ -1805,7 +1855,7 @@ export default function UnpaidBills() {
                 id="customerPhone"
                 placeholder="Enter phone number"
                 value={manualBalanceForm.customerPhone}
-                onChange={(e) => setManualBalanceForm(prev => ({ ...prev, customerPhone: e.target.value }))}
+                onChange={(e) => setManualBalanceForm((prev) => ({ ...prev, customerPhone: e.target.value }))}
                 className="glass-card border-white/20"
               />
             </div>
@@ -1816,7 +1866,7 @@ export default function UnpaidBills() {
                 type="number"
                 placeholder="Enter amount"
                 value={manualBalanceForm.totalAmount}
-                onChange={(e) => setManualBalanceForm(prev => ({ ...prev, totalAmount: e.target.value }))}
+                onChange={(e) => setManualBalanceForm((prev) => ({ ...prev, totalAmount: e.target.value }))}
                 className="glass-card border-white/20"
               />
             </div>
@@ -1826,7 +1876,7 @@ export default function UnpaidBills() {
                 id="dueDate"
                 type="date"
                 value={manualBalanceForm.dueDate}
-                onChange={(e) => setManualBalanceForm(prev => ({ ...prev, dueDate: e.target.value }))}
+                onChange={(e) => setManualBalanceForm((prev) => ({ ...prev, dueDate: e.target.value }))}
                 className="glass-card border-white/20"
               />
             </div>
@@ -1836,7 +1886,7 @@ export default function UnpaidBills() {
                 id="notes"
                 placeholder="Add notes about this balance"
                 value={manualBalanceForm.notes}
-                onChange={(e) => setManualBalanceForm(prev => ({ ...prev, notes: e.target.value }))}
+                onChange={(e) => setManualBalanceForm((prev) => ({ ...prev, notes: e.target.value }))}
                 rows={3}
                 className="glass-card border-white/20"
               />
@@ -1845,14 +1895,14 @@ export default function UnpaidBills() {
               <Button
                 variant="outline"
                 onClick={() => {
-                  setManualBalanceDialogOpen(false);
+                  setManualBalanceDialogOpen(false)
                   setManualBalanceForm({
                     customerName: "",
                     customerPhone: "",
                     totalAmount: "",
                     dueDate: "",
-                    notes: ""
-                  });
+                    notes: "",
+                  })
                 }}
                 className="glass-card border-white/20"
               >
@@ -1860,15 +1910,19 @@ export default function UnpaidBills() {
               </Button>
               <Button
                 onClick={() => {
-                  if (!manualBalanceForm.customerName || !manualBalanceForm.customerPhone || !manualBalanceForm.totalAmount) {
-                    toast({ title: "Please fill all required fields", variant: "destructive" });
-                    return;
+                  if (
+                    !manualBalanceForm.customerName ||
+                    !manualBalanceForm.customerPhone ||
+                    !manualBalanceForm.totalAmount
+                  ) {
+                    toast({ title: "Please fill all required fields", variant: "destructive" })
+                    return
                   }
-                  if (parseFloat(manualBalanceForm.totalAmount) <= 0) {
-                    toast({ title: "Amount must be greater than 0", variant: "destructive" });
-                    return;
+                  if (Number.parseFloat(manualBalanceForm.totalAmount) <= 0) {
+                    toast({ title: "Amount must be greater than 0", variant: "destructive" })
+                    return
                   }
-                  createManualBalanceMutation.mutate(manualBalanceForm);
+                  createManualBalanceMutation.mutate(manualBalanceForm)
                 }}
                 disabled={createManualBalanceMutation.isPending}
                 className="gradient-bg text-white"
@@ -1880,5 +1934,5 @@ export default function UnpaidBills() {
         </DialogContent>
       </Dialog>
     </div>
-  );
+  )
 }

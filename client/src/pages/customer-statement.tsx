@@ -314,15 +314,8 @@ export default function CustomerStatement() {
   const transactions = useMemo((): Transaction[] => {
     const txns: Transaction[] = []
 
-    // Calculate total payments per sale (including payment history)
-    const paymentsBySale = new Map<string, number>()
-    paymentHistory.forEach((payment) => {
-      const current = paymentsBySale.get(payment.saleId) || 0
-      paymentsBySale.set(payment.saleId, current + safeParseFloat(payment.amount))
-    })
-
-    // Process sales as bills or cash loans
-    allSalesWithItems.forEach((sale) => {
+    // First, collect all bills in chronological order
+    const billTransactions: Transaction[] = allSalesWithItems.map((sale) => {
       const saleItems: SaleItemDisplay[] =
         sale.saleItems?.map((item) => ({
           productName: item.color?.variant?.product?.productName || "Product",
@@ -338,7 +331,7 @@ export default function CustomerStatement() {
       const paidAmt = safeParseFloat(sale.amountPaid)
       const outstandingAmt = Math.max(0, totalAmt - paidAmt)
 
-      txns.push({
+      return {
         id: `bill-${sale.id}`,
         date: new Date(sale.createdAt),
         type: sale.isManualBalance ? "cash_loan" : "bill",
@@ -355,41 +348,48 @@ export default function CustomerStatement() {
         status: sale.paymentStatus,
         saleId: sale.id,
         items: saleItems.length > 0 ? saleItems : undefined,
-      })
+      }
     })
 
-    // Process payments
-    paymentHistory.forEach((payment) => {
-      txns.push({
-        id: `payment-${payment.id}`,
-        date: new Date(payment.createdAt),
-        type: "payment",
-        description: `Payment Received (${payment.paymentMethod.toUpperCase()})`,
-        reference: payment.id.slice(0, 8).toUpperCase(),
-        debit: 0,
-        credit: safeParseFloat(payment.amount),
-        balance: 0,
-        paid: 0,
-        totalAmount: 0,
-        outstanding: 0,
-        notes: payment.notes || undefined,
-        saleId: payment.saleId,
-      })
-    })
+    // Then collect all payments
+    const paymentTransactions: Transaction[] = paymentHistory.map((payment) => ({
+      id: `payment-${payment.id}`,
+      date: new Date(payment.createdAt),
+      type: "payment",
+      description: `Payment Received (${payment.paymentMethod.toUpperCase()})`,
+      reference: payment.id.slice(0, 8).toUpperCase(),
+      debit: 0,
+      credit: safeParseFloat(payment.amount),
+      balance: 0,
+      paid: 0,
+      totalAmount: 0,
+      outstanding: 0,
+      notes: payment.notes || undefined,
+      saleId: payment.saleId,
+    }))
 
-    // Sort transactions by date (oldest first)
+    // Combine and sort by date (oldest first)
+    txns.push(...billTransactions, ...paymentTransactions)
     txns.sort((a, b) => a.date.getTime() - b.date.getTime())
 
+    // Calculate running balance correctly
     let runningBalance = 0
+    const balanceByTransaction: { [key: string]: number } = {}
+
     txns.forEach((txn) => {
       if (txn.type === "payment") {
-        // Payments reduce the balance
+        // Payments reduce the outstanding balance
         runningBalance -= txn.credit
       } else {
-        // Bills and cash loans increase the balance by the outstanding amount
+        // Bills and cash loans add to outstanding
         runningBalance += txn.outstanding
       }
-      txn.balance = runningBalance
+      balanceByTransaction[txn.id] = runningBalance
+    })
+
+    // Update transactions with calculated balances
+    txns.forEach((txn) => {
+      txn.balance = balanceByTransaction[txn.id] || 0
     })
 
     // Return in reverse order (newest first for display)

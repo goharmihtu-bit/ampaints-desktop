@@ -10,6 +10,7 @@ import {
   paymentHistory,
   returns,
   returnItems,
+  customerAccounts, // Assuming customerAccounts is imported from @shared/schema
   type Product,
   type InsertProduct,
   type Variant,
@@ -37,6 +38,9 @@ import {
 } from "@shared/schema"
 import { db } from "./db"
 import { eq, desc, sql, and } from "drizzle-orm"
+
+// storage.ts - COMPLETE FIXED VERSION WITH ALL MISSING PROPERTIES
+// REMOVED REDUNDANT IMPORTS - Keeping only one set
 
 // FIXED: Extended interfaces with missing properties
 interface ExtendedSale extends Sale {
@@ -208,6 +212,58 @@ export interface IStorage {
 
   // Audit
   getStockOutHistory(): Promise<any[]>
+  recordStockOut(data: {
+    colorId: string
+    quantity: number
+    movementType: "sale" | "return" | "adjustment" | "damage"
+    referenceId?: string
+    referenceType?: string
+    reason?: string
+    notes?: string
+    stockOutDate?: string
+  }): Promise<void>
+  getStockOutHistory(filters?: {
+    colorId?: string
+    startDate?: string
+    endDate?: string
+    movementType?: string
+  }): Promise<any[]>
+
+  // NEW: CUSTOMER ACCOUNTS MANAGEMENT
+  createOrUpdateCustomerAccount(data: {
+    customerPhone: string
+    customerName: string
+    totalPurchased?: string
+    totalPaid?: string
+    currentBalance?: string
+    notes?: string
+  }): Promise<void>
+  getCustomerAccount(customerPhone: string): Promise<any | null>
+  updateCustomerBalance(customerPhone: string, newBalance: string): Promise<void>
+
+  getConsolidatedCustomerAccount(customerPhone: string): Promise<{
+    customerPhone: string
+    customerName: string
+    totalBills: number
+    totalAmount: number
+    totalPaid: number
+    currentOutstanding: number
+    oldestBillDate: Date
+    newestBillDate: Date
+    billCount: number
+    paymentCount: number
+    lastPaymentDate: Date | null
+    averageDaysToPayment: number
+    paymentStatus: "paid" | "partial" | "unpaid"
+  } | null>
+  syncCustomerAccount(customerPhone: string): Promise<void>
+
+  // NEW: STOCK MOVEMENT SUMMARY
+  updateStockMovementSummary(colorId: string, dateStr: string): Promise<void>
+  getStockMovementSummary(colorId: string, dateStr?: string): Promise<any[]>
+
+  // NEW: SYNC STOCK AND BALANCE
+  syncStockAndBalance(): Promise<{ stockUpdated: number; balancesUpdated: number }>
 
   // Cloud Sync Upserts (for import/export with preserved IDs)
   upsertProduct(data: Product): Promise<void>
@@ -219,11 +275,6 @@ export interface IStorage {
   upsertPaymentHistory(data: PaymentHistory): Promise<void>
   upsertReturn(data: Return): Promise<void>
   upsertReturnItem(data: ReturnItem): Promise<void>
-
-  // NEW: Automatic Cloud Sync Methods
-  triggerAutoSync(): Promise<{ success: boolean; message: string }>
-  getSyncQueue(): Promise<any[]>
-  processSyncQueue(): Promise<{ processed: number; failed: number }>
 }
 
 export class DatabaseStorage implements IStorage {
@@ -244,6 +295,7 @@ export class DatabaseStorage implements IStorage {
     payments: false,
     variants: false,
     returns: false,
+    customer_accounts: false, // Added for customer accounts sync
   }
 
   // Helper method to format dates to DD-MM-YYYY
@@ -307,6 +359,7 @@ export class DatabaseStorage implements IStorage {
         payments: false,
         variants: false,
         returns: false,
+        customer_accounts: false,
       }
 
       console.log("[Auto-Sync] Automatic sync completed successfully")
@@ -407,6 +460,7 @@ export class DatabaseStorage implements IStorage {
     if (!settings.cloudDatabaseUrl) return
 
     try {
+      // Assuming @neondatabase/serverless is available and configured
       const { neon } = await import("@neondatabase/serverless")
       const sql = neon(settings.cloudDatabaseUrl)
 
@@ -420,6 +474,7 @@ export class DatabaseStorage implements IStorage {
       const paymentHistory = await this.getAllPaymentHistory()
       const returns = await this.getReturns()
       const returnItems = await this.getReturnItems()
+      const customerAccountsData = await db.select().from(customerAccounts) // Fetch customer accounts
 
       // Export all data to cloud (implementation would go here)
       // This is a simplified version - actual implementation would use proper transactions
@@ -437,6 +492,7 @@ export class DatabaseStorage implements IStorage {
     if (!settings.cloudDatabaseUrl) return
 
     try {
+      // Assuming @neondatabase/serverless is available and configured
       const { neon } = await import("@neondatabase/serverless")
       const sql = neon(settings.cloudDatabaseUrl)
 
@@ -1425,56 +1481,85 @@ export class DatabaseStorage implements IStorage {
     paymentMethod?: string,
     notes?: string,
   ): Promise<ExtendedSale> {
-    const [sale] = await db.select().from(sales).where(eq(sales.id, saleId))
-    if (!sale) {
-      throw new Error("Sale not found")
-    }
+    try {
+      // Validate input
+      if (amount <= 0) {
+        throw new Error("Payment amount must be greater than 0")
+      }
 
-    const currentPaid = Number.parseFloat(sale.amountPaid)
-    const newPaid = currentPaid + amount
-    const total = Number.parseFloat(sale.totalAmount)
-    const previousBalance = total - currentPaid
-    const newBalance = total - newPaid
+      // Get sale details
+      const [sale] = await db.select().from(sales).where(eq(sales.id, saleId))
+      if (!sale) {
+        throw new Error("Sale not found")
+      }
 
-    let paymentStatus: string
-    if (newPaid >= total) {
-      paymentStatus = "paid"
-    } else if (newPaid > 0) {
-      paymentStatus = "partial"
-    } else {
-      paymentStatus = "unpaid"
-    }
+      // Calculate current values
+      const totalAmount = Number.parseFloat(sale.totalAmount)
+      const currentPaid = Number.parseFloat(sale.amountPaid)
+      const previousBalance = totalAmount - currentPaid
 
-    await db
-      .update(sales)
-      .set({
-        amountPaid: newPaid.toString(),
-        paymentStatus,
+      // Validate payment doesn't exceed outstanding
+      if (amount > previousBalance) {
+        throw new Error(`Payment amount (Rs. ${amount}) exceeds outstanding balance (Rs. ${previousBalance})`)
+      }
+
+      // Calculate new values
+      const newPaid = currentPaid + amount
+      const newBalance = totalAmount - newPaid
+
+      // Determine payment status
+      let paymentStatus: string
+      if (newPaid >= totalAmount) {
+        paymentStatus = "paid"
+      } else if (newPaid > 0) {
+        paymentStatus = "partial"
+      } else {
+        paymentStatus = "unpaid"
+      }
+
+      // Update sale with new payment info
+      await db
+        .update(sales)
+        .set({
+          amountPaid: newPaid.toString(),
+          paymentStatus,
+        })
+        .where(eq(sales.id, saleId))
+
+      // Record payment history with correct balance entries
+      const paymentRecord = await this.recordPaymentHistory({
+        saleId,
+        customerPhone: sale.customerPhone,
+        amount,
+        previousBalance: Math.max(0, previousBalance),
+        newBalance: Math.max(0, newBalance),
+        paymentMethod: paymentMethod || "cash",
+        notes,
       })
-      .where(eq(sales.id, saleId))
 
-    await this.recordPaymentHistory({
-      saleId,
-      customerPhone: sale.customerPhone,
-      amount,
-      previousBalance,
-      newBalance,
-      paymentMethod,
-      notes,
-    })
+      // Verify the payment was recorded
+      if (!paymentRecord) {
+        throw new Error("Failed to record payment history")
+      }
 
-    const [updatedSale] = await db.select().from(sales).where(eq(sales.id, saleId))
+      await this.syncCustomerAccount(sale.customerPhone)
 
-    // AUTO-SYNC TRIGGER
-    this.detectChanges("sales")
-    this.detectChanges("payments")
+      const [updatedSale] = await db.select().from(sales).where(eq(sales.id, saleId))
 
-    return {
-      ...updatedSale,
-      dueDate: updatedSale.dueDate,
-      isManualBalance: updatedSale.isManualBalance,
-      notes: updatedSale.notes,
-    } as ExtendedSale
+      // AUTO-SYNC TRIGGER
+      this.detectChanges("sales")
+      this.detectChanges("payments")
+
+      return {
+        ...updatedSale,
+        dueDate: updatedSale.dueDate,
+        isManualBalance: updatedSale.isManualBalance,
+        notes: updatedSale.notes,
+      } as ExtendedSale
+    } catch (error) {
+      console.error("[Storage] Payment update error:", error)
+      throw error
+    }
   }
 
   async createManualBalance(data: {
@@ -1920,10 +2005,26 @@ export class DatabaseStorage implements IStorage {
         }
       }
 
+      if (returnData.returnType === "full_bill" && returnData.saleId) {
+        console.log(`[Storage] Updating sale ${returnData.saleId} to full return`)
+        const [sale] = await db.select().from(sales).where(eq(sales.id, returnData.saleId))
+        if (sale) {
+          await db
+            .update(sales)
+            .set({
+              paymentStatus: "full_return",
+              amountPaid: "0",
+            })
+            .where(eq(sales.id, returnData.saleId))
+        }
+      }
+
       console.log("[Storage] Return created successfully:", returnRecord.id)
 
       // AUTO-SYNC TRIGGER
       this.detectChanges("returns")
+      this.detectChanges("colors")
+      this.detectChanges("sales")
 
       return returnRecord
     } catch (error) {
@@ -1980,10 +2081,12 @@ export class DatabaseStorage implements IStorage {
       if (restoreStock) {
         const newStock = color.stockQuantity + quantity
         await db.update(colors).set({ stockQuantity: newStock }).where(eq(colors.id, colorId))
+        console.log(`[Storage] Quick return stock restored: ${color.colorName} - New stock: ${newStock}`)
       }
 
       // AUTO-SYNC TRIGGER
       this.detectChanges("returns")
+      this.detectChanges("colors")
 
       return returnRecord
     } catch (error) {
@@ -2152,6 +2255,520 @@ export class DatabaseStorage implements IStorage {
         customerPhone: item.sale?.customerPhone,
       }))
       .sort((a, b) => new Date(b.soldAt || 0).getTime() - new Date(a.soldAt || 0).getTime())
+  }
+
+  // ============ NEW: STOCK OUT HISTORY TRACKING ============
+  async recordStockOut(data: {
+    colorId: string
+    quantity: number
+    movementType: "sale" | "return" | "adjustment" | "damage"
+    referenceId?: string
+    referenceType?: string
+    reason?: string
+    notes?: string
+    stockOutDate?: string
+  }): Promise<void> {
+    try {
+      const [color] = await db.select().from(colors).where(eq(colors.id, data.colorId))
+      if (!color) throw new Error("Color not found")
+
+      const previousStock = color.stockQuantity
+      const newStock = Math.max(0, previousStock - data.quantity) // Prevent negative stock
+
+      const actualStockOutDate =
+        data.stockOutDate && this.isValidDDMMYYYY(data.stockOutDate)
+          ? data.stockOutDate
+          : this.formatDateToDDMMYYYY(new Date())
+
+      const stockOutRecord = {
+        id: crypto.randomUUID(),
+        colorId: data.colorId,
+        quantity: data.quantity,
+        previousStock,
+        newStock,
+        movementType: data.movementType,
+        referenceId: data.referenceId || null,
+        referenceType: data.referenceType || null,
+        reason: data.reason || null,
+        stockOutDate: actualStockOutDate,
+        notes: data.notes || null,
+        createdAt: new Date(),
+      }
+
+      // Update color stock
+      await db.update(colors).set({ stockQuantity: newStock }).where(eq(colors.id, data.colorId))
+
+      // Record in stock_out_history (raw SQL since table may not be in Drizzle schema)
+      const { sqliteDb } = await import("./db")
+      if (sqliteDb) {
+        sqliteDb
+          .prepare(`
+          INSERT INTO stock_out_history (id, color_id, quantity, previous_stock, new_stock, movement_type, reference_id, reference_type, reason, stock_out_date, notes, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `)
+          .run(
+            stockOutRecord.id,
+            data.colorId,
+            data.quantity,
+            previousStock,
+            newStock,
+            data.movementType,
+            data.referenceId || null,
+            data.referenceType || null,
+            data.reason || null,
+            actualStockOutDate,
+            data.notes || null,
+            new Date().getTime(),
+          )
+      }
+
+      console.log(`[Storage] Stock out recorded: ${data.colorId}, Type: ${data.movementType}, Qty: ${data.quantity}`)
+
+      // Update stock movement summary
+      await this.updateStockMovementSummary(data.colorId, actualStockOutDate)
+
+      // AUTO-SYNC TRIGGER
+      this.detectChanges("colors")
+    } catch (error) {
+      console.error("[Storage] Error recording stock out:", error)
+      throw error
+    }
+  }
+
+  async getStockOutHistory(filters?: {
+    colorId?: string
+    startDate?: string
+    endDate?: string
+    movementType?: string
+  }): Promise<any[]> {
+    try {
+      const { sqliteDb } = await import("./db")
+      if (!sqliteDb) return []
+
+      let query = "SELECT * FROM stock_out_history WHERE 1=1"
+      const params: any[] = []
+
+      if (filters?.colorId) {
+        query += " AND color_id = ?"
+        params.push(filters.colorId)
+      }
+
+      if (filters?.movementType) {
+        query += " AND movement_type = ?"
+        params.push(filters.movementType)
+      }
+
+      if (filters?.startDate) {
+        query += " AND stock_out_date >= ?"
+        params.push(filters.startDate)
+      }
+
+      if (filters?.endDate) {
+        query += " AND stock_out_date <= ?"
+        params.push(filters.endDate)
+      }
+
+      query += " ORDER BY created_at DESC"
+
+      return sqliteDb.prepare(query).all(...params) as any[]
+    } catch (error) {
+      console.error("[Storage] Error fetching stock out history:", error)
+      return []
+    }
+  }
+
+  // ============ NEW: CUSTOMER ACCOUNTS MANAGEMENT ============
+  async createOrUpdateCustomerAccount(data: {
+    customerPhone: string
+    customerName: string
+    totalPurchased?: string
+    totalPaid?: string
+    currentBalance?: string
+    notes?: string
+  }): Promise<void> {
+    try {
+      const { sqliteDb } = await import("./db")
+      if (!sqliteDb) return
+
+      const existingCustomer = sqliteDb
+        .prepare("SELECT id FROM customer_accounts WHERE customer_phone = ?")
+        .get(data.customerPhone)
+
+      const timestamp = new Date().getTime()
+
+      if (existingCustomer) {
+        const updates: string[] = ["updated_at = ?"]
+        const values: any[] = [timestamp]
+
+        if (data.customerName) {
+          updates.push("customer_name = ?")
+          values.push(data.customerName)
+        }
+        if (data.totalPurchased !== undefined) {
+          updates.push("total_purchased = ?")
+          values.push(data.totalPurchased)
+        }
+        if (data.totalPaid !== undefined) {
+          updates.push("total_paid = ?")
+          values.push(data.totalPaid)
+        }
+        if (data.currentBalance !== undefined) {
+          updates.push("current_balance = ?")
+          values.push(data.currentBalance)
+        }
+        if (data.notes) {
+          updates.push("notes = ?")
+          values.push(data.notes)
+        }
+
+        values.push(data.customerPhone)
+
+        sqliteDb.prepare(`UPDATE customer_accounts SET ${updates.join(", ")} WHERE customer_phone = ?`).run(...values)
+      } else {
+        sqliteDb
+          .prepare(`
+          INSERT INTO customer_accounts (id, customer_phone, customer_name, total_purchased, total_paid, current_balance, last_transaction_date, account_status, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `)
+          .run(
+            crypto.randomUUID(),
+            data.customerPhone,
+            data.customerName || "Unknown",
+            data.totalPurchased || "0",
+            data.totalPaid || "0",
+            data.currentBalance || "0",
+            timestamp,
+            "active",
+            timestamp,
+            timestamp,
+          )
+      }
+
+      console.log(`[Storage] Customer account updated: ${data.customerPhone}`)
+    } catch (error) {
+      console.error("[Storage] Error managing customer account:", error)
+      throw error
+    }
+  }
+
+  async getCustomerAccount(customerPhone: string): Promise<any | null> {
+    try {
+      const { sqliteDb } = await import("./db")
+      if (!sqliteDb) return null
+
+      return sqliteDb.prepare("SELECT * FROM customer_accounts WHERE customer_phone = ?").get(customerPhone)
+    } catch (error) {
+      console.error("[Storage] Error fetching customer account:", error)
+      return null
+    }
+  }
+
+  async updateCustomerBalance(customerPhone: string, newBalance: string): Promise<void> {
+    try {
+      await this.createOrUpdateCustomerAccount({
+        customerPhone,
+        customerName: "", // Keep existing
+        currentBalance: newBalance,
+      })
+    } catch (error) {
+      console.error("[Storage] Error updating customer balance:", error)
+      throw error
+    }
+  }
+
+  async getConsolidatedCustomerAccount(customerPhone: string): Promise<{
+    customerPhone: string
+    customerName: string
+    totalBills: number
+    totalAmount: number
+    totalPaid: number
+    currentOutstanding: number
+    oldestBillDate: Date
+    newestBillDate: Date
+    billCount: number
+    paymentCount: number
+    lastPaymentDate: Date | null
+    averageDaysToPayment: number
+    paymentStatus: "paid" | "partial" | "unpaid"
+  } | null> {
+    try {
+      const customerSales = await this.getSalesByCustomerPhone(customerPhone)
+
+      if (customerSales.length === 0) {
+        return null
+      }
+
+      let totalAmount = 0
+      let totalPaid = 0
+      let paymentCount = 0
+      let lastPaymentDate: Date | null = null
+      const billDates: Date[] = []
+
+      customerSales.forEach((sale) => {
+        totalAmount += Number.parseFloat(sale.totalAmount || "0")
+        totalPaid += Number.parseFloat(sale.amountPaid || "0")
+        billDates.push(new Date(sale.createdAt))
+      })
+
+      // Get payment history for additional metrics
+      const paymentRecords = await this.getPaymentHistoryByCustomer(customerPhone)
+      paymentCount = paymentRecords.length
+
+      if (paymentRecords.length > 0) {
+        // Find the latest payment date
+        const latestPayment = paymentRecords.reduce((latest, current) => {
+          const latestDate = new Date(latest.createdAt)
+          const currentDate = new Date(current.createdAt)
+          return currentDate > latestDate ? current : latest
+        }, paymentRecords[0])
+        lastPaymentDate = new Date(latestPayment.createdAt)
+      }
+
+      // Calculate average days to payment
+      let averageDaysToPayment = 0
+      if (paymentRecords.length > 0 && customerSales.length > 0) {
+        const oldestBill = new Date(Math.min(...billDates.map((d) => d.getTime())))
+        const newestPayment = lastPaymentDate as Date // We know lastPaymentDate is not null here
+
+        // Ensure calculation is not negative if payments occurred before oldest bill (unlikely but safe)
+        const timeDiff = newestPayment.getTime() - oldestBill.getTime()
+        if (timeDiff >= 0) {
+          averageDaysToPayment = Math.ceil(timeDiff / (1000 * 60 * 60 * 24))
+        }
+      }
+
+      const currentOutstanding = totalAmount - totalPaid
+      const paymentStatus: "paid" | "partial" | "unpaid" =
+        currentOutstanding <= 0 ? "paid" : totalPaid > 0 ? "partial" : "unpaid"
+
+      return {
+        customerPhone,
+        customerName: customerSales[0].customerName,
+        totalBills: customerSales.length,
+        totalAmount,
+        totalPaid,
+        currentOutstanding,
+        oldestBillDate: new Date(Math.min(...billDates.map((d) => d.getTime()))),
+        newestBillDate: new Date(Math.max(...billDates.map((d) => d.getTime()))),
+        billCount: customerSales.length,
+        paymentCount,
+        lastPaymentDate,
+        averageDaysToPayment,
+        paymentStatus,
+      }
+    } catch (error) {
+      console.error("[Storage] Error getting consolidated account:", error)
+      throw error
+    }
+  }
+
+  async syncCustomerAccount(customerPhone: string): Promise<void> {
+    try {
+      const consolidatedData = await this.getConsolidatedCustomerAccount(customerPhone)
+      if (!consolidatedData) return
+
+      const existingAccount = await db
+        .select()
+        .from(customerAccounts)
+        .where(eq(customerAccounts.customerPhone, customerPhone))
+
+      if (existingAccount.length > 0) {
+        await db
+          .update(customerAccounts)
+          .set({
+            customerName: consolidatedData.customerName, // Ensure name is updated
+            totalPurchased: consolidatedData.totalAmount.toString(),
+            totalPaid: consolidatedData.totalPaid.toString(),
+            currentBalance: consolidatedData.currentOutstanding.toString(),
+            lastTransactionDate: new Date().getTime(),
+            accountStatus: consolidatedData.paymentStatus === "paid" ? "active" : "active",
+            updatedAt: new Date().getTime(),
+          })
+          .where(eq(customerAccounts.customerPhone, customerPhone))
+      } else {
+        await db.insert(customerAccounts).values({
+          id: crypto.randomUUID(),
+          customerPhone,
+          customerName: consolidatedData.customerName,
+          totalPurchased: consolidatedData.totalAmount.toString(),
+          totalPaid: consolidatedData.totalPaid.toString(),
+          currentBalance: consolidatedData.currentOutstanding.toString(),
+          lastTransactionDate: new Date().getTime(),
+          accountStatus: "active",
+          createdAt: new Date().getTime(),
+          updatedAt: new Date().getTime(),
+        })
+      }
+
+      this.detectChanges("customer_accounts")
+    } catch (error) {
+      console.error("[Storage] Error syncing customer account:", error)
+    }
+  }
+
+  // NEW: STOCK MOVEMENT SUMMARY
+  async updateStockMovementSummary(colorId: string, dateStr: string): Promise<void> {
+    try {
+      const { sqliteDb } = await import("./db")
+      if (!sqliteDb) return
+
+      const [inHistory] = await db
+        .select({
+          totalIn: sql<number>`COALESCE(SUM(${stockInHistory.quantity}), 0)`,
+        })
+        .from(stockInHistory)
+        .where(and(eq(stockInHistory.colorId, colorId), eq(stockInHistory.stockInDate, dateStr)))
+
+      // Get stock out total (from raw table since it might not be in Drizzle)
+      const outHistory = sqliteDb
+        .prepare(
+          "SELECT COALESCE(SUM(quantity), 0) as totalOut FROM stock_out_history WHERE color_id = ? AND stock_out_date = ?",
+        )
+        .get(colorId, dateStr) as { totalOut: number }
+
+      const [color] = await db.select().from(colors).where(eq(colors.id, colorId))
+      if (!color) return
+
+      // Get opening stock (previous day's closing stock)
+      const prevDateObj = new Date(dateStr.split("-").reverse().join("-"))
+      prevDateObj.setDate(prevDateObj.getDate() - 1)
+      const prevDateStr = this.formatDateToDDMMYYYY(prevDateObj)
+
+      const prevSummary = sqliteDb
+        .prepare("SELECT closing_stock FROM stock_movement_summary WHERE color_id = ? AND date_summary = ?")
+        .get(colorId, prevDateStr) as { closing_stock: number } | undefined
+
+      const openingStock = prevSummary?.closing_stock || color.stockQuantity
+      const closingStock = openingStock + (inHistory?.totalIn || 0) - (outHistory?.totalOut || 0)
+
+      const existingSummary = sqliteDb
+        .prepare("SELECT id FROM stock_movement_summary WHERE color_id = ? AND date_summary = ?")
+        .get(colorId, dateStr)
+
+      if (existingSummary) {
+        sqliteDb
+          .prepare(`
+          UPDATE stock_movement_summary 
+          SET opening_stock = ?, total_inward = ?, total_outward = ?, closing_stock = ?, last_updated = ?
+          WHERE color_id = ? AND date_summary = ?
+        `)
+          .run(
+            openingStock,
+            inHistory?.totalIn || 0,
+            outHistory?.totalOut || 0,
+            closingStock,
+            new Date().getTime(),
+            colorId,
+            dateStr,
+          )
+      } else {
+        sqliteDb
+          .prepare(`
+          INSERT INTO stock_movement_summary (id, color_id, date_summary, opening_stock, total_inward, total_outward, closing_stock, last_updated)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `)
+          .run(
+            crypto.randomUUID(),
+            colorId,
+            dateStr,
+            openingStock,
+            inHistory?.totalIn || 0,
+            outHistory?.totalOut || 0,
+            closingStock,
+            new Date().getTime(),
+          )
+      }
+
+      console.log(`[Storage] Stock movement summary updated: ${colorId} on ${dateStr}`)
+    } catch (error) {
+      console.error("[Storage] Error updating stock movement summary:", error)
+      // Don't throw - this is non-critical
+    }
+  }
+
+  async getStockMovementSummary(colorId: string, dateStr?: string): Promise<any[]> {
+    try {
+      const { sqliteDb } = await import("./db")
+      if (!sqliteDb) return []
+
+      if (dateStr) {
+        return sqliteDb
+          .prepare(
+            "SELECT * FROM stock_movement_summary WHERE color_id = ? AND date_summary = ? ORDER BY date_summary DESC",
+          )
+          .all(colorId, dateStr) as any[]
+      } else {
+        return sqliteDb
+          .prepare("SELECT * FROM stock_movement_summary WHERE color_id = ? ORDER BY date_summary DESC LIMIT 30")
+          .all(colorId) as any[]
+      }
+    } catch (error) {
+      console.error("[Storage] Error fetching stock movement summary:", error)
+      return []
+    }
+  }
+
+  // ============ NEW: SYNC STOCK AND BALANCE ============
+  async syncStockAndBalance(): Promise<{ stockUpdated: number; balancesUpdated: number }> {
+    try {
+      let stockUpdated = 0
+      let balancesUpdated = 0
+
+      // Step 1: Sync all sales to customer accounts
+      const allSales = await this.getSalesWithItems()
+
+      for (const sale of allSales) {
+        const totalAmount = Number(sale.totalAmount)
+        const amountPaid = Number(sale.amountPaid)
+        const currentBalance = Math.max(0, totalAmount - amountPaid)
+
+        await this.createOrUpdateCustomerAccount({
+          customerPhone: sale.customerPhone,
+          customerName: sale.customerName,
+          totalPurchased: String(totalAmount),
+          totalPaid: String(amountPaid),
+          currentBalance: String(currentBalance),
+        })
+
+        balancesUpdated++
+      }
+
+      // Step 2: Verify stock quantities match color table
+      const { sqliteDb } = await import("./db")
+      if (sqliteDb) {
+        const allColors = await this.getColors()
+
+        for (const color of allColors) {
+          // Recalculate stock from history
+          const inTotal = sqliteDb
+            .prepare("SELECT COALESCE(SUM(quantity), 0) as total FROM stock_in_history WHERE color_id = ?")
+            .get(color.id) as { total: number }
+
+          const outTotal = sqliteDb
+            .prepare("SELECT COALESCE(SUM(quantity), 0) as total FROM stock_out_history WHERE color_id = ?")
+            .get(color.id) as { total: number }
+
+          const calculatedStock = (inTotal?.total || 0) - (outTotal?.total || 0)
+
+          if (calculatedStock !== color.stockQuantity) {
+            console.log(
+              `[Storage] Stock mismatch for ${color.colorName}: Stored=${color.stockQuantity}, Calculated=${calculatedStock}`,
+            )
+
+            // Update to calculated value
+            await db.update(colors).set({ stockQuantity: calculatedStock }).where(eq(colors.id, color.id))
+
+            stockUpdated++
+          }
+        }
+      }
+
+      console.log(`[Storage] Sync completed: ${stockUpdated} stocks updated, ${balancesUpdated} balances synced`)
+      return { stockUpdated, balancesUpdated }
+    } catch (error) {
+      console.error("[Storage] Error syncing stock and balance:", error)
+      throw error
+    }
   }
 
   // Cloud Sync Upserts - FIXED: ExtendedSale support

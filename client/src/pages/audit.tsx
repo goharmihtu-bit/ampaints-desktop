@@ -588,17 +588,13 @@ export default function Audit() {
       return
     }
 
+    // Export every interval (bidirectional sync is better handled with user choice)
     const intervalId = setInterval(
       async () => {
         try {
-          // Alternate between export and import for bidirectional sync
-          const shouldExport = Math.random() > 0.5
-
-          if (shouldExport) {
-            await handleExportToCloud()
-          } else {
-            await handleImportFromCloud()
-          }
+          console.log("[Auto-Sync] Triggered")
+          // Always export on auto-sync to keep cloud updated with local changes
+          await handleExportToCloud()
         } catch (error) {
           console.error("[Auto-Sync] Error:", error)
           // Don't disable auto-sync, just log the error
@@ -2718,9 +2714,15 @@ export default function Audit() {
                           </p>
                         </div>
 
+                        {/* Add provider detection in the UI to show which provider is connected */}
                         {appSettings?.lastSyncTime && (
                           <div className="mt-3 p-2 bg-gray-50 dark:bg-gray-900/50 rounded text-xs text-muted-foreground">
                             <p>Last Sync: {format(new Date(appSettings.lastSyncTime), "dd/MM/yyyy HH:mm:ss")}</p>
+                            {cloudConnectionStatus === "success" && cloudUrl && (
+                              <p className="mt-1 text-green-600 dark:text-green-400">
+                                Connected to: {cloudUrl.includes("supabase") ? "Supabase" : "Neon"}
+                              </p>
+                            )}
                           </div>
                         )}
 
@@ -2734,44 +2736,6 @@ export default function Audit() {
                             </div>
                           </div>
                         )}
-
-                        {/* Added missing closing div here */}
-                      </div>
-
-                      <div className="mt-4 p-3 bg-gradient-to-r from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-900/10 rounded-lg border border-blue-200 dark:border-blue-800">
-                        <div className="flex items-center justify-between">
-                          <div className="space-y-1">
-                            <p className="text-sm font-medium">Cloud Sync Status</p>
-                            <div className="flex items-center gap-2">
-                              {autoSyncEnabled ? (
-                                <>
-                                  <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse"></div>
-                                  <span className="text-xs text-green-700 dark:text-green-300">
-                                    Auto-syncing every {syncInterval} minute{syncInterval !== 1 ? "s" : ""}
-                                  </span>
-                                </>
-                              ) : (
-                                <>
-                                  <div className="h-2 w-2 bg-gray-400 rounded-full"></div>
-                                  <span className="text-xs text-gray-600 dark:text-gray-400">Manual sync only</span>
-                                </>
-                              )}
-                            </div>
-                          </div>
-                          <div className="text-right text-xs">
-                            {cloudConnectionStatus === "success" ? (
-                              <span className="inline-flex items-center gap-1 text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-900/30 px-2 py-1 rounded">
-                                <Check className="h-3 w-3" />
-                                Connected
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 text-red-700 dark:text-red-300 bg-red-100 dark:bg-red-900/30 px-2 py-1 rounded">
-                                <XCircle className="h-3 w-3" />
-                                Disconnected
-                              </span>
-                            )}
-                          </div>
-                        </div>
                       </div>
 
                       {/* Enhanced sync results display */}

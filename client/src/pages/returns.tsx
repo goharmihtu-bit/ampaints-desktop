@@ -140,6 +140,11 @@ export default function Returns() {
       queryClient.invalidateQueries({ queryKey: ["/api/returns"] })
       queryClient.invalidateQueries({ queryKey: ["/api/sales"] })
       queryClient.invalidateQueries({ queryKey: ["/api/colors"] })
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] })
+
+      // Force immediate refetch for fresh data
+      refetchReturns()
+
       setShowReturnDialog(false)
       setSelectedSale(null)
       setSelectedItems({})
@@ -167,6 +172,11 @@ export default function Returns() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/returns"] })
       queryClient.invalidateQueries({ queryKey: ["/api/colors"] })
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] })
+
+      // Force immediate refetch for fresh data
+      refetchReturns()
+
       setShowQuickReturnDialog(false)
       setQuickReturnForm({
         customerName: "",
@@ -190,6 +200,8 @@ export default function Returns() {
       })
     },
   })
+
+  const isProcessing = createReturnMutation.isPending || quickReturnMutation.isPending
 
   const handleSelectSale = (sale: SaleWithItems) => {
     setSelectedSale(sale)
@@ -645,6 +657,15 @@ export default function Returns() {
                 className="pl-10"
               />
             </div>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => refetchReturns()}
+              disabled={returnsLoading}
+              title="Refresh returns data"
+            >
+              <RotateCcw className={`h-4 w-4 ${returnsLoading ? "animate-spin" : ""}`} />
+            </Button>
           </div>
 
           {/* Returns Table */}
@@ -870,12 +891,21 @@ export default function Returns() {
               Cancel
             </Button>
             <Button
-              variant="destructive"
               onClick={handleSubmitReturn}
-              disabled={createReturnMutation.isPending || Object.keys(selectedItems).length === 0}
+              disabled={isProcessing}
+              className={isProcessing ? "opacity-70 cursor-not-allowed" : ""}
             >
-              {createReturnMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              Process Return
+              {isProcessing ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Processing Return...
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="mr-2 h-4 w-4" />
+                  Process Return
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1095,23 +1125,18 @@ export default function Returns() {
             </Button>
             <Button
               onClick={handleQuickReturnSubmit}
-              disabled={
-                quickReturnMutation.isPending ||
-                !quickReturnForm.customerName ||
-                !quickReturnForm.customerPhone ||
-                !quickReturnForm.colorId
-              }
-              className="min-w-32"
+              disabled={isProcessing}
+              className={isProcessing ? "opacity-70 cursor-not-allowed" : ""}
             >
-              {quickReturnMutation.isPending ? (
+              {isProcessing ? (
                 <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Processing...
                 </>
               ) : (
                 <>
-                  <RotateCcw className="w-4 h-4 mr-2" />
-                  Process Return
+                  <CheckCircle className="mr-2 h-4 w-4" />
+                  Process Quick Return
                 </>
               )}
             </Button>

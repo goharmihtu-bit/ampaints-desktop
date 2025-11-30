@@ -1,98 +1,98 @@
 // db.ts - UPDATED WITH SCHEMA MIGRATION
-import Database from "better-sqlite3";
-import { drizzle, BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
-import * as schema from "@shared/schema";
-import path from "path";
-import fs from "fs";
-import { migrateDatabase } from "./migrations";
+import Database from "better-sqlite3"
+import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3"
+import * as schema from "@shared/schema"
+import path from "path"
+import fs from "fs"
+import { migrateDatabase } from "./migrations"
 
 // This will be set by Electron main process via environment variable
 // Default to current working directory for development
-let dbPath = process.env.DATABASE_PATH || path.join(process.cwd(), "paintpulse.db");
+let dbPath = process.env.DATABASE_PATH || path.join(process.cwd(), "paintpulse.db")
 
 // Function to set database path (called from Electron main process)
 export function setDatabasePath(newPath: string) {
-  dbPath = newPath;
-  
+  dbPath = newPath
+
   // Ensure directory exists
-  const dir = path.dirname(dbPath);
+  const dir = path.dirname(dbPath)
   if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+    fs.mkdirSync(dir, { recursive: true })
   }
-  
+
   // Reinitialize database with new path
-  initializeDatabase();
+  initializeDatabase()
 }
 
 // Get current database path
 export function getDatabasePath(): string {
-  return dbPath;
+  return dbPath
 }
 
-let sqlite: Database.Database;
-let dbInstance: BetterSQLite3Database<typeof schema>;
+let sqlite: Database.Database
+let dbInstance: BetterSQLite3Database<typeof schema>
 
 export function initializeDatabase() {
   try {
-    console.log('[Database] Initializing database at:', dbPath);
-    
+    console.log("[Database] Initializing database at:", dbPath)
+
     // Ensure directory exists
-    const dir = path.dirname(dbPath);
+    const dir = path.dirname(dbPath)
     if (!fs.existsSync(dir)) {
-      console.log('[Database] Creating directory:', dir);
-      fs.mkdirSync(dir, { recursive: true });
+      console.log("[Database] Creating directory:", dir)
+      fs.mkdirSync(dir, { recursive: true })
     }
-    
+
     // Close existing connection if any
     if (sqlite) {
-      console.log('[Database] Closing existing connection');
-      sqlite.close();
+      console.log("[Database] Closing existing connection")
+      sqlite.close()
     }
-    
+
     // Create new connection
-    console.log('[Database] Creating new database connection');
-    sqlite = new Database(dbPath);
-    sqlite.pragma("journal_mode = WAL"); // Write-Ahead Logging for better performance
-    sqlite.pragma("foreign_keys = ON"); // Enable foreign key constraints
-    
+    console.log("[Database] Creating new database connection")
+    sqlite = new Database(dbPath)
+    sqlite.pragma("journal_mode = WAL") // Write-Ahead Logging for better performance
+    sqlite.pragma("foreign_keys = ON") // Enable foreign key constraints
+
     // Initialize drizzle
-    dbInstance = drizzle(sqlite, { schema });
-    
+    dbInstance = drizzle(sqlite, { schema })
+
     // Create tables if they don't exist
-    console.log('[Database] Creating tables and indexes');
-    createTables();
-    
+    console.log("[Database] Creating tables and indexes")
+    createTables()
+
     // Update schema for new columns
-    console.log('[Database] Running schema updates');
-    updateSchema();
-    
+    console.log("[Database] Running schema updates")
+    updateSchema()
+
     // Run migrations to ensure schema compatibility (important for imported databases)
-    console.log('[Database] Running schema migrations');
+    console.log("[Database] Running schema migrations")
     try {
-      migrateDatabase(sqlite);
+      migrateDatabase(sqlite)
     } catch (migrationError) {
-      console.error('[Database] Migration failed, but continuing:', migrationError);
+      console.error("[Database] Migration failed, but continuing:", migrationError)
       // Continue even if migration fails
     }
-    
-    console.log('[Database] ✅ Database initialized successfully');
+
+    console.log("[Database] ✅ Database initialized successfully")
   } catch (error) {
-    console.error('[Database] ❌ ERROR initializing database:', error);
-    console.error('[Database] Database path:', dbPath);
-    
+    console.error("[Database] ❌ ERROR initializing database:", error)
+    console.error("[Database] Database path:", dbPath)
+
     // Try to create a fresh database if initialization fails
     try {
-      console.log('[Database] Attempting to create fresh database...');
+      console.log("[Database] Attempting to create fresh database...")
       if (fs.existsSync(dbPath)) {
-        const backupPath = `${dbPath}.backup-${Date.now()}`;
-        console.log('[Database] Backing up corrupted database to:', backupPath);
-        fs.copyFileSync(dbPath, backupPath);
-        fs.unlinkSync(dbPath);
+        const backupPath = `${dbPath}.backup-${Date.now()}`
+        console.log("[Database] Backing up corrupted database to:", backupPath)
+        fs.copyFileSync(dbPath, backupPath)
+        fs.unlinkSync(dbPath)
       }
-      initializeDatabase(); // Recursive call to try again
+      initializeDatabase() // Recursive call to try again
     } catch (recoveryError) {
-      console.error('[Database] ❌ Failed to recover database:', recoveryError);
-      throw recoveryError;
+      console.error("[Database] ❌ Failed to recover database:", recoveryError)
+      throw recoveryError
     }
   }
 }
@@ -100,45 +100,51 @@ export function initializeDatabase() {
 // NEW FUNCTION: Update schema for new columns
 function updateSchema() {
   try {
-    console.log('[Database] Checking for schema updates...');
-    
+    console.log("[Database] Checking for schema updates...")
+
     // Check if cloud_database_url column exists in settings table
-    const checkColumn = sqlite.prepare(`
+    const checkColumn = sqlite
+      .prepare(`
       SELECT name FROM pragma_table_info('settings') WHERE name = 'cloud_database_url'
-    `).get();
-    
+    `)
+      .get()
+
     if (!checkColumn) {
-      console.log('[Database] Adding missing columns to settings table...');
-      
+      console.log("[Database] Adding missing columns to settings table...")
+
       // Add missing columns for cloud sync
       sqlite.exec(`
         ALTER TABLE settings ADD COLUMN cloud_database_url TEXT;
         ALTER TABLE settings ADD COLUMN cloud_sync_enabled INTEGER NOT NULL DEFAULT 0;
         ALTER TABLE settings ADD COLUMN last_sync_time INTEGER;
-      `);
-      
-      console.log('[Database] ✅ Cloud sync columns added to settings table');
+      `)
+
+      console.log("[Database] ✅ Cloud sync columns added to settings table")
     }
 
     // Check if date_format column exists (added in previous migrations)
-    const checkDateFormat = sqlite.prepare(`
+    const checkDateFormat = sqlite
+      .prepare(`
       SELECT name FROM pragma_table_info('settings') WHERE name = 'date_format'
-    `).get();
-    
+    `)
+      .get()
+
     if (!checkDateFormat) {
-      console.log('[Database] Adding date_format column to settings table...');
-      sqlite.exec(`ALTER TABLE settings ADD COLUMN date_format TEXT NOT NULL DEFAULT 'DD-MM-YYYY'`);
-      console.log('[Database] ✅ date_format column added to settings table');
+      console.log("[Database] Adding date_format column to settings table...")
+      sqlite.exec(`ALTER TABLE settings ADD COLUMN date_format TEXT NOT NULL DEFAULT 'DD-MM-YYYY'`)
+      console.log("[Database] ✅ date_format column added to settings table")
     }
 
     // Check if permission columns exist
-    const checkPermColumns = sqlite.prepare(`
+    const checkPermColumns = sqlite
+      .prepare(`
       SELECT name FROM pragma_table_info('settings') WHERE name = 'perm_stock_delete'
-    `).get();
-    
+    `)
+      .get()
+
     if (!checkPermColumns) {
-      console.log('[Database] Adding permission columns to settings table...');
-      
+      console.log("[Database] Adding permission columns to settings table...")
+
       // Add all permission columns
       sqlite.exec(`
         ALTER TABLE settings ADD COLUMN perm_stock_delete INTEGER NOT NULL DEFAULT 1;
@@ -149,9 +155,9 @@ function updateSchema() {
         ALTER TABLE settings ADD COLUMN perm_payment_edit INTEGER NOT NULL DEFAULT 1;
         ALTER TABLE settings ADD COLUMN perm_payment_delete INTEGER NOT NULL DEFAULT 1;
         ALTER TABLE settings ADD COLUMN perm_database_access INTEGER NOT NULL DEFAULT 1;
-      `);
-      
-      console.log('[Database] ✅ Permission columns added to settings table');
+      `)
+
+      console.log("[Database] ✅ Permission columns added to settings table")
     }
 
     // Update existing settings row with default values for new columns
@@ -170,23 +176,22 @@ function updateSchema() {
         perm_payment_delete = COALESCE(perm_payment_delete, 1),
         perm_database_access = COALESCE(perm_database_access, 1)
       WHERE id = 'default'
-    `);
-    
-    updateStmt.run();
-    console.log('[Database] ✅ Settings table updated with default values');
+    `)
 
+    updateStmt.run()
+    console.log("[Database] ✅ Settings table updated with default values")
   } catch (error) {
-    console.error('[Database] ❌ Error updating schema:', error);
+    console.error("[Database] ❌ Error updating schema:", error)
     // Don't throw error - continue with existing schema
   }
 }
 
 function createTables() {
   if (!sqlite) {
-    console.error('[Database] ❌ Cannot create tables - SQLite instance not initialized');
-    return;
+    console.error("[Database] ❌ Cannot create tables - SQLite instance not initialized")
+    return
   }
-  
+
   try {
     // Create products table
     sqlite.exec(`
@@ -196,8 +201,8 @@ function createTables() {
         product_name TEXT NOT NULL,
         created_at INTEGER NOT NULL
       );
-    `);
-  
+    `)
+
     // Create variants table
     sqlite.exec(`
       CREATE TABLE IF NOT EXISTS variants (
@@ -208,8 +213,8 @@ function createTables() {
         created_at INTEGER NOT NULL,
         FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
       );
-    `);
-  
+    `)
+
     // Create colors table
     sqlite.exec(`
       CREATE TABLE IF NOT EXISTS colors (
@@ -222,8 +227,8 @@ function createTables() {
         created_at INTEGER NOT NULL,
         FOREIGN KEY (variant_id) REFERENCES variants(id) ON DELETE CASCADE
       );
-    `);
-  
+    `)
+
     // Create sales table
     sqlite.exec(`
       CREATE TABLE IF NOT EXISTS sales (
@@ -238,8 +243,17 @@ function createTables() {
         notes TEXT,
         created_at INTEGER NOT NULL
       );
-    `);
-  
+    `)
+
+    if (!sqlite.prepare(`SELECT name FROM pragma_table_info('sales') WHERE name = 'sale_type'`).get()) {
+      sqlite.exec(`
+        ALTER TABLE sales ADD COLUMN sale_type TEXT NOT NULL DEFAULT 'normal';
+        ALTER TABLE sales ADD COLUMN discount_amount TEXT NOT NULL DEFAULT '0';
+        ALTER TABLE sales ADD COLUMN discount_percentage TEXT;
+        ALTER TABLE sales ADD COLUMN stock_updated INTEGER NOT NULL DEFAULT 0;
+      `)
+    }
+
     // Create sale_items table
     sqlite.exec(`
       CREATE TABLE IF NOT EXISTS sale_items (
@@ -252,7 +266,7 @@ function createTables() {
         FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE CASCADE,
         FOREIGN KEY (color_id) REFERENCES colors(id)
       );
-    `);
+    `)
 
     // Create stock_in_history table
     sqlite.exec(`
@@ -267,10 +281,10 @@ function createTables() {
         created_at INTEGER NOT NULL,
         FOREIGN KEY (color_id) REFERENCES colors(id) ON DELETE CASCADE
       );
-    `);
-  
+    `)
+
     // Create settings table with ALL columns INCLUDING AUDIT PIN
-    console.log('[Database] Creating settings table...');
+    console.log("[Database] Creating settings table...")
     sqlite.exec(`
       CREATE TABLE IF NOT EXISTS settings (
         id TEXT PRIMARY KEY DEFAULT 'default',
@@ -296,18 +310,18 @@ function createTables() {
         last_sync_time INTEGER,
         updated_at INTEGER NOT NULL
       );
-    `);
-    console.log('[Database] ✅ Settings table created');
+    `)
+    console.log("[Database] ✅ Settings table created")
 
     // Insert default settings if table is empty
     try {
-      const checkStmt = sqlite.prepare('SELECT COUNT(*) as count FROM settings');
-      const checkResult = checkStmt.get() as { count: number };
-      
+      const checkStmt = sqlite.prepare("SELECT COUNT(*) as count FROM settings")
+      const checkResult = checkStmt.get() as { count: number }
+
       if (checkResult.count === 0) {
-        console.log('[Database] Inserting default settings...');
-        const defaultTimestamp = new Date().getTime();
-        
+        console.log("[Database] Inserting default settings...")
+        const defaultTimestamp = new Date().getTime()
+
         sqlite.exec(`
           INSERT INTO settings (
             id, 
@@ -356,11 +370,11 @@ function createTables() {
             NULL,
             ${defaultTimestamp}
           )
-        `);
-        console.log('[Database] ✅ Default settings inserted');
+        `)
+        console.log("[Database] ✅ Default settings inserted")
       }
     } catch (settingsError) {
-      console.log('[Database] Settings already exist or error:', settingsError);
+      console.log("[Database] Settings already exist or error:", settingsError)
     }
 
     // Create returns table
@@ -375,11 +389,12 @@ function createTables() {
         reason TEXT,
         status TEXT NOT NULL DEFAULT 'completed',
         created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE SET NULL
       );
-    `);
+    `)
 
-    // Create return_items table
+    // Create return_items table with better tracking
     sqlite.exec(`
       CREATE TABLE IF NOT EXISTS return_items (
         id TEXT PRIMARY KEY,
@@ -390,12 +405,13 @@ function createTables() {
         rate TEXT NOT NULL,
         subtotal TEXT NOT NULL,
         stock_restored INTEGER NOT NULL DEFAULT 1,
+        created_at INTEGER NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (return_id) REFERENCES returns(id) ON DELETE CASCADE,
         FOREIGN KEY (color_id) REFERENCES colors(id),
         FOREIGN KEY (sale_item_id) REFERENCES sale_items(id) ON DELETE SET NULL
       );
-    `);
-  
+    `)
+
     // Create payment_history table
     sqlite.exec(`
       CREATE TABLE IF NOT EXISTS payment_history (
@@ -410,240 +426,222 @@ function createTables() {
         created_at INTEGER NOT NULL,
         FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE CASCADE
       );
-    `);
-  
-    // Create composite indexes for performance and duplicate handling
-    console.log('[Database] Creating indexes...');
-    
-    // Product indexes for fast lookups with duplicates
-    try {
-      sqlite.exec('CREATE INDEX IF NOT EXISTS idx_products_company_name ON products(company, product_name)');
-    } catch (error) {
-      console.log('[Database] Index already exists: idx_products_company_name');
-    }
-    
-    try {
-      sqlite.exec('CREATE INDEX IF NOT EXISTS idx_products_company ON products(company)');
-    } catch (error) {
-      console.log('[Database] Index already exists: idx_products_company');
-    }
-    
-    // Variant indexes for fast lookups with duplicates
-    try {
-      sqlite.exec('CREATE INDEX IF NOT EXISTS idx_variants_product_created ON variants(product_id, created_at)');
-    } catch (error) {
-      console.log('[Database] Index already exists: idx_variants_product_created');
-    }
-    
-    try {
-      sqlite.exec('CREATE INDEX IF NOT EXISTS idx_variants_product_packing_rate ON variants(product_id, packing_size, rate)');
-    } catch (error) {
-      console.log('[Database] Index already exists: idx_variants_product_packing_rate');
-    }
-    
-    try {
-      sqlite.exec('CREATE INDEX IF NOT EXISTS idx_variants_packing_size ON variants(packing_size)');
-    } catch (error) {
-      console.log('[Database] Index already exists: idx_variants_packing_size');
-    }
-    
-    // Color indexes for fast lookups with duplicates
-    try {
-      sqlite.exec('CREATE INDEX IF NOT EXISTS idx_colors_variant_created ON colors(variant_id, created_at)');
-    } catch (error) {
-      console.log('[Database] Index already exists: idx_colors_variant_created');
-    }
-    
-    try {
-      sqlite.exec('CREATE INDEX IF NOT EXISTS idx_colors_variant_code ON colors(variant_id, color_code)');
-    } catch (error) {
-      console.log('[Database] Index already exists: idx_colors_variant_code');
-    }
-    
-    try {
-      sqlite.exec('CREATE INDEX IF NOT EXISTS idx_colors_code_lookup ON colors(color_code)');
-    } catch (error) {
-      console.log('[Database] Index already exists: idx_colors_code_lookup');
-    }
-    
-    try {
-      sqlite.exec('CREATE INDEX IF NOT EXISTS idx_colors_name_lookup ON colors(color_name)');
-    } catch (error) {
-      console.log('[Database] Index already exists: idx_colors_name_lookup');
-    }
-    
-    try {
-      sqlite.exec('CREATE INDEX IF NOT EXISTS idx_colors_code_name ON colors(color_code, color_name)');
-    } catch (error) {
-      console.log('[Database] Index already exists: idx_colors_code_name');
-    }
-    
-    // Sales indexes
-    try {
-      sqlite.exec('CREATE INDEX IF NOT EXISTS idx_sales_phone_status ON sales(customer_phone, payment_status)');
-    } catch (error) {
-      console.log('[Database] Index already exists: idx_sales_phone_status');
-    }
-    
-    try {
-      sqlite.exec('CREATE INDEX IF NOT EXISTS idx_sales_status_created ON sales(payment_status, created_at)');
-    } catch (error) {
-      console.log('[Database] Index already exists: idx_sales_status_created');
-    }
-    
-    // Sale items indexes
-    try {
-      sqlite.exec('CREATE INDEX IF NOT EXISTS idx_sale_items_sale_color ON sale_items(sale_id, color_id)');
-    } catch (error) {
-      console.log('[Database] Index already exists: idx_sale_items_sale_color');
-    }
-    
-    // Stock in history indexes
-    try {
-      sqlite.exec('CREATE INDEX IF NOT EXISTS idx_stock_history_color_created ON stock_in_history(color_id, created_at)');
-    } catch (error) {
-      console.log('[Database] Index already exists: idx_stock_history_color_created');
-    }
-    
-    try {
-      sqlite.exec('CREATE INDEX IF NOT EXISTS idx_stock_history_created ON stock_in_history(created_at)');
-    } catch (error) {
-      console.log('[Database] Index already exists: idx_stock_history_created');
-    }
-    
-    try {
-      sqlite.exec('CREATE INDEX IF NOT EXISTS idx_stock_history_stock_in_date ON stock_in_history(stock_in_date)');
-    } catch (error) {
-      console.log('[Database] Index already exists: idx_stock_history_stock_in_date');
+    `)
+
+    if (!sqlite.prepare(`SELECT name FROM pragma_table_info('payment_history') WHERE name = 'transaction_id'`).get()) {
+      sqlite.exec(`
+        ALTER TABLE payment_history ADD COLUMN transaction_id TEXT;
+        ALTER TABLE payment_history ADD COLUMN payment_date TEXT NOT NULL;
+      `)
     }
 
-    // Returns indexes
+    sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS stock_out_history (
+        id TEXT PRIMARY KEY,
+        color_id TEXT NOT NULL,
+        quantity INTEGER NOT NULL,
+        previous_stock INTEGER NOT NULL,
+        new_stock INTEGER NOT NULL,
+        movement_type TEXT NOT NULL DEFAULT 'sale',
+        reference_id TEXT,
+        reference_type TEXT,
+        reason TEXT,
+        stock_out_date TEXT NOT NULL,
+        notes TEXT,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (color_id) REFERENCES colors(id) ON DELETE CASCADE
+      );
+    `)
+
+    sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS customer_accounts (
+        id TEXT PRIMARY KEY,
+        customer_phone TEXT NOT NULL UNIQUE,
+        customer_name TEXT NOT NULL,
+        total_purchased TEXT NOT NULL DEFAULT '0',
+        total_paid TEXT NOT NULL DEFAULT '0',
+        current_balance TEXT NOT NULL DEFAULT '0',
+        last_transaction_date INTEGER,
+        account_status TEXT NOT NULL DEFAULT 'active',
+        notes TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+    `)
+
+    sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS stock_movement_summary (
+        id TEXT PRIMARY KEY,
+        color_id TEXT NOT NULL,
+        date_summary TEXT NOT NULL,
+        opening_stock INTEGER NOT NULL DEFAULT 0,
+        total_inward INTEGER NOT NULL DEFAULT 0,
+        total_outward INTEGER NOT NULL DEFAULT 0,
+        closing_stock INTEGER NOT NULL DEFAULT 0,
+        last_updated INTEGER NOT NULL,
+        FOREIGN KEY (color_id) REFERENCES colors(id) ON DELETE CASCADE,
+        UNIQUE(color_id, date_summary)
+      );
+    `)
+
+    console.log("[Database] Creating stock movement indexes...")
+
     try {
-      sqlite.exec('CREATE INDEX IF NOT EXISTS idx_returns_customer_phone ON returns(customer_phone)');
+      sqlite.exec("CREATE INDEX IF NOT EXISTS idx_stock_out_color_date ON stock_out_history(color_id, stock_out_date)")
     } catch (error) {
-      console.log('[Database] Index already exists: idx_returns_customer_phone');
-    }
-    
-    try {
-      sqlite.exec('CREATE INDEX IF NOT EXISTS idx_returns_sale_id ON returns(sale_id)');
-    } catch (error) {
-      console.log('[Database] Index already exists: idx_returns_sale_id');
-    }
-    
-    try {
-      sqlite.exec('CREATE INDEX IF NOT EXISTS idx_returns_created ON returns(created_at)');
-    } catch (error) {
-      console.log('[Database] Index already exists: idx_returns_created');
+      console.log("[Database] Index already exists: idx_stock_out_color_date")
     }
 
-    // Return items indexes
     try {
-      sqlite.exec('CREATE INDEX IF NOT EXISTS idx_return_items_return_id ON return_items(return_id)');
+      sqlite.exec("CREATE INDEX IF NOT EXISTS idx_stock_out_type ON stock_out_history(movement_type, created_at)")
     } catch (error) {
-      console.log('[Database] Index already exists: idx_return_items_return_id');
-    }
-    
-    try {
-      sqlite.exec('CREATE INDEX IF NOT EXISTS idx_return_items_color_id ON return_items(color_id)');
-    } catch (error) {
-      console.log('[Database] Index already exists: idx_return_items_color_id');
+      console.log("[Database] Index already exists: idx_stock_out_type")
     }
 
-    // Payment history indexes
     try {
-      sqlite.exec('CREATE INDEX IF NOT EXISTS idx_payment_history_customer_phone ON payment_history(customer_phone)');
+      sqlite.exec(
+        "CREATE INDEX IF NOT EXISTS idx_stock_out_reference ON stock_out_history(reference_type, reference_id)",
+      )
     } catch (error) {
-      console.log('[Database] Index already exists: idx_payment_history_customer_phone');
+      console.log("[Database] Index already exists: idx_stock_out_reference")
     }
-    
+
     try {
-      sqlite.exec('CREATE INDEX IF NOT EXISTS idx_payment_history_sale_id ON payment_history(sale_id)');
+      sqlite.exec("CREATE INDEX IF NOT EXISTS idx_customer_accounts_phone ON customer_accounts(customer_phone)")
     } catch (error) {
-      console.log('[Database] Index already exists: idx_payment_history_sale_id');
+      console.log("[Database] Index already exists: idx_customer_accounts_phone")
     }
-  
-    console.log('[Database] ✅ All tables and indexes created successfully');
-  } catch (error) {
-    console.error('[Database] ❌ ERROR creating tables:', error);
-    
-    // Provide more specific error messages
-    if (error instanceof Error) {
-      if (error.message.includes('no such table')) {
-        console.error('[Database] Missing table detected, this might be a schema issue');
-      } else if (error.message.includes('duplicate column name')) {
-        console.error('[Database] Column already exists, continuing...');
-        return; // Continue if it's just a duplicate column
+
+    try {
+      sqlite.exec("CREATE INDEX IF NOT EXISTS idx_customer_accounts_status ON customer_accounts(account_status)")
+    } catch (error) {
+      console.log("[Database] Index already exists: idx_customer_accounts_status")
+    }
+
+    try {
+      sqlite.exec(
+        "CREATE INDEX IF NOT EXISTS idx_stock_summary_color_date ON stock_movement_summary(color_id, date_summary)",
+      )
+    } catch (error) {
+      console.log("[Database] Index already exists: idx_stock_summary_color_date")
+    }
+
+    try {
+      sqlite.exec("CREATE INDEX IF NOT EXISTS idx_sales_sale_type ON sales(sale_type, created_at)")
+    } catch (error) {
+      console.log("[Database] Index already exists: idx_sales_sale_type")
+    }
+
+    try {
+      sqlite.exec("CREATE INDEX IF NOT EXISTS idx_sales_stock_updated ON sales(stock_updated)")
+    } catch (error) {
+      console.log("[Database] Index already exists: idx_sales_stock_updated")
+    }
+
+    sqlite.exec("CREATE INDEX IF NOT EXISTS idx_sales_payment_status ON sales(payment_status, created_at)")
+    sqlite.exec("CREATE INDEX IF NOT EXISTS idx_sales_customer_phone ON sales(customer_phone, payment_status)")
+    sqlite.exec("CREATE INDEX IF NOT EXISTS idx_sales_due_date ON sales(due_date) WHERE payment_status != 'paid'")
+    sqlite.exec(
+      "CREATE INDEX IF NOT EXISTS idx_payment_history_customer ON payment_history(customer_phone, created_at)",
+    )
+    sqlite.exec("CREATE INDEX IF NOT EXISTS idx_payment_history_sale ON payment_history(sale_id, created_at)")
+    sqlite.exec("CREATE INDEX IF NOT EXISTS idx_stock_in_color_date ON stock_in_history(color_id, stock_in_date)")
+
+    const indexQueries = [
+      "CREATE INDEX IF NOT EXISTS idx_sales_unpaid ON sales(customer_phone) WHERE payment_status IN ('unpaid', 'partial')",
+      "CREATE INDEX IF NOT EXISTS idx_colors_stock ON colors(stock_quantity)",
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_history_unique ON payment_history(sale_id, created_at)",
+    ]
+
+    for (const indexQuery of indexQueries) {
+      try {
+        sqlite.exec(indexQuery)
+      } catch (error) {
+        console.log("[Database] Index creation note:", error instanceof Error ? error.message : "Index already exists")
       }
     }
-    
-    throw error;
+
+    console.log("[Database] ✅ All tables and indexes created successfully")
+  } catch (error) {
+    console.error("[Database] ❌ ERROR creating tables:", error)
+
+    if (error instanceof Error) {
+      if (error.message.includes("no such table")) {
+        console.error("[Database] Missing table detected, this might be a schema issue")
+      } else if (error.message.includes("duplicate column name")) {
+        console.error("[Database] Column already exists, continuing...")
+        return
+      }
+    }
+
+    throw error
   }
 }
 
 // Initialize database on startup
-initializeDatabase();
+initializeDatabase()
 
 // Export database instances with null checks
-export const db = dbInstance!;
-export const sqliteDb = sqlite!;
+export const db = dbInstance!
+export const sqliteDb = sqlite!
 
 // Helper function to check if database is ready
 export function isDatabaseReady(): boolean {
-  return !!sqlite && !!dbInstance;
+  return !!sqlite && !!dbInstance
 }
 
 // Helper function to backup database
 export function backupDatabase(backupPath?: string): string {
   if (!sqlite) {
-    throw new Error('Database not initialized');
+    throw new Error("Database not initialized")
   }
-  
-  const actualBackupPath = backupPath || `${dbPath}.backup-${Date.now()}`;
-  
+
+  const actualBackupPath = backupPath || `${dbPath}.backup-${Date.now()}`
+
   try {
     // Close current connection
-    sqlite.close();
-    
+    sqlite.close()
+
     // Copy database file
-    fs.copyFileSync(dbPath, actualBackupPath);
-    
+    fs.copyFileSync(dbPath, actualBackupPath)
+
     // Reinitialize connection
-    initializeDatabase();
-    
-    console.log(`[Database] Backup created at: ${actualBackupPath}`);
-    return actualBackupPath;
+    initializeDatabase()
+
+    console.log(`[Database] Backup created at: ${actualBackupPath}`)
+    return actualBackupPath
   } catch (error) {
-    console.error('[Database] Backup failed:', error);
+    console.error("[Database] Backup failed:", error)
     // Try to reinitialize even if backup fails
-    initializeDatabase();
-    throw error;
+    initializeDatabase()
+    throw error
   }
 }
 
 // Helper function to restore database from backup
 export function restoreDatabase(backupPath: string): void {
   if (!fs.existsSync(backupPath)) {
-    throw new Error(`Backup file not found: ${backupPath}`);
+    throw new Error(`Backup file not found: ${backupPath}`)
   }
-  
+
   try {
     // Close current connection
     if (sqlite) {
-      sqlite.close();
+      sqlite.close()
     }
-    
+
     // Replace current database with backup
-    fs.copyFileSync(backupPath, dbPath);
-    
+    fs.copyFileSync(backupPath, dbPath)
+
     // Reinitialize connection
-    initializeDatabase();
-    
-    console.log(`[Database] Database restored from: ${backupPath}`);
+    initializeDatabase()
+
+    console.log(`[Database] Database restored from: ${backupPath}`)
   } catch (error) {
-    console.error('[Database] Restore failed:', error);
+    console.error("[Database] Restore failed:", error)
     // Try to reinitialize even if restore fails
-    initializeDatabase();
-    throw error;
+    initializeDatabase()
+    throw error
   }
 }
 
@@ -652,64 +650,79 @@ export function resetDatabase(): void {
   try {
     // Close current connection
     if (sqlite) {
-      sqlite.close();
+      sqlite.close()
     }
-    
+
     // Delete database file
     if (fs.existsSync(dbPath)) {
-      fs.unlinkSync(dbPath);
+      fs.unlinkSync(dbPath)
     }
-    
+
     // Reinitialize fresh database
-    initializeDatabase();
-    
-    console.log('[Database] Database reset successfully');
+    initializeDatabase()
+
+    console.log("[Database] Database reset successfully")
   } catch (error) {
-    console.error('[Database] Reset failed:', error);
-    throw error;
+    console.error("[Database] Reset failed:", error)
+    throw error
   }
 }
 
 // Helper function to get database statistics
 export function getDatabaseStats(): {
-  tableCounts: Record<string, number>;
-  databaseSize: number;
-  lastBackup?: string;
+  tableCounts: Record<string, number>
+  databaseSize: number
+  lastBackup?: string
 } {
   if (!sqlite) {
-    throw new Error('Database not initialized');
+    throw new Error("Database not initialized")
   }
-  
-  const tableCounts: Record<string, number> = {};
-  const tables = ['products', 'variants', 'colors', 'sales', 'sale_items', 'stock_in_history', 'settings', 'returns', 'return_items', 'payment_history'];
-  
+
+  const tableCounts: Record<string, number> = {}
+  const tables = [
+    "products",
+    "variants",
+    "colors",
+    "sales",
+    "sale_items",
+    "stock_in_history",
+    "settings",
+    "returns",
+    "return_items",
+    "payment_history",
+    "stock_out_history",
+    "customer_accounts",
+    "stock_movement_summary",
+  ]
+
   for (const table of tables) {
     try {
-      const result = sqlite.prepare(`SELECT COUNT(*) as count FROM ${table}`).get() as { count: number };
-      tableCounts[table] = result.count;
+      const result = sqlite.prepare(`SELECT COUNT(*) as count FROM ${table}`).get() as { count: number }
+      tableCounts[table] = result.count
     } catch (error) {
-      tableCounts[table] = 0;
+      tableCounts[table] = 0
     }
   }
-  
-  const databaseSize = fs.existsSync(dbPath) ? fs.statSync(dbPath).size : 0;
-  
+
+  const databaseSize = fs.existsSync(dbPath) ? fs.statSync(dbPath).size : 0
+
   // Find latest backup
-  let lastBackup: string | undefined;
-  const backupFiles = fs.readdirSync(path.dirname(dbPath))
-    .filter(file => file.startsWith(path.basename(dbPath)) && file.includes('.backup-'))
+  let lastBackup: string | undefined
+  const backupFiles = fs
+    .readdirSync(path.dirname(dbPath))
+    .filter((file) => file.startsWith(path.basename(dbPath)) && file.includes(".backup-"))
     .sort()
-    .reverse();
-  
+    .reverse()
+
   if (backupFiles.length > 0) {
-    lastBackup = path.join(path.dirname(dbPath), backupFiles[0]);
+    lastBackup = path.join(path.dirname(dbPath), backupFiles[0])
   }
-  
+
   return {
     tableCounts,
     databaseSize,
-    lastBackup
-  };
+    lastBackup,
+  }
 }
 
-export default db;
+export default db
