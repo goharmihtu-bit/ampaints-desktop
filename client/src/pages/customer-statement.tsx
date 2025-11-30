@@ -319,7 +319,7 @@ export default function CustomerStatement() {
     }
   }, [allSales, paidSales, unpaidSales, paymentHistory])
 
-  // Now correctly calculates running balance in chronological order
+  // FIXED: Correctly calculates running balance including cash loans
   const transactions = useMemo((): Transaction[] => {
     const txns: Transaction[] = []
 
@@ -346,7 +346,7 @@ export default function CustomerStatement() {
         type: sale.isManualBalance ? "cash_loan" : "bill",
         description: sale.isManualBalance ? "Manual Balance" : `Bill #${sale.id.slice(0, 8)}`,
         reference: sale.id.slice(0, 8).toUpperCase(),
-        debit: totalAmt, // Total amount of the bill
+        debit: totalAmt, // Total amount of the bill/loan
         credit: 0,
         balance: 0, // Will be calculated later
         paid: paidAmt,
@@ -381,17 +381,20 @@ export default function CustomerStatement() {
     txns.push(...billTransactions, ...paymentTransactions)
     txns.sort((a, b) => a.date.getTime() - b.date.getTime())
 
-    // Start from the oldest transaction and accumulate
+    // FIXED: Simple and correct balance calculation
     let runningBalance = 0
     txns.forEach((txn) => {
       if (txn.type === "payment") {
-        // Payments reduce the outstanding balance
-        runningBalance -= txn.credit
+        // Payments reduce the balance
+        runningBalance = Math.max(0, runningBalance - txn.credit)
       } else {
-        // Bills and cash loans add to outstanding balance
-        runningBalance += txn.outstanding
+        // Bills and cash loans both increase the balance
+        // For cash loans, we use the full amount (debit) since they represent money given to customer
+        // For bills, we use the outstanding amount (remaining to be paid)
+        const amountToAdd = txn.type === "cash_loan" ? txn.debit : txn.outstanding
+        runningBalance += amountToAdd
       }
-      txn.balance = Math.max(0, runningBalance) // Never show negative balance in ledger
+      txn.balance = runningBalance
     })
 
     // Return in reverse chronological order (newest first for UI display)
