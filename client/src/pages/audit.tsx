@@ -147,6 +147,18 @@ function generateStatementPDFBlob(customer: ConsolidatedCustomer): Blob {
   return pdfBlob;
 }
 
+// Utility function to safely parse numbers
+const safeParseFloat = (value: string | number | null | undefined): number => {
+  if (value === null || value === undefined) return 0;
+  const num = typeof value === 'string' ? parseFloat(value) : value;
+  return isNaN(num) ? 0 : num;
+};
+
+// Utility function to round numbers for display
+const roundNumber = (num: number): number => {
+  return Math.round(num * 100) / 100;
+};
+
 // Custom hook for authenticated API calls
 function useAuditApiRequest() {
   const [auditToken, setAuditToken] = useState<string | null>(null);
@@ -390,7 +402,7 @@ export default function Audit() {
     },
   });
 
-  // Cloud Sync Functions - Fixed with proper authentication
+  // Cloud Sync Functions - Fixed with proper authentication and error handling
   const handleTestConnection = async () => {
     if (!cloudUrl.trim()) {
       toast({
@@ -433,6 +445,15 @@ export default function Audit() {
   };
 
   const handleSaveCloudSettings = async () => {
+    if (!cloudUrl.trim()) {
+      toast({
+        title: "Connection URL Required",
+        description: "Please enter a PostgreSQL connection URL first.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
       const data = await authenticatedRequest("/api/cloud/save-settings", {
         method: "POST",
@@ -493,9 +514,10 @@ export default function Audit() {
         });
       }
     } catch (error: any) {
+      console.error("Export error:", error);
       toast({
         title: "Export Failed",
-        description: error.message || "Could not export to cloud database.",
+        description: error.message || "Could not export to cloud database. Please check your connection URL and try again.",
         variant: "destructive",
       });
     } finally {
@@ -541,9 +563,10 @@ export default function Audit() {
         });
       }
     } catch (error: any) {
+      console.error("Import error:", error);
       toast({
         title: "Import Failed",
-        description: error.message || "Could not import from cloud database.",
+        description: error.message || "Could not import from cloud database. Please check your connection URL and try again.",
         variant: "destructive",
       });
     } finally {
@@ -787,28 +810,41 @@ export default function Audit() {
   }, [stockInHistory, stockOutHistory, colors]);
 
   const salesSummary = useMemo(() => {
-    const totalSales = allSales.reduce((acc, s) => acc + parseFloat(s.totalAmount), 0);
-    const totalPaid = allSales.reduce((acc, s) => acc + parseFloat(s.amountPaid), 0);
-    const totalOutstanding = totalSales - totalPaid;
+    const totalSales = allSales.reduce((acc, s) => acc + safeParseFloat(s.totalAmount), 0);
+    const totalPaid = allSales.reduce((acc, s) => acc + safeParseFloat(s.amountPaid), 0);
+    const totalOutstanding = Math.max(0, totalSales - totalPaid);
     const totalBills = allSales.length;
     const paidBills = allSales.filter(s => s.paymentStatus === "paid").length;
-    return { totalSales, totalPaid, totalOutstanding, totalBills, paidBills };
+    return { 
+      totalSales: roundNumber(totalSales), 
+      totalPaid: roundNumber(totalPaid), 
+      totalOutstanding: roundNumber(totalOutstanding), 
+      totalBills, 
+      paidBills 
+    };
   }, [allSales]);
 
   const paymentsSummary = useMemo(() => {
-    const totalPayments = paymentHistory.reduce((acc, p) => acc + parseFloat(p.amount), 0);
-    const cashPayments = paymentHistory.filter(p => p.paymentMethod === 'cash').reduce((acc, p) => acc + parseFloat(p.amount), 0);
-    const onlinePayments = paymentHistory.filter(p => p.paymentMethod === 'online').reduce((acc, p) => acc + parseFloat(p.amount), 0);
-    return { totalPayments, cashPayments, onlinePayments };
+    const totalPayments = paymentHistory.reduce((acc, p) => acc + safeParseFloat(p.amount), 0);
+    const cashPayments = paymentHistory.filter(p => p.paymentMethod === 'cash').reduce((acc, p) => acc + safeParseFloat(p.amount), 0);
+    const onlinePayments = paymentHistory.filter(p => p.paymentMethod === 'online').reduce((acc, p) => acc + safeParseFloat(p.amount), 0);
+    return { 
+      totalPayments: roundNumber(totalPayments), 
+      cashPayments: roundNumber(cashPayments), 
+      onlinePayments: roundNumber(onlinePayments) 
+    };
   }, [paymentHistory]);
 
   const returnsSummary = useMemo(() => {
-    const totalReturns = auditReturns.reduce((acc, r) => acc + parseFloat(r.totalRefund || "0"), 0);
+    const totalReturns = auditReturns.reduce((acc, r) => acc + safeParseFloat(r.totalRefund || "0"), 0);
     const totalItemsReturned = auditReturns.reduce((acc, r) => {
       // This would need to be calculated from return items in a real implementation
       return acc + 1; // Placeholder
     }, 0);
-    return { totalReturns, totalItemsReturned };
+    return { 
+      totalReturns: roundNumber(totalReturns), 
+      totalItemsReturned 
+    };
   }, [auditReturns]);
 
   const clearFilters = () => {
@@ -939,7 +975,7 @@ export default function Audit() {
     pdf.setFontSize(10);
     pdf.setFont("helvetica", "normal");
     pdf.text(`Generated: ${formatDateShort(new Date())}`, margin, yPos);
-    pdf.text(`Total Sales: Rs. ${Math.round(salesSummary.totalSales).toLocaleString()}`, margin + 80, yPos);
+    pdf.text(`Total Sales: Rs. ${salesSummary.totalSales.toLocaleString()}`, margin + 80, yPos);
     pdf.text(`Total Bills: ${salesSummary.totalBills}`, margin + 160, yPos);
     yPos += 15;
 
@@ -947,9 +983,9 @@ export default function Audit() {
     pdf.rect(margin, yPos, pageWidth - 2 * margin, 15, "F");
     pdf.setFontSize(9);
     pdf.setFont("helvetica", "bold");
-    pdf.text(`Total Amount: Rs. ${Math.round(salesSummary.totalSales).toLocaleString()}`, margin + 5, yPos + 10);
-    pdf.text(`Total Paid: Rs. ${Math.round(salesSummary.totalPaid).toLocaleString()}`, margin + 70, yPos + 10);
-    pdf.text(`Outstanding: Rs. ${Math.round(salesSummary.totalOutstanding).toLocaleString()}`, margin + 140, yPos + 10);
+    pdf.text(`Total Amount: Rs. ${salesSummary.totalSales.toLocaleString()}`, margin + 5, yPos + 10);
+    pdf.text(`Total Paid: Rs. ${salesSummary.totalPaid.toLocaleString()}`, margin + 70, yPos + 10);
+    pdf.text(`Outstanding: Rs. ${salesSummary.totalOutstanding.toLocaleString()}`, margin + 140, yPos + 10);
     pdf.text(`Paid Bills: ${salesSummary.paidBills}/${salesSummary.totalBills}`, margin + 220, yPos + 10);
     yPos += 22;
 
@@ -983,9 +1019,9 @@ export default function Audit() {
       pdf.text(sale.id.slice(0, 8).toUpperCase(), xPos, yPos + 4); xPos += colWidths[1];
       pdf.text(sale.customerName.substring(0, 20), xPos, yPos + 4); xPos += colWidths[2];
       pdf.text(sale.customerPhone, xPos, yPos + 4); xPos += colWidths[3];
-      pdf.text(`Rs. ${Math.round(parseFloat(sale.totalAmount)).toLocaleString()}`, xPos, yPos + 4); xPos += colWidths[4];
-      pdf.text(`Rs. ${Math.round(parseFloat(sale.amountPaid)).toLocaleString()}`, xPos, yPos + 4); xPos += colWidths[5];
-      pdf.text(`Rs. ${Math.round(parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid)).toLocaleString()}`, xPos, yPos + 4); xPos += colWidths[6];
+      pdf.text(`Rs. ${Math.round(safeParseFloat(sale.totalAmount)).toLocaleString()}`, xPos, yPos + 4); xPos += colWidths[4];
+      pdf.text(`Rs. ${Math.round(safeParseFloat(sale.amountPaid)).toLocaleString()}`, xPos, yPos + 4); xPos += colWidths[5];
+      pdf.text(`Rs. ${Math.round(safeParseFloat(sale.totalAmount) - safeParseFloat(sale.amountPaid)).toLocaleString()}`, xPos, yPos + 4); xPos += colWidths[6];
       
       if (sale.paymentStatus === "paid") {
         pdf.setTextColor(34, 197, 94);
@@ -1034,7 +1070,7 @@ export default function Audit() {
     pdf.setFont("helvetica", "normal");
     pdf.text(`Generated: ${formatDateShort(new Date())}`, margin, yPos);
     pdf.text(`Total Unpaid Bills: ${unpaidBills.length}`, margin + 80, yPos);
-    pdf.text(`Total Outstanding: Rs. ${Math.round(unpaidBills.reduce((acc, bill) => acc + (parseFloat(bill.totalAmount) - parseFloat(bill.amountPaid)), 0)).toLocaleString()}`, margin + 160, yPos);
+    pdf.text(`Total Outstanding: Rs. ${Math.round(unpaidBills.reduce((acc, bill) => acc + (safeParseFloat(bill.totalAmount) - safeParseFloat(bill.amountPaid)), 0)).toLocaleString()}`, margin + 160, yPos);
     yPos += 15;
 
     pdf.setFillColor(240, 240, 240);
@@ -1063,10 +1099,10 @@ export default function Audit() {
       pdf.setTextColor(0, 0, 0);
       pdf.text(bill.customerName.substring(0, 25), margin + 5, yPos + 4);
       pdf.text(bill.customerPhone, margin + 80, yPos + 4);
-      pdf.text(`Rs. ${Math.round(parseFloat(bill.totalAmount)).toLocaleString()}`, margin + 140, yPos + 4);
-      pdf.text(`Rs. ${Math.round(parseFloat(bill.amountPaid)).toLocaleString()}`, margin + 190, yPos + 4);
+      pdf.text(`Rs. ${Math.round(safeParseFloat(bill.totalAmount)).toLocaleString()}`, margin + 140, yPos + 4);
+      pdf.text(`Rs. ${Math.round(safeParseFloat(bill.amountPaid)).toLocaleString()}`, margin + 190, yPos + 4);
       
-      const outstanding = parseFloat(bill.totalAmount) - parseFloat(bill.amountPaid);
+      const outstanding = safeParseFloat(bill.totalAmount) - safeParseFloat(bill.amountPaid);
       pdf.setTextColor(239, 68, 68);
       pdf.text(`Rs. ${Math.round(outstanding).toLocaleString()}`, margin + 230, yPos + 4);
       
@@ -1113,8 +1149,8 @@ export default function Audit() {
     pdf.setFontSize(10);
     pdf.setFont("helvetica", "normal");
     pdf.text(`Generated: ${formatDateShort(new Date())}`, margin, yPos);
-    pdf.text(`Total Payments: Rs. ${Math.round(paymentsSummary.totalPayments).toLocaleString()}`, margin + 80, yPos);
-    pdf.text(`Cash: Rs. ${Math.round(paymentsSummary.cashPayments).toLocaleString()} | Online: Rs. ${Math.round(paymentsSummary.onlinePayments).toLocaleString()}`, margin + 160, yPos);
+    pdf.text(`Total Payments: Rs. ${paymentsSummary.totalPayments.toLocaleString()}`, margin + 80, yPos);
+    pdf.text(`Cash: Rs. ${paymentsSummary.cashPayments.toLocaleString()} | Online: Rs. ${paymentsSummary.onlinePayments.toLocaleString()}`, margin + 160, yPos);
     yPos += 15;
 
     pdf.setFillColor(240, 240, 240);
@@ -1145,7 +1181,7 @@ export default function Audit() {
       pdf.text(formatDateShort(new Date(payment.createdAt)), margin + 5, yPos + 4);
       pdf.text((payment.sale?.customerName || "N/A").substring(0, 20), margin + 35, yPos + 4);
       pdf.text(payment.customerPhone, margin + 90, yPos + 4);
-      pdf.text(`Rs. ${Math.round(parseFloat(payment.amount)).toLocaleString()}`, margin + 140, yPos + 4);
+      pdf.text(`Rs. ${Math.round(safeParseFloat(payment.amount)).toLocaleString()}`, margin + 140, yPos + 4);
       
       if (payment.paymentMethod === "cash") {
         pdf.setTextColor(34, 197, 94);
@@ -1156,8 +1192,8 @@ export default function Audit() {
       }
       
       pdf.setTextColor(0, 0, 0);
-      pdf.text(`Rs. ${Math.round(parseFloat(payment.previousBalance)).toLocaleString()}`, margin + 220, yPos + 4);
-      pdf.text(`Rs. ${Math.round(parseFloat(payment.newBalance)).toLocaleString()}`, margin + 270, yPos + 4);
+      pdf.text(`Rs. ${Math.round(safeParseFloat(payment.previousBalance)).toLocaleString()}`, margin + 220, yPos + 4);
+      pdf.text(`Rs. ${Math.round(safeParseFloat(payment.newBalance)).toLocaleString()}`, margin + 270, yPos + 4);
       yPos += 6;
     }
 
@@ -1193,7 +1229,7 @@ export default function Audit() {
     pdf.setFontSize(10);
     pdf.setFont("helvetica", "normal");
     pdf.text(`Generated: ${formatDateShort(new Date())}`, margin, yPos);
-    pdf.text(`Total Returns: Rs. ${Math.round(returnsSummary.totalReturns).toLocaleString()}`, margin + 80, yPos);
+    pdf.text(`Total Returns: Rs. ${returnsSummary.totalReturns.toLocaleString()}`, margin + 80, yPos);
     pdf.text(`Total Items Returned: ${returnsSummary.totalItemsReturned}`, margin + 160, yPos);
     yPos += 15;
 
@@ -1225,7 +1261,7 @@ export default function Audit() {
       pdf.text(formatDateShort(new Date(returnItem.createdAt)), margin + 5, yPos + 4);
       pdf.text(returnItem.customerName.substring(0, 20), margin + 35, yPos + 4);
       pdf.text(returnItem.customerPhone, margin + 90, yPos + 4);
-      pdf.text(`Rs. ${Math.round(parseFloat(returnItem.totalRefund || "0")).toLocaleString()}`, margin + 140, yPos + 4);
+      pdf.text(`Rs. ${Math.round(safeParseFloat(returnItem.totalRefund || "0")).toLocaleString()}`, margin + 140, yPos + 4);
       pdf.text(returnItem.returnType === "item" ? "Item Return" : "Full Return", margin + 190, yPos + 4);
       pdf.text((returnItem.reason || "N/A").substring(0, 25), margin + 230, yPos + 4);
       
@@ -1251,13 +1287,17 @@ export default function Audit() {
   if (showPinDialog) {
     return (
       <Dialog open={showPinDialog} onOpenChange={() => {}}>
-        <DialogContent className="sm:max-w-md" onPointerDownOutside={(e) => e.preventDefault()}>
+        <DialogContent 
+          className="sm:max-w-md" 
+          onPointerDownOutside={(e) => e.preventDefault()}
+          aria-describedby="pin-dialog-description"
+        >
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 justify-center text-xl">
               <ShieldCheck className="h-6 w-6 text-primary" />
               Audit PIN Verification
             </DialogTitle>
-            <DialogDescription className="text-center">
+            <DialogDescription id="pin-dialog-description" className="text-center">
               Enter your 4-digit PIN to access Audit Reports
             </DialogDescription>
           </DialogHeader>
@@ -1582,7 +1622,7 @@ export default function Audit() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">Rs. {Math.round(salesSummary.totalSales).toLocaleString()}</div>
+                <div className="text-2xl font-bold">Rs. {salesSummary.totalSales.toLocaleString()}</div>
                 <p className="text-xs text-muted-foreground">All time revenue</p>
               </CardContent>
             </Card>
@@ -1594,7 +1634,7 @@ export default function Audit() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">Rs. {Math.round(salesSummary.totalPaid).toLocaleString()}</div>
+                <div className="text-2xl font-bold">Rs. {salesSummary.totalPaid.toLocaleString()}</div>
                 <p className="text-xs text-muted-foreground">Amount received</p>
               </CardContent>
             </Card>
@@ -1606,7 +1646,7 @@ export default function Audit() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">Rs. {Math.round(salesSummary.totalOutstanding).toLocaleString()}</div>
+                <div className="text-2xl font-bold">Rs. {salesSummary.totalOutstanding.toLocaleString()}</div>
                 <p className="text-xs text-muted-foreground">Pending payments</p>
               </CardContent>
             </Card>
@@ -1670,7 +1710,7 @@ export default function Audit() {
                         </TableRow>
                       ) : (
                         filteredSales.map((sale) => {
-                          const balance = parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid);
+                          const balance = safeParseFloat(sale.totalAmount) - safeParseFloat(sale.amountPaid);
                           return (
                             <TableRow key={sale.id}>
                               <TableCell className="font-medium">
@@ -1681,8 +1721,8 @@ export default function Audit() {
                               </TableCell>
                               <TableCell>{sale.customerName}</TableCell>
                               <TableCell>{sale.customerPhone}</TableCell>
-                              <TableCell>Rs. {Math.round(parseFloat(sale.totalAmount)).toLocaleString()}</TableCell>
-                              <TableCell>Rs. {Math.round(parseFloat(sale.amountPaid)).toLocaleString()}</TableCell>
+                              <TableCell>Rs. {Math.round(safeParseFloat(sale.totalAmount)).toLocaleString()}</TableCell>
+                              <TableCell>Rs. {Math.round(safeParseFloat(sale.amountPaid)).toLocaleString()}</TableCell>
                               <TableCell>
                                 <span className={balance > 0 ? "text-red-600 font-medium" : "text-green-600"}>
                                   Rs. {Math.round(balance).toLocaleString()}
@@ -1741,7 +1781,7 @@ export default function Audit() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  Rs. {Math.round(unpaidBills.reduce((acc, bill) => acc + (parseFloat(bill.totalAmount) - parseFloat(bill.amountPaid)), 0)).toLocaleString()}
+                  Rs. {Math.round(unpaidBills.reduce((acc, bill) => acc + (safeParseFloat(bill.totalAmount) - safeParseFloat(bill.amountPaid)), 0)).toLocaleString()}
                 </div>
                 <p className="text-xs text-muted-foreground">Amount pending</p>
               </CardContent>
@@ -1755,7 +1795,7 @@ export default function Audit() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  Rs. {unpaidBills.length > 0 ? Math.round(unpaidBills.reduce((acc, bill) => acc + (parseFloat(bill.totalAmount) - parseFloat(bill.amountPaid)), 0) / unpaidBills.length).toLocaleString() : 0}
+                  Rs. {unpaidBills.length > 0 ? Math.round(unpaidBills.reduce((acc, bill) => acc + (safeParseFloat(bill.totalAmount) - safeParseFloat(bill.amountPaid)), 0) / unpaidBills.length).toLocaleString() : 0}
                 </div>
                 <p className="text-xs text-muted-foreground">Average outstanding</p>
               </CardContent>
@@ -1805,13 +1845,13 @@ export default function Audit() {
                         </TableRow>
                       ) : (
                         unpaidBills.map((bill) => {
-                          const outstanding = parseFloat(bill.totalAmount) - parseFloat(bill.amountPaid);
+                          const outstanding = safeParseFloat(bill.totalAmount) - safeParseFloat(bill.amountPaid);
                           return (
                             <TableRow key={bill.id}>
                               <TableCell className="font-medium">{bill.customerName}</TableCell>
                               <TableCell>{bill.customerPhone}</TableCell>
-                              <TableCell>Rs. {Math.round(parseFloat(bill.totalAmount)).toLocaleString()}</TableCell>
-                              <TableCell>Rs. {Math.round(parseFloat(bill.amountPaid)).toLocaleString()}</TableCell>
+                              <TableCell>Rs. {Math.round(safeParseFloat(bill.totalAmount)).toLocaleString()}</TableCell>
+                              <TableCell>Rs. {Math.round(safeParseFloat(bill.amountPaid)).toLocaleString()}</TableCell>
                               <TableCell>
                                 <span className="text-red-600 font-medium">
                                   Rs. {Math.round(outstanding).toLocaleString()}
@@ -1850,7 +1890,7 @@ export default function Audit() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">Rs. {Math.round(paymentsSummary.totalPayments).toLocaleString()}</div>
+                <div className="text-2xl font-bold">Rs. {paymentsSummary.totalPayments.toLocaleString()}</div>
                 <p className="text-xs text-muted-foreground">All payments received</p>
               </CardContent>
             </Card>
@@ -1862,7 +1902,7 @@ export default function Audit() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">Rs. {Math.round(paymentsSummary.cashPayments).toLocaleString()}</div>
+                <div className="text-2xl font-bold">Rs. {paymentsSummary.cashPayments.toLocaleString()}</div>
                 <p className="text-xs text-muted-foreground">Cash transactions</p>
               </CardContent>
             </Card>
@@ -1874,7 +1914,7 @@ export default function Audit() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">Rs. {Math.round(paymentsSummary.onlinePayments).toLocaleString()}</div>
+                <div className="text-2xl font-bold">Rs. {paymentsSummary.onlinePayments.toLocaleString()}</div>
                 <p className="text-xs text-muted-foreground">Digital transactions</p>
               </CardContent>
             </Card>
@@ -1943,7 +1983,7 @@ export default function Audit() {
                             <TableCell>{(payment.sale?.customerName || "N/A")}</TableCell>
                             <TableCell>{payment.customerPhone}</TableCell>
                             <TableCell className="text-green-600 font-medium">
-                              Rs. {Math.round(parseFloat(payment.amount)).toLocaleString()}
+                              Rs. {Math.round(safeParseFloat(payment.amount)).toLocaleString()}
                             </TableCell>
                             <TableCell>
                               <Badge
@@ -1952,8 +1992,8 @@ export default function Audit() {
                                 {payment.paymentMethod === "cash" ? "Cash" : "Online"}
                               </Badge>
                             </TableCell>
-                            <TableCell>Rs. {Math.round(parseFloat(payment.previousBalance)).toLocaleString()}</TableCell>
-                            <TableCell>Rs. {Math.round(parseFloat(payment.newBalance)).toLocaleString()}</TableCell>
+                            <TableCell>Rs. {Math.round(safeParseFloat(payment.previousBalance)).toLocaleString()}</TableCell>
+                            <TableCell>Rs. {Math.round(safeParseFloat(payment.newBalance)).toLocaleString()}</TableCell>
                             <TableCell className="text-sm text-muted-foreground max-w-32 truncate">
                               {payment.notes || "-"}
                             </TableCell>
@@ -1991,7 +2031,7 @@ export default function Audit() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">Rs. {Math.round(returnsSummary.totalReturns).toLocaleString()}</div>
+                <div className="text-2xl font-bold">Rs. {returnsSummary.totalReturns.toLocaleString()}</div>
                 <p className="text-xs text-muted-foreground">Amount refunded</p>
               </CardContent>
             </Card>
@@ -2059,7 +2099,7 @@ export default function Audit() {
                             <TableCell>{returnItem.customerName}</TableCell>
                             <TableCell>{returnItem.customerPhone}</TableCell>
                             <TableCell className="text-red-600 font-medium">
-                              Rs. {Math.round(parseFloat(returnItem.totalRefund || "0")).toLocaleString()}
+                              Rs. {Math.round(safeParseFloat(returnItem.totalRefund || "0")).toLocaleString()}
                             </TableCell>
                             <TableCell>
                               <Badge variant="outline">
