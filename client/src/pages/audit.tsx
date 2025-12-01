@@ -860,11 +860,11 @@ export default function Audit() {
   }, [allSales])
 
   const paymentsSummary = useMemo(() => {
-    const totalPayments = paymentHistory.reduce((acc, p) => acc + safeParseFloat(p.amount), 0)
-    const cashPayments = paymentHistory
+    const totalPayments = auditPayments.reduce((acc, p) => acc + safeParseFloat(p.amount), 0)
+    const cashPayments = auditPayments
       .filter((p) => p.paymentMethod === "cash")
       .reduce((acc, p) => acc + safeParseFloat(p.amount), 0)
-    const onlinePayments = paymentHistory
+    const onlinePayments = auditPayments
       .filter((p) => p.paymentMethod === "online")
       .reduce((acc, p) => acc + safeParseFloat(p.amount), 0)
     return {
@@ -872,7 +872,7 @@ export default function Audit() {
       cashPayments: roundNumber(cashPayments),
       onlinePayments: roundNumber(onlinePayments),
     }
-  }, [paymentHistory])
+  }, [auditPayments])
 
   const returnsSummary = useMemo(() => {
     const totalReturns = auditReturns.reduce((acc, r) => acc + safeParseFloat(r.totalRefund || "0"), 0)
@@ -1977,6 +1977,7 @@ export default function Audit() {
 
         {/* PAYMENTS AUDIT TAB */}
         <TabsContent value="payments" className="flex-1 overflow-auto p-4 space-y-4">
+          {/* CHANGE> Add payment summary cards with proper loading states */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <Card>
               <CardHeader className="pb-2">
@@ -1986,8 +1987,14 @@ export default function Audit() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">Rs. {paymentsSummary.totalPayments.toLocaleString()}</div>
-                <p className="text-xs text-muted-foreground">All payments received</p>
+                {auditPaymentsLoading ? (
+                  <Skeleton className="h-8 w-24" />
+                ) : (
+                  <>
+                    <div className="text-2xl font-bold">Rs. {paymentsSummary.totalPayments.toLocaleString()}</div>
+                    <p className="text-xs text-muted-foreground">{auditPayments.length} transactions</p>
+                  </>
+                )}
               </CardContent>
             </Card>
             <Card>
@@ -1998,8 +2005,16 @@ export default function Audit() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">Rs. {paymentsSummary.cashPayments.toLocaleString()}</div>
-                <p className="text-xs text-muted-foreground">Cash transactions</p>
+                {auditPaymentsLoading ? (
+                  <Skeleton className="h-8 w-24" />
+                ) : (
+                  <>
+                    <div className="text-2xl font-bold">Rs. {paymentsSummary.cashPayments.toLocaleString()}</div>
+                    <p className="text-xs text-muted-foreground">
+                      {auditPayments.filter((p) => p.paymentMethod === "cash").length} transactions
+                    </p>
+                  </>
+                )}
               </CardContent>
             </Card>
             <Card>
@@ -2010,8 +2025,16 @@ export default function Audit() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">Rs. {paymentsSummary.onlinePayments.toLocaleString()}</div>
-                <p className="text-xs text-muted-foreground">Digital transactions</p>
+                {auditPaymentsLoading ? (
+                  <Skeleton className="h-8 w-24" />
+                ) : (
+                  <>
+                    <div className="text-2xl font-bold">Rs. {paymentsSummary.onlinePayments.toLocaleString()}</div>
+                    <p className="text-xs text-muted-foreground">
+                      {auditPayments.filter((p) => p.paymentMethod === "online").length} transactions
+                    </p>
+                  </>
+                )}
               </CardContent>
             </Card>
             <Card>
@@ -2022,8 +2045,14 @@ export default function Audit() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{auditPayments.length}</div>
-                <p className="text-xs text-muted-foreground">Total payment entries</p>
+                {auditPaymentsLoading ? (
+                  <Skeleton className="h-8 w-24" />
+                ) : (
+                  <>
+                    <div className="text-2xl font-bold">{auditPayments.length}</div>
+                    <p className="text-xs text-muted-foreground">Total payment entries</p>
+                  </>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -2035,7 +2064,11 @@ export default function Audit() {
                   <Wallet className="h-5 w-5" />
                   Payment History
                 </div>
-                <Button onClick={downloadPaymentsPDF} className="flex items-center gap-2">
+                <Button
+                  onClick={downloadPaymentsPDF}
+                  disabled={auditPaymentsLoading}
+                  className="flex items-center gap-2"
+                >
                   <Download className="h-4 w-4" />
                   Export PDF
                 </Button>
@@ -2049,7 +2082,7 @@ export default function Audit() {
                   ))}
                 </div>
               ) : (
-                <div className="rounded-md border">
+                <div className="rounded-md border overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -2076,21 +2109,26 @@ export default function Audit() {
                             <TableCell className="font-medium">
                               {formatDateShort(new Date(payment.createdAt))}
                             </TableCell>
-                            <TableCell>{payment.sale?.customerName || "N/A"}</TableCell>
-                            <TableCell>{payment.customerPhone}</TableCell>
-                            <TableCell className="text-green-600 font-medium">
+                            <TableCell className="font-medium">{payment.sale?.customerName || "N/A"}</TableCell>
+                            <TableCell className="text-sm">{payment.customerPhone || "-"}</TableCell>
+                            <TableCell className="text-green-600 font-semibold">
                               Rs. {Math.round(safeParseFloat(payment.amount)).toLocaleString()}
                             </TableCell>
                             <TableCell>
-                              <Badge variant={payment.paymentMethod === "cash" ? "default" : "secondary"}>
+                              <Badge
+                                variant={payment.paymentMethod === "cash" ? "default" : "secondary"}
+                                className="capitalize"
+                              >
                                 {payment.paymentMethod === "cash" ? "Cash" : "Online"}
                               </Badge>
                             </TableCell>
-                            <TableCell>
+                            <TableCell className="text-sm">
                               Rs. {Math.round(safeParseFloat(payment.previousBalance)).toLocaleString()}
                             </TableCell>
-                            <TableCell>Rs. {Math.round(safeParseFloat(payment.newBalance)).toLocaleString()}</TableCell>
-                            <TableCell className="text-sm text-muted-foreground max-w-32 truncate">
+                            <TableCell className="text-sm font-medium">
+                              Rs. {Math.round(safeParseFloat(payment.newBalance)).toLocaleString()}
+                            </TableCell>
+                            <TableCell className="text-sm text-muted-foreground max-w-xs truncate">
                               {payment.notes || "-"}
                             </TableCell>
                           </TableRow>
@@ -2098,6 +2136,11 @@ export default function Audit() {
                       )}
                     </TableBody>
                   </Table>
+                </div>
+              )}
+              {auditPayments.length > 0 && (
+                <div className="mt-4 text-sm text-muted-foreground text-center">
+                  Showing {auditPayments.length} payment records
                 </div>
               )}
             </CardContent>
@@ -2110,7 +2153,7 @@ export default function Audit() {
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <RotateCcw className="h-4 w-4 text-orange-500" />
+                  <RotateCcw className="h-4 w-4" />
                   Total Returns
                 </CardTitle>
               </CardHeader>

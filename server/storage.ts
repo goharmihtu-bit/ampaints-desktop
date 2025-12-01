@@ -2166,6 +2166,10 @@ export class DatabaseStorage implements IStorage {
         .map((sale) => {
           const isManualBalance = sale.isManualBalance
 
+          if (isManualBalance) {
+            return sale
+          }
+
           const adjustedSaleItems = sale.saleItems
             .map((item) => {
               const returnedQty = returnedQuantities.get(item.id) || 0
