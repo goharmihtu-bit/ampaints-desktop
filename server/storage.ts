@@ -2481,7 +2481,8 @@ export class DatabaseStorage implements IStorage {
       customerSales.forEach((sale) => {
         totalAmount += Number.parseFloat(sale.totalAmount || "0")
         totalPaid += Number.parseFloat(sale.amountPaid || "0")
-        billDates.push(new Date(sale.createdAt))
+        const createdAt = sale.createdAt instanceof Date ? sale.createdAt : new Date(sale.createdAt)
+        billDates.push(createdAt)
       })
 
       // Get payment history for additional metrics
@@ -2491,17 +2492,19 @@ export class DatabaseStorage implements IStorage {
       if (paymentRecords.length > 0) {
         // Find the latest payment date
         const latestPayment = paymentRecords.reduce((latest, current) => {
-          const latestDate = new Date(latest.createdAt)
-          const currentDate = new Date(current.createdAt)
+          const latestDate = latest.createdAt instanceof Date ? latest.createdAt : new Date(latest.createdAt)
+          const currentDate = current.createdAt instanceof Date ? current.createdAt : new Date(current.createdAt)
           return currentDate > latestDate ? current : latest
         }, paymentRecords[0])
-        lastPaymentDate = new Date(latestPayment.createdAt)
+        lastPaymentDate =
+          latestPayment.createdAt instanceof Date ? latestPayment.createdAt : new Date(latestPayment.createdAt)
       }
 
       // Calculate average days to payment
       let averageDaysToPayment = 0
-      if (paymentRecords.length > 0 && customerSales.length > 0) {
-        const oldestBill = new Date(Math.min(...billDates.map((d) => d.getTime())))
+      if (paymentRecords.length > 0 && customerSales.length > 0 && billDates.length > 0) {
+        const billTimestamps = billDates.map((d) => d.getTime())
+        const oldestBill = new Date(Math.min(...billTimestamps))
         const newestPayment = lastPaymentDate as Date // We know lastPaymentDate is not null here
 
         // Ensure calculation is not negative if payments occurred before oldest bill (unlikely but safe)
@@ -2515,6 +2518,8 @@ export class DatabaseStorage implements IStorage {
       const paymentStatus: "paid" | "partial" | "unpaid" =
         currentOutstanding <= 0 ? "paid" : totalPaid > 0 ? "partial" : "unpaid"
 
+      const billTimestamps = billDates.map((d) => d.getTime())
+
       return {
         customerPhone,
         customerName: customerSales[0].customerName,
@@ -2522,8 +2527,8 @@ export class DatabaseStorage implements IStorage {
         totalAmount,
         totalPaid,
         currentOutstanding,
-        oldestBillDate: new Date(Math.min(...billDates.map((d) => d.getTime()))),
-        newestBillDate: new Date(Math.max(...billDates.map((d) => d.getTime()))),
+        oldestBillDate: new Date(Math.min(...billTimestamps)),
+        newestBillDate: new Date(Math.max(...billTimestamps)),
         billCount: customerSales.length,
         paymentCount,
         lastPaymentDate,
