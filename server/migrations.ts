@@ -84,6 +84,9 @@ export function migrateDatabase(db: Database.Database): void {
         card_button_color TEXT NOT NULL DEFAULT 'gray-900',
         card_price_color TEXT NOT NULL DEFAULT 'blue-600',
         show_stock_badge_border INTEGER NOT NULL DEFAULT 0,
+        display_theme TEXT NOT NULL DEFAULT 'glass',
+        display_shadow_intensity TEXT NOT NULL DEFAULT 'medium',
+        display_blur_intensity TEXT NOT NULL DEFAULT 'medium',
         audit_pin_hash TEXT,
         audit_pin_salt TEXT,
         perm_stock_delete INTEGER NOT NULL DEFAULT 1,
@@ -110,6 +113,9 @@ export function migrateDatabase(db: Database.Database): void {
     // Add missing columns to settings table
     const missingSettingsColumns = [
       { name: "date_format", sql: "ALTER TABLE settings ADD COLUMN date_format TEXT NOT NULL DEFAULT 'DD-MM-YYYY'" },
+      { name: "display_theme", sql: "ALTER TABLE settings ADD COLUMN display_theme TEXT NOT NULL DEFAULT 'glass'" },
+      { name: "display_shadow_intensity", sql: "ALTER TABLE settings ADD COLUMN display_shadow_intensity TEXT NOT NULL DEFAULT 'medium'" },
+      { name: "display_blur_intensity", sql: "ALTER TABLE settings ADD COLUMN display_blur_intensity TEXT NOT NULL DEFAULT 'medium'" },
       { name: "audit_pin_hash", sql: "ALTER TABLE settings ADD COLUMN audit_pin_hash TEXT" },
       { name: "audit_pin_salt", sql: "ALTER TABLE settings ADD COLUMN audit_pin_salt TEXT" },
       {
@@ -169,13 +175,14 @@ export function migrateDatabase(db: Database.Database): void {
           INSERT INTO settings (
             id, store_name, date_format, card_border_style, card_shadow_size, 
             card_button_color, card_price_color, show_stock_badge_border, 
+            display_theme, display_shadow_intensity, display_blur_intensity,
             audit_pin_hash, audit_pin_salt,
             perm_stock_delete, perm_stock_edit, perm_stock_history_delete,
             perm_sales_delete, perm_sales_edit, perm_payment_edit, 
             perm_payment_delete, perm_database_access,
             cloud_database_url, cloud_sync_enabled, last_sync_time,
             updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           "default",
           "PaintPulse",
@@ -185,6 +192,9 @@ export function migrateDatabase(db: Database.Database): void {
           "gray-900",
           "blue-600",
           0,
+          "glass",
+          "medium",
+          "medium", // display theme settings
           null,
           null, // audit_pin_hash, audit_pin_salt
           1,
@@ -209,6 +219,9 @@ export function migrateDatabase(db: Database.Database): void {
       const updateStmt = db.prepare(`
         UPDATE settings SET 
           date_format = COALESCE(date_format, 'DD-MM-YYYY'),
+          display_theme = COALESCE(display_theme, 'glass'),
+          display_shadow_intensity = COALESCE(display_shadow_intensity, 'medium'),
+          display_blur_intensity = COALESCE(display_blur_intensity, 'medium'),
           audit_pin_hash = COALESCE(audit_pin_hash, NULL),
           audit_pin_salt = COALESCE(audit_pin_salt, NULL),
           perm_stock_delete = COALESCE(perm_stock_delete, 1),

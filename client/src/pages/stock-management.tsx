@@ -1185,9 +1185,9 @@ export default function StockManagement() {
      Render
      ------------------------- */
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50 p-6 space-y-6">
+    <div className="glass-page p-6 space-y-6">
       {/* Header Section */}
-      <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-lg">
+      <div className="glass-surface p-6">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
           <div className="space-y-3">
             <div className="flex items-center gap-3">
@@ -1257,10 +1257,11 @@ export default function StockManagement() {
       {/* Tabs: Products/Variants/Colors/Stock In/Stock In History */}
       <Tabs defaultValue="products" className="space-y-4">
         <div className="overflow-x-auto pb-2">
-          <TabsList className="bg-white border border-gray-200 p-1 inline-flex w-auto min-w-full sm:w-full">
+          <TabsList className="glass-tabs-list inline-flex w-auto min-w-full sm:w-full">
             <TabsTrigger 
               value="products" 
-              className="flex items-center gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-purple-600 data-[state=active]:text-white data-[state=active]:shadow-md whitespace-nowrap text-gray-700"
+              className="glass-tab"
+              data-testid="tab-products"
             >
               <Package className="h-4 w-4" />
               <span className="hidden sm:inline">Products</span>
@@ -1268,7 +1269,8 @@ export default function StockManagement() {
             </TabsTrigger>
             <TabsTrigger 
               value="variants" 
-              className="flex items-center gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-purple-600 data-[state=active]:text-white data-[state=active]:shadow-md whitespace-nowrap text-gray-700"
+              className="glass-tab"
+              data-testid="tab-variants"
             >
               <Layers className="h-4 w-4" />
               <span className="hidden sm:inline">Variants</span>
@@ -1276,7 +1278,8 @@ export default function StockManagement() {
             </TabsTrigger>
             <TabsTrigger 
               value="colors" 
-              className="flex items-center gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-purple-600 data-[state=active]:text-white data-[state=active]:shadow-md whitespace-nowrap text-gray-700"
+              className="glass-tab"
+              data-testid="tab-colors"
             >
               <Palette className="h-4 w-4" />
               <span className="hidden sm:inline">Colors</span>
@@ -1284,7 +1287,8 @@ export default function StockManagement() {
             </TabsTrigger>
             <TabsTrigger 
               value="stock-in" 
-              className="flex items-center gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-purple-600 data-[state=active]:text-white data-[state=active]:shadow-md whitespace-nowrap text-gray-700"
+              className="glass-tab"
+              data-testid="tab-stock-in"
             >
               <TruckIcon className="h-4 w-4" />
               <span className="hidden sm:inline">Stock In</span>
@@ -1292,7 +1296,8 @@ export default function StockManagement() {
             </TabsTrigger>
             <TabsTrigger 
               value="stock-in-history" 
-              className="flex items-center gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-purple-600 data-[state=active]:text-white data-[state=active]:shadow-md whitespace-nowrap text-gray-700"
+              className="glass-tab"
+              data-testid="tab-stock-in-history"
             >
               <History className="h-4 w-4" />
               <span className="hidden sm:inline">Stock In History</span>
@@ -1300,7 +1305,8 @@ export default function StockManagement() {
             </TabsTrigger>
             <TabsTrigger 
               value="stock-out-history" 
-              className="flex items-center gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-purple-600 data-[state=active]:text-white data-[state=active]:shadow-md whitespace-nowrap text-gray-700"
+              className="glass-tab"
+              data-testid="tab-stock-out-history"
             >
               <ArrowUpCircle className="h-4 w-4" />
               <span className="hidden sm:inline">Stock Out</span>

@@ -24,7 +24,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   Search,
   Calendar,
-  IndianRupee,
   Receipt,
   CreditCard,
   Wallet,
@@ -320,22 +319,19 @@ export default function Reports() {
             <div className="flex gap-4 text-sm">
               <div className="flex items-center gap-1">
                 <span className="text-muted-foreground">Total Amount:</span>
-                <span className="font-semibold flex items-center">
-                  <IndianRupee className="h-3 w-3" />
+                <span className="font-semibold">
                   {filteredSalesTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
                 </span>
               </div>
               <div className="flex items-center gap-1">
                 <span className="text-muted-foreground">Total Paid:</span>
-                <span className="font-semibold text-green-600 dark:text-green-400 flex items-center">
-                  <IndianRupee className="h-3 w-3" />
+                <span className="font-semibold text-green-600 dark:text-green-400">
                   {filteredSalesPaid.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
                 </span>
               </div>
               <div className="flex items-center gap-1">
                 <span className="text-muted-foreground">Total Outstanding:</span>
-                <span className="font-semibold text-red-600 dark:text-red-400 flex items-center">
-                  <IndianRupee className="h-3 w-3" />
+                <span className="font-semibold text-red-600 dark:text-red-400">
                   {filteredSalesOutstanding.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
                 </span>
               </div>
@@ -352,22 +348,19 @@ export default function Reports() {
             <div className="flex gap-4 text-sm">
               <div className="flex items-center gap-1">
                 <span className="text-muted-foreground">Total Bill Amount:</span>
-                <span className="font-semibold flex items-center">
-                  <IndianRupee className="h-3 w-3" />
+                <span className="font-semibold">
                   {unpaidSalesTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
                 </span>
               </div>
               <div className="flex items-center gap-1">
                 <span className="text-muted-foreground">Total Paid:</span>
-                <span className="font-semibold text-green-600 dark:text-green-400 flex items-center">
-                  <IndianRupee className="h-3 w-3" />
+                <span className="font-semibold text-green-600 dark:text-green-400">
                   {unpaidSalesPaid.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
                 </span>
               </div>
               <div className="flex items-center gap-1">
                 <span className="text-muted-foreground">Total Outstanding:</span>
-                <span className="font-semibold text-red-600 dark:text-red-400 flex items-center">
-                  <IndianRupee className="h-3 w-3" />
+                <span className="font-semibold text-red-600 dark:text-red-400">
                   {unpaidSalesOutstanding.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
                 </span>
               </div>
@@ -384,8 +377,7 @@ export default function Reports() {
             <div className="flex gap-4 text-sm">
               <div className="flex items-center gap-1">
                 <span className="text-muted-foreground">Total Recovery Amount:</span>
-                <span className="font-semibold text-green-600 dark:text-green-400 flex items-center">
-                  <IndianRupee className="h-3 w-3" />
+                <span className="font-semibold text-green-600 dark:text-green-400">
                   {filteredPaymentsTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
                 </span>
               </div>
@@ -402,7 +394,7 @@ export default function Reports() {
 
   if (isLoading) {
     return (
-      <div className="p-6 space-y-6">
+      <div className="glass-page p-6 space-y-6">
         <div className="flex items-center justify-between">
           <Skeleton className="h-8 w-48" />
         </div>
@@ -417,97 +409,90 @@ export default function Reports() {
   }
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold" data-testid="text-reports-title">Financial Reports</h1>
-          <p className="text-muted-foreground">Complete overview of sales, payments, and unpaid bills</p>
-        </div>
+    <div className="glass-page p-6 space-y-6">
+      <div className="glass-surface p-4">
+        <h1 className="text-2xl font-bold" data-testid="text-reports-title">Financial Reports</h1>
+        <p className="text-muted-foreground">Complete overview of sales, payments, and unpaid bills</p>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        <Card data-testid="card-total-sales">
-          <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Sales</CardTitle>
-            <Receipt className="h-5 w-5 text-blue-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold flex items-center gap-1">
-              <IndianRupee className="h-5 w-5" />
-              {stats.totalSalesAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+        <div className="glass-metric" data-testid="card-total-sales">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <span className="text-sm font-medium text-muted-foreground">Total Sales</span>
+            <div className="metric-icon-blue">
+              <Receipt className="h-4 w-4" />
             </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {stats.totalBillsCount} bills total
-            </p>
-          </CardContent>
-        </Card>
+          </div>
+          <div className="text-2xl font-bold">
+            {Math.round(stats.totalSalesAmount).toLocaleString("en-IN")}
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">
+            {stats.totalBillsCount} bills total
+          </p>
+        </div>
 
-        <Card data-testid="card-paid-amount">
-          <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Paid Amount</CardTitle>
-            <TrendingUp className="h-5 w-5 text-green-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold flex items-center gap-1 text-green-600 dark:text-green-400">
-              <IndianRupee className="h-5 w-5" />
-              {stats.totalPaidAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+        <div className="glass-metric" data-testid="card-paid-amount">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <span className="text-sm font-medium text-muted-foreground">Paid Amount</span>
+            <div className="metric-icon-green">
+              <TrendingUp className="h-4 w-4" />
             </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {stats.paidBillsCount} paid bills
-            </p>
-          </CardContent>
-        </Card>
+          </div>
+          <div className="text-2xl font-bold text-green-600 dark:text-green-400">
+            {Math.round(stats.totalPaidAmount).toLocaleString("en-IN")}
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">
+            {stats.paidBillsCount} paid bills
+          </p>
+        </div>
 
-        <Card data-testid="card-unpaid-amount">
-          <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Unpaid Amount</CardTitle>
-            <TrendingDown className="h-5 w-5 text-red-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold flex items-center gap-1 text-red-600 dark:text-red-400">
-              <IndianRupee className="h-5 w-5" />
-              {stats.totalUnpaidAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+        <div className="glass-metric" data-testid="card-unpaid-amount">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <span className="text-sm font-medium text-muted-foreground">Unpaid Amount</span>
+            <div className="metric-icon-red">
+              <TrendingDown className="h-4 w-4" />
             </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {stats.unpaidBillsCount} unpaid bills
-            </p>
-          </CardContent>
-        </Card>
+          </div>
+          <div className="text-2xl font-bold text-red-600 dark:text-red-400">
+            {Math.round(stats.totalUnpaidAmount).toLocaleString("en-IN")}
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">
+            {stats.unpaidBillsCount} unpaid bills
+          </p>
+        </div>
 
-        <Card data-testid="card-recovery-payments">
-          <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Recovery Payments</CardTitle>
-            <Wallet className="h-5 w-5 text-purple-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold flex items-center gap-1 text-purple-600 dark:text-purple-400">
-              <IndianRupee className="h-5 w-5" />
-              {stats.totalRecoveryPayments.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+        <div className="glass-metric" data-testid="card-recovery-payments">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <span className="text-sm font-medium text-muted-foreground">Recovery Payments</span>
+            <div className="metric-icon-purple">
+              <Wallet className="h-4 w-4" />
             </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {stats.totalPaymentRecords} payment records
-            </p>
-          </CardContent>
-        </Card>
+          </div>
+          <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">
+            {Math.round(stats.totalRecoveryPayments).toLocaleString("en-IN")}
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">
+            {stats.totalPaymentRecords} payment records
+          </p>
+        </div>
 
-        <Card data-testid="card-returns">
-          <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Returns</CardTitle>
-            <RotateCcw className="h-5 w-5 text-orange-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold flex items-center gap-1 text-orange-600 dark:text-orange-400">
-              <IndianRupee className="h-5 w-5" />
-              {stats.totalReturnsAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+        <div className="glass-metric" data-testid="card-returns">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <span className="text-sm font-medium text-muted-foreground">Total Returns</span>
+            <div className="metric-icon-orange">
+              <RotateCcw className="h-4 w-4" />
             </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {stats.returnsCount} returns total
-            </p>
-          </CardContent>
-        </Card>
+          </div>
+          <div className="text-2xl font-bold text-orange-600 dark:text-orange-400">
+            {Math.round(stats.totalReturnsAmount).toLocaleString("en-IN")}
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">
+            {stats.returnsCount} returns total
+          </p>
+        </div>
       </div>
 
-      <Card className="p-4">
+      <div className="glass-toolbar">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center flex-1">
             <div className="relative flex-1 max-w-sm">
@@ -516,7 +501,7 @@ export default function Reports() {
                 placeholder="Search customer name or phone..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9"
+                className="pl-9 glass-input"
                 data-testid="input-search"
               />
             </div>
@@ -526,7 +511,7 @@ export default function Reports() {
                 type="date"
                 value={dateFrom}
                 onChange={(e) => setDateFrom(e.target.value)}
-                className="w-auto"
+                className="w-auto glass-input"
                 data-testid="input-date-from"
               />
               <span className="text-muted-foreground">to</span>
@@ -534,7 +519,7 @@ export default function Reports() {
                 type="date"
                 value={dateTo}
                 onChange={(e) => setDateTo(e.target.value)}
-                className="w-auto"
+                className="w-auto glass-input"
                 data-testid="input-date-to"
               />
             </div>
@@ -561,7 +546,7 @@ export default function Reports() {
             )}
           </div>
         </div>
-      </Card>
+      </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList className="grid w-full grid-cols-4">
@@ -632,7 +617,7 @@ export default function Reports() {
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-base flex items-center gap-2">
-                  <IndianRupee className="h-5 w-5" />
+                  <Wallet className="h-5 w-5" />
                   Payment Summary
                 </CardTitle>
               </CardHeader>
@@ -648,7 +633,7 @@ export default function Reports() {
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Avg Bill Amount</span>
                   <span className="font-semibold">
-                    Rs {stats.totalBillsCount > 0 ? (stats.totalSalesAmount / stats.totalBillsCount).toFixed(0) : 0}
+                    {stats.totalBillsCount > 0 ? (stats.totalSalesAmount / stats.totalBillsCount).toFixed(0) : 0}
                   </span>
                 </div>
               </CardContent>
@@ -681,12 +666,12 @@ export default function Reports() {
                         </Link>
                       </TableCell>
                       <TableCell>{sale.customerPhone}</TableCell>
-                      <TableCell>Rs {parseFloat(sale.totalAmount).toLocaleString("en-IN")}</TableCell>
+                      <TableCell>{parseFloat(sale.totalAmount).toLocaleString("en-IN")}</TableCell>
                       <TableCell className="text-green-600 dark:text-green-400">
-                        Rs {parseFloat(sale.amountPaid).toLocaleString("en-IN")}
+                        {parseFloat(sale.amountPaid).toLocaleString("en-IN")}
                       </TableCell>
                       <TableCell className="text-red-600 dark:text-red-400 font-semibold">
-                        Rs {(parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid)).toLocaleString("en-IN")}
+                        {(parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid)).toLocaleString("en-IN")}
                       </TableCell>
                       <TableCell>{getPaymentStatusBadge(sale.paymentStatus)}</TableCell>
                       <TableCell>{formatDisplayDate(sale.createdAt)}</TableCell>
@@ -742,12 +727,12 @@ export default function Reports() {
                           </Link>
                         </TableCell>
                         <TableCell>{sale.customerPhone}</TableCell>
-                        <TableCell>Rs {parseFloat(sale.totalAmount).toLocaleString("en-IN")}</TableCell>
+                        <TableCell>{parseFloat(sale.totalAmount).toLocaleString("en-IN")}</TableCell>
                         <TableCell className="text-green-600 dark:text-green-400">
-                          Rs {parseFloat(sale.amountPaid).toLocaleString("en-IN")}
+                          {parseFloat(sale.amountPaid).toLocaleString("en-IN")}
                         </TableCell>
                         <TableCell className="text-red-600 dark:text-red-400">
-                          Rs {(parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid)).toLocaleString("en-IN")}
+                          {(parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid)).toLocaleString("en-IN")}
                         </TableCell>
                         <TableCell>{getPaymentStatusBadge(sale.paymentStatus)}</TableCell>
                         <TableCell>{formatDisplayDate(sale.createdAt)}</TableCell>
@@ -806,12 +791,12 @@ export default function Reports() {
                           </Link>
                         </TableCell>
                         <TableCell>{sale.customerPhone}</TableCell>
-                        <TableCell>Rs {parseFloat(sale.totalAmount).toLocaleString("en-IN")}</TableCell>
+                        <TableCell>{parseFloat(sale.totalAmount).toLocaleString("en-IN")}</TableCell>
                         <TableCell className="text-green-600 dark:text-green-400">
-                          Rs {parseFloat(sale.amountPaid).toLocaleString("en-IN")}
+                          {parseFloat(sale.amountPaid).toLocaleString("en-IN")}
                         </TableCell>
                         <TableCell className="text-red-600 dark:text-red-400 font-semibold">
-                          Rs {(parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid)).toLocaleString("en-IN")}
+                          {(parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid)).toLocaleString("en-IN")}
                         </TableCell>
                         <TableCell>{getPaymentStatusBadge(sale.paymentStatus)}</TableCell>
                         <TableCell>{sale.dueDate ? formatDisplayDate(sale.dueDate) : "Not set"}</TableCell>
@@ -872,13 +857,13 @@ export default function Reports() {
                         </TableCell>
                         <TableCell>{payment.customerPhone}</TableCell>
                         <TableCell className="text-green-600 dark:text-green-400 font-semibold">
-                          Rs {parseFloat(payment.amount).toLocaleString("en-IN")}
+                          {parseFloat(payment.amount).toLocaleString("en-IN")}
                         </TableCell>
                         <TableCell className="text-muted-foreground">
-                          Rs {parseFloat(payment.previousBalance).toLocaleString("en-IN")}
+                          {parseFloat(payment.previousBalance).toLocaleString("en-IN")}
                         </TableCell>
                         <TableCell>
-                          Rs {parseFloat(payment.newBalance).toLocaleString("en-IN")}
+                          {parseFloat(payment.newBalance).toLocaleString("en-IN")}
                         </TableCell>
                         <TableCell>
                           <Badge variant="secondary" className="capitalize">

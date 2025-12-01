@@ -400,8 +400,8 @@ export default function Settings() {
   };
 
   return (
-    <div className="p-6 space-y-6 max-w-5xl">
-      <div>
+    <div className="glass-page p-6 space-y-6 max-w-5xl">
+      <div className="glass-surface p-4">
         <h1 className="text-2xl font-semibold tracking-tight" data-testid="text-settings-title">
           Settings
         </h1>
@@ -409,21 +409,26 @@ export default function Settings() {
       </div>
 
       <Tabs defaultValue="general" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="general" data-testid="tab-general-settings">
+        <TabsList className="glass-tabs-list grid w-full grid-cols-5">
+          <TabsTrigger value="general" className="glass-tab" data-testid="tab-general-settings">
             <Settings2 className="h-4 w-4 mr-2" />
             General
           </TabsTrigger>
-          <TabsTrigger value="receipts" data-testid="tab-receipts-settings">
+          <TabsTrigger value="display" className="glass-tab" data-testid="tab-display-settings">
+            <Palette className="h-4 w-4 mr-2" />
+            Display
+          </TabsTrigger>
+          <TabsTrigger value="receipts" className="glass-tab" data-testid="tab-receipts-settings">
             <Receipt className="h-4 w-4 mr-2" />
             Receipts
           </TabsTrigger>
-          <TabsTrigger value="printer" data-testid="tab-printer-settings">
+          <TabsTrigger value="printer" className="glass-tab" data-testid="tab-printer-settings">
             <Printer className="h-4 w-4 mr-2" />
             Printer
           </TabsTrigger>
           <TabsTrigger 
             value="database" 
+            className="glass-tab"
             data-testid="tab-database-settings"
             onClick={handleDatabaseTabClick}
             disabled={!uiSettings?.permDatabaseAccess}
@@ -500,99 +505,93 @@ export default function Settings() {
         {/* General Settings - UI + Date Format */}
         <TabsContent value="general" className="space-y-4">
           {/* Store Branding */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <Palette className="h-5 w-5 text-purple-600" />
-                <CardTitle>Store Branding</CardTitle>
-              </div>
-              <CardDescription>Customize your store name and appearance</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <Label htmlFor="uiStoreName">Store Name</Label>
-                <Input
-                  id="uiStoreName"
-                  value={uiFormData.storeName}
-                  onChange={(e) => setUiFormData({ ...uiFormData, storeName: e.target.value })}
-                  placeholder="Enter store name"
-                  className="mt-1"
-                  data-testid="input-store-name"
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  This name appears in the sidebar navigation
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+          <div className="glass-card p-5">
+            <div className="flex items-center gap-2 mb-1">
+              <Palette className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+              <h3 className="font-semibold">Store Branding</h3>
+            </div>
+            <p className="text-sm text-muted-foreground mb-4">Customize your store name and appearance</p>
+            <div>
+              <Label htmlFor="uiStoreName">Store Name</Label>
+              <Input
+                id="uiStoreName"
+                value={uiFormData.storeName}
+                onChange={(e) => setUiFormData({ ...uiFormData, storeName: e.target.value })}
+                placeholder="Enter store name"
+                className="mt-1 glass-input"
+                data-testid="input-store-name"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                This name appears in the sidebar navigation
+              </p>
+            </div>
+          </div>
 
           {/* Date Format */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <CalendarDays className="h-5 w-5 text-blue-600" />
-                <CardTitle>Date Format</CardTitle>
-              </div>
-              <CardDescription>
-                Choose how dates are displayed across all pages
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <RadioGroup
-                value={uiFormData.dateFormat || "DD-MM-YYYY"}
-                onValueChange={(value) => setUiFormData({ ...uiFormData, dateFormat: value as DateFormatType })}
-                className="space-y-3"
-              >
-                {dateFormats.map((dateFormat) => (
-                  <div
-                    key={dateFormat.value}
-                    className={`relative flex items-center space-x-4 rounded-lg border-2 p-3 cursor-pointer transition-all ${
-                      uiFormData.dateFormat === dateFormat.value
-                        ? "border-purple-500 bg-purple-50/50"
-                        : "border-slate-200 hover:border-slate-300 bg-white/50"
-                    }`}
-                    onClick={() => setUiFormData({ ...uiFormData, dateFormat: dateFormat.value })}
-                    data-testid={`option-${dateFormat.value}`}
-                  >
-                    <RadioGroupItem value={dateFormat.value} id={dateFormat.value} className="sr-only" />
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Label
-                          htmlFor={dateFormat.value}
-                          className="font-semibold text-slate-800 cursor-pointer"
-                        >
-                          {dateFormat.label}
-                        </Label>
-                        {dateFormat.value === "DD-MM-YYYY" && (
-                          <Badge variant="secondary" className="text-xs">
-                            Default
-                          </Badge>
-                        )}
-                        {uiFormData.dateFormat === dateFormat.value && (
-                          <Check className="h-4 w-4 text-purple-600" />
-                        )}
-                      </div>
-                      <p className="text-sm text-slate-600">{dateFormat.description}</p>
+          <div className="glass-card p-5">
+            <div className="flex items-center gap-2 mb-1">
+              <CalendarDays className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+              <h3 className="font-semibold">Date Format</h3>
+            </div>
+            <p className="text-sm text-muted-foreground mb-4">
+              Choose how dates are displayed across all pages
+            </p>
+            <RadioGroup
+              value={uiFormData.dateFormat || "DD-MM-YYYY"}
+              onValueChange={(value) => setUiFormData({ ...uiFormData, dateFormat: value as DateFormatType })}
+              className="space-y-3"
+            >
+              {dateFormats.map((dateFormat) => (
+                <div
+                  key={dateFormat.value}
+                  className={`relative flex items-center space-x-4 rounded-lg border p-3 cursor-pointer transition-all ${
+                    uiFormData.dateFormat === dateFormat.value
+                      ? "border-blue-500 bg-blue-50/50 dark:bg-blue-950/30 dark:border-blue-400"
+                      : "border-border hover:border-muted-foreground/30 bg-white/50 dark:bg-zinc-800/50"
+                  }`}
+                  onClick={() => setUiFormData({ ...uiFormData, dateFormat: dateFormat.value })}
+                  data-testid={`option-${dateFormat.value}`}
+                >
+                  <RadioGroupItem value={dateFormat.value} id={dateFormat.value} className="sr-only" />
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Label
+                        htmlFor={dateFormat.value}
+                        className="font-semibold cursor-pointer"
+                      >
+                        {dateFormat.label}
+                      </Label>
+                      {dateFormat.value === "DD-MM-YYYY" && (
+                        <Badge variant="secondary" className="text-xs">
+                          Default
+                        </Badge>
+                      )}
+                      {uiFormData.dateFormat === dateFormat.value && (
+                        <Check className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                      )}
                     </div>
-                    <div className="text-right">
-                      <p className="text-xs text-slate-500 mb-1">Example:</p>
-                      <p className="font-mono font-semibold text-purple-600">
-                        {dateFormat.example}
-                      </p>
-                    </div>
+                    <p className="text-sm text-muted-foreground">{dateFormat.description}</p>
                   </div>
-                ))}
-              </RadioGroup>
-            </CardContent>
-          </Card>
+                  <div className="text-right">
+                    <p className="text-xs text-muted-foreground mb-1">Example:</p>
+                    <p className="font-mono font-semibold text-blue-600 dark:text-blue-400">
+                      {dateFormat.example}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </RadioGroup>
+          </div>
 
           {/* Product Card Design */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Product Card Design</CardTitle>
-              <CardDescription>Customize how products appear in POS Sales</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
+          <div className="glass-card p-5">
+            <div className="flex items-center gap-2 mb-1">
+              <Settings2 className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+              <h3 className="font-semibold">Product Card Design</h3>
+            </div>
+            <p className="text-sm text-muted-foreground mb-4">Customize how products appear in POS Sales</p>
+            
+            <div className="space-y-6">
               <div className="space-y-3">
                 <Label>Card Border Style</Label>
                 <RadioGroup
@@ -630,7 +629,7 @@ export default function Settings() {
                     setUiFormData({ ...uiFormData, cardShadowSize: value })
                   }
                 >
-                  <SelectTrigger id="shadowSize">
+                  <SelectTrigger id="shadowSize" className="glass-input">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -647,7 +646,7 @@ export default function Settings() {
                   value={uiFormData.cardButtonColor}
                   onValueChange={(value) => setUiFormData({ ...uiFormData, cardButtonColor: value })}
                 >
-                  <SelectTrigger id="buttonColor">
+                  <SelectTrigger id="buttonColor" className="glass-input">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -666,7 +665,7 @@ export default function Settings() {
                   value={uiFormData.cardPriceColor}
                   onValueChange={(value) => setUiFormData({ ...uiFormData, cardPriceColor: value })}
                 >
-                  <SelectTrigger id="priceColor">
+                  <SelectTrigger id="priceColor" className="glass-input">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -694,8 +693,8 @@ export default function Settings() {
                   }
                 />
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
 
           <div className="flex justify-end gap-3">
             <Button
@@ -722,16 +721,130 @@ export default function Settings() {
           </div>
         </TabsContent>
 
+        {/* Display Settings - Theme Controls */}
+        <TabsContent value="display" className="space-y-4">
+          <div className="glass-card p-5">
+            <div className="flex items-center gap-2 mb-1">
+              <Palette className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+              <h3 className="font-semibold">Theme Style</h3>
+            </div>
+            <p className="text-sm text-muted-foreground mb-4">Choose your preferred visual theme for the application</p>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div 
+                className={`p-4 rounded-lg border cursor-pointer transition-all ${
+                  uiSettings?.displayTheme === 'glass' || !uiSettings?.displayTheme 
+                    ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-950/30 dark:border-blue-400' 
+                    : 'border-border hover:border-muted-foreground/30 bg-white/50 dark:bg-zinc-800/50'
+                }`}
+                onClick={() => updateUiMutation.mutate({ displayTheme: 'glass' })}
+                data-testid="theme-glass"
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-8 h-8 rounded-md bg-gradient-to-br from-blue-500/20 to-blue-400/20 backdrop-blur border border-white/20" />
+                  <span className="font-medium">Glass</span>
+                  {(uiSettings?.displayTheme === 'glass' || !uiSettings?.displayTheme) && (
+                    <Check className="h-4 w-4 text-blue-600 dark:text-blue-400 ml-auto" />
+                  )}
+                </div>
+                <p className="text-sm text-muted-foreground">Modern glassmorphism with frosted surfaces</p>
+              </div>
+              <div 
+                className={`p-4 rounded-lg border cursor-pointer transition-all ${
+                  uiSettings?.displayTheme === 'flat' 
+                    ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-950/30 dark:border-blue-400' 
+                    : 'border-border hover:border-muted-foreground/30 bg-white/50 dark:bg-zinc-800/50'
+                }`}
+                onClick={() => updateUiMutation.mutate({ displayTheme: 'flat' })}
+                data-testid="theme-flat"
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-8 h-8 rounded-md bg-card border" />
+                  <span className="font-medium">Flat</span>
+                  {uiSettings?.displayTheme === 'flat' && (
+                    <Check className="h-4 w-4 text-blue-600 dark:text-blue-400 ml-auto" />
+                  )}
+                </div>
+                <p className="text-sm text-muted-foreground">Clean, minimal design with solid backgrounds</p>
+              </div>
+              <div 
+                className={`p-4 rounded-lg border cursor-pointer transition-all ${
+                  uiSettings?.displayTheme === 'classic' 
+                    ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-950/30 dark:border-blue-400' 
+                    : 'border-border hover:border-muted-foreground/30 bg-white/50 dark:bg-zinc-800/50'
+                }`}
+                onClick={() => updateUiMutation.mutate({ displayTheme: 'classic' })}
+                data-testid="theme-classic"
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-8 h-8 rounded-md bg-card border shadow-md" />
+                  <span className="font-medium">Classic</span>
+                  {uiSettings?.displayTheme === 'classic' && (
+                    <Check className="h-4 w-4 text-blue-600 dark:text-blue-400 ml-auto" />
+                  )}
+                </div>
+                <p className="text-sm text-muted-foreground">Traditional card-based layout with shadows</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="glass-card p-5">
+            <h3 className="font-semibold mb-1">Shadow Intensity</h3>
+            <p className="text-sm text-muted-foreground mb-4">Control the intensity of shadows across the interface</p>
+            <RadioGroup
+              value={uiSettings?.displayShadowIntensity || 'medium'}
+              onValueChange={(value) => updateUiMutation.mutate({ displayShadowIntensity: value })}
+              className="flex flex-wrap gap-6"
+            >
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="light" id="shadow-light" />
+                <Label htmlFor="shadow-light" className="cursor-pointer">Light</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="medium" id="shadow-medium" />
+                <Label htmlFor="shadow-medium" className="cursor-pointer">Medium</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="strong" id="shadow-strong" />
+                <Label htmlFor="shadow-strong" className="cursor-pointer">Strong</Label>
+              </div>
+            </RadioGroup>
+          </div>
+
+          <div className="glass-card p-5">
+            <h3 className="font-semibold mb-1">Blur Intensity</h3>
+            <p className="text-sm text-muted-foreground mb-4">Control the backdrop blur effect on glass surfaces</p>
+            <RadioGroup
+              value={uiSettings?.displayBlurIntensity || 'medium'}
+              onValueChange={(value) => updateUiMutation.mutate({ displayBlurIntensity: value })}
+              className="flex flex-wrap gap-6"
+            >
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="light" id="blur-light" />
+                <Label htmlFor="blur-light" className="cursor-pointer">Light</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="medium" id="blur-medium" />
+                <Label htmlFor="blur-medium" className="cursor-pointer">Medium</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="strong" id="blur-strong" />
+                <Label htmlFor="blur-strong" className="cursor-pointer">Strong</Label>
+              </div>
+            </RadioGroup>
+          </div>
+        </TabsContent>
+
         {/* Receipts Settings */}
         <TabsContent value="receipts" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Bill Display Settings</CardTitle>
-              <CardDescription>
-                Customize what appears on printed bills
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
+          <div className="glass-card p-5">
+            <div className="flex items-center gap-2 mb-1">
+              <Receipt className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+              <h3 className="font-semibold">Bill Display Settings</h3>
+            </div>
+            <p className="text-sm text-muted-foreground mb-4">Customize what appears on printed bills</p>
+            
+            <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>Show Company Name</Label>
@@ -743,7 +856,7 @@ export default function Settings() {
                   data-testid="switch-show-company"
                 />
               </div>
-              <Separator />
+              <Separator className="opacity-50" />
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>Show GST</Label>
@@ -755,7 +868,7 @@ export default function Settings() {
                   data-testid="switch-show-gst"
                 />
               </div>
-              <Separator />
+              <Separator className="opacity-50" />
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>Auto-print Bills</Label>
@@ -767,7 +880,7 @@ export default function Settings() {
                   data-testid="switch-autoprint"
                 />
               </div>
-              <Separator />
+              <Separator className="opacity-50" />
               <div className="space-y-2">
                 <Label htmlFor="billFooter">Bill Footer Message</Label>
                 <Input
@@ -776,20 +889,21 @@ export default function Settings() {
                   onChange={(e) => setBillFooter(e.target.value)}
                   data-testid="input-bill-footer"
                   placeholder="Enter footer message"
+                  className="glass-input"
                 />
                 <p className="text-xs text-muted-foreground">This message appears at the bottom of every bill</p>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
           
-          <Card>
-            <CardHeader>
-              <CardTitle>Thermal Receipt Customization</CardTitle>
-              <CardDescription>
-                Customize thermal receipt header and footer
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
+          <div className="glass-card p-5">
+            <div className="flex items-center gap-2 mb-1">
+              <Printer className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+              <h3 className="font-semibold">Thermal Receipt Customization</h3>
+            </div>
+            <p className="text-sm text-muted-foreground mb-4">Customize thermal receipt header and footer</p>
+            
+            <div className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="receiptBusinessName">Business Name</Label>
                 <Input
@@ -797,6 +911,7 @@ export default function Settings() {
                   value={receiptBusinessName}
                   onChange={(e) => setReceiptBusinessName(e.target.value)}
                   placeholder="Enter business name"
+                  className="glass-input"
                 />
                 <p className="text-xs text-muted-foreground">Appears at the top of thermal receipt</p>
               </div>
@@ -808,6 +923,7 @@ export default function Settings() {
                   value={receiptAddress}
                   onChange={(e) => setReceiptAddress(e.target.value)}
                   placeholder="Enter address and phone"
+                  className="glass-input"
                 />
                 <p className="text-xs text-muted-foreground">Shop address and phone number</p>
               </div>
@@ -819,6 +935,7 @@ export default function Settings() {
                   value={receiptDealerText}
                   onChange={(e) => setReceiptDealerText(e.target.value)}
                   placeholder="e.g., AUTHORIZED DEALER:"
+                  className="glass-input"
                 />
               </div>
               
@@ -829,8 +946,9 @@ export default function Settings() {
                   value={receiptDealerBrands}
                   onChange={(e) => setReceiptDealerBrands(e.target.value)}
                   placeholder="e.g., ICI-DULUX • MOBI PAINTS • WESTER 77"
+                  className="glass-input"
                 />
-                <p className="text-xs text-muted-foreground">Use • (bullet) to separate brands</p>
+                <p className="text-xs text-muted-foreground">Use bullet to separate brands</p>
               </div>
               
               <div className="space-y-2">
@@ -840,6 +958,7 @@ export default function Settings() {
                   value={receiptThankYou}
                   onChange={(e) => setReceiptThankYou(e.target.value)}
                   placeholder="e.g., THANKS FOR YOUR BUSINESS"
+                  className="glass-input"
                 />
                 <p className="text-xs text-muted-foreground">Final message at the bottom of receipt</p>
               </div>
@@ -855,6 +974,7 @@ export default function Settings() {
                     value={receiptFontSize}
                     onChange={(e) => setReceiptFontSize(e.target.value)}
                     placeholder="11"
+                    className="glass-input"
                   />
                   <p className="text-xs text-muted-foreground">Base font size</p>
                 </div>
@@ -869,6 +989,7 @@ export default function Settings() {
                     value={receiptItemFontSize}
                     onChange={(e) => setReceiptItemFontSize(e.target.value)}
                     placeholder="12"
+                    className="glass-input"
                   />
                   <p className="text-xs text-muted-foreground">Item list size</p>
                 </div>
@@ -883,32 +1004,33 @@ export default function Settings() {
                     value={receiptPadding}
                     onChange={(e) => setReceiptPadding(e.target.value)}
                     placeholder="12"
+                    className="glass-input"
                   />
                   <p className="text-xs text-muted-foreground">Side padding</p>
                 </div>
               </div>
               
-              <Separator />
+              <Separator className="opacity-50" />
               <div className="flex justify-end">
                 <Button onClick={handleSaveBillSettings} data-testid="button-save-bill">
                   Save Receipt Settings
                 </Button>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         </TabsContent>
 
         {/* Printer Settings */}
         <TabsContent value="printer" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Bluetooth Printer Connection</CardTitle>
-              <CardDescription>
-                Connect to Bluetooth thermal printers for wireless printing
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between p-4 border rounded-md">
+          <div className="glass-card p-5">
+            <div className="flex items-center gap-2 mb-1">
+              <Bluetooth className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+              <h3 className="font-semibold">Bluetooth Printer Connection</h3>
+            </div>
+            <p className="text-sm text-muted-foreground mb-4">Connect to Bluetooth thermal printers for wireless printing</p>
+            
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-4 border border-border/50 rounded-lg bg-white/50 dark:bg-zinc-800/50">
                 <div className="flex items-center gap-3">
                   <Printer className="h-8 w-8 text-muted-foreground" />
                   <div>
@@ -939,7 +1061,7 @@ export default function Settings() {
                 )}
               </div>
 
-              <div className="p-4 bg-muted rounded-md">
+              <div className="p-4 bg-muted/50 rounded-lg">
                 <h4 className="text-sm font-medium mb-2">Connection Instructions</h4>
                 <ol className="text-sm text-muted-foreground space-y-1 list-decimal list-inside">
                   <li>Make sure your Bluetooth printer is turned on</li>
@@ -950,23 +1072,23 @@ export default function Settings() {
                 </ol>
               </div>
 
-              <div className="p-4 border border-amber-500/50 bg-amber-500/10 rounded-md">
+              <div className="p-4 border border-amber-500/50 bg-amber-500/10 rounded-lg">
                 <p className="text-sm text-amber-900 dark:text-amber-100">
                   <strong>Note:</strong> Bluetooth printing requires a compatible browser (Chrome, Edge) and 
                   a Bluetooth-enabled thermal printer. Make sure your browser has Bluetooth permissions enabled.
                 </p>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         </TabsContent>
         
         {/* Database Settings */}
         <TabsContent value="database" className="space-y-4">
           {!isDatabaseUnlocked ? (
-            <Card data-testid="card-database-locked">
-              <CardContent className="py-12">
+            <div className="glass-card p-5" data-testid="card-database-locked">
+              <div className="py-8">
                 <div className="flex flex-col items-center justify-center space-y-4 text-center">
-                  <div className="p-4 rounded-full bg-muted">
+                  <div className="p-4 rounded-full bg-muted/50">
                     <Lock className="h-8 w-8 text-muted-foreground" />
                   </div>
                   <div>
@@ -980,32 +1102,28 @@ export default function Settings() {
                     Unlock Access
                   </Button>
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           ) : (
-          <Card data-testid="card-database-settings">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Database className="h-5 w-5" />
-                Database Management
-                <Badge variant="secondary" className="ml-2">Unlocked</Badge>
-              </CardTitle>
-              <CardDescription>
-                Manage your database backups and restore data
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
+          <div className="glass-card p-5" data-testid="card-database-settings">
+            <div className="flex items-center gap-2 mb-1">
+              <Database className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+              <h3 className="font-semibold">Database Management</h3>
+              <Badge variant="secondary" className="ml-2">Unlocked</Badge>
+            </div>
+            <p className="text-sm text-muted-foreground mb-4">Manage your database backups and restore data</p>
+            <div className="space-y-4">
               {isElectron && (
                 <>
                   <div className="space-y-2">
                     <Label>Current Database Location</Label>
                     <div className="flex items-center gap-2">
-                      <code className="flex-1 p-2 bg-muted rounded text-sm font-mono" data-testid="text-database-path">
+                      <code className="flex-1 p-2 bg-muted/50 rounded-lg text-sm font-mono" data-testid="text-database-path">
                         {databasePath || "Loading..."}
                       </code>
                     </div>
                   </div>
-                  <Separator />
+                  <Separator className="opacity-50" />
                 </>
               )}
 
@@ -1038,7 +1156,7 @@ export default function Settings() {
                 </Button>
               </div>
 
-              <Separator />
+              <Separator className="opacity-50" />
 
               <div className="p-4 bg-muted/50 rounded-lg">
                 <h4 className="font-medium text-sm mb-2">Important Notes:</h4>
@@ -1050,8 +1168,8 @@ export default function Settings() {
                   <li>Export creates a .db file you can download and save</li>
                 </ul>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
           )}
         </TabsContent>
       </Tabs>

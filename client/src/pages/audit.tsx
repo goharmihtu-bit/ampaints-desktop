@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
@@ -248,7 +249,9 @@ export default function Audit() {
   const [lastExportCounts, setLastExportCounts] = useState<any>(null)
   const [lastImportCounts, setLastImportCounts] = useState<any>(null)
   const [autoSyncEnabled, setAutoSyncEnabled] = useState(false)
-  const [syncInterval, setSyncInterval] = useState(5) // minutes
+  const [syncInterval, setSyncInterval] = useState(5) // seconds for real-time sync
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null)
+  const [pendingChanges, setPendingChanges] = useState(0)
 
   const { data: hasPin } = useQuery<{ hasPin: boolean; isDefault?: boolean }>({
     queryKey: ["/api/audit/has-pin"],
@@ -464,13 +467,15 @@ export default function Audit() {
     }
   }
 
-  const handleSaveCloudSettings = async () => {
+  const handleSaveCloudSettings = async (silent = false) => {
     if (!cloudUrl.trim()) {
-      toast({
-        title: "Connection URL Required",
-        description: "Please enter a PostgreSQL connection URL first.",
-        variant: "destructive",
-      })
+      if (!silent) {
+        toast({
+          title: "Connection URL Required",
+          description: "Please enter a PostgreSQL connection URL first.",
+          variant: "destructive",
+        })
+      }
       return
     }
 
@@ -484,7 +489,7 @@ export default function Audit() {
         }),
       })
 
-      if (data.ok) {
+      if (data.ok && !silent) {
         toast({
           title: "Settings Saved",
           description: "Cloud database settings saved successfully.",
@@ -492,28 +497,32 @@ export default function Audit() {
         queryClient.invalidateQueries({ queryKey: ["/api/settings"] })
       }
     } catch (error: any) {
-      toast({
-        title: "Failed to Save",
-        description: error.message || "Could not save cloud settings.",
-        variant: "destructive",
-      })
+      if (!silent) {
+        toast({
+          title: "Failed to Save",
+          description: error.message || "Could not save cloud settings.",
+          variant: "destructive",
+        })
+      }
     }
   }
 
-  const handleExportToCloud = async () => {
+  const handleExportToCloud = async (silent = false) => {
     if (!cloudUrl.trim()) {
-      toast({
-        title: "Connection URL Required",
-        description: "Please enter and save a PostgreSQL connection URL first.",
-        variant: "destructive",
-      })
+      if (!silent) {
+        toast({
+          title: "Connection URL Required",
+          description: "Please enter and save a PostgreSQL connection URL first.",
+          variant: "destructive",
+        })
+      }
       return
     }
 
-    // First save settings if not already saved
-    await handleSaveCloudSettings()
+    // First save settings if not already saved (silently for auto-sync)
+    await handleSaveCloudSettings(silent)
 
-    setCloudSyncStatus("exporting")
+    if (!silent) setCloudSyncStatus("exporting")
     try {
       const data = await authenticatedRequest("/api/cloud/export", {
         method: "POST",
@@ -521,12 +530,14 @@ export default function Audit() {
 
       if (data.ok) {
         setLastExportCounts(data.counts)
-        toast({
-          title: "Export Successful",
-          description: `Exported ${data.counts.products} products, ${data.counts.colors} colors, ${data.counts.sales} sales to cloud.`,
-        })
-        queryClient.invalidateQueries({ queryKey: ["/api/settings"] })
-      } else {
+        if (!silent) {
+          toast({
+            title: "Export Successful",
+            description: `Exported ${data.counts.products} products, ${data.counts.colors} colors, ${data.counts.sales} sales to cloud.`,
+          })
+          queryClient.invalidateQueries({ queryKey: ["/api/settings"] })
+        }
+      } else if (!silent) {
         toast({
           title: "Export Failed",
           description: data.error || "Could not export to cloud database.",
@@ -535,14 +546,16 @@ export default function Audit() {
       }
     } catch (error: any) {
       console.error("Export error:", error)
-      toast({
-        title: "Export Failed",
-        description:
-          error.message || "Could not export to cloud database. Please check your connection URL and try again.",
-        variant: "destructive",
-      })
+      if (!silent) {
+        toast({
+          title: "Export Failed",
+          description:
+            error.message || "Could not export to cloud database. Please check your connection URL and try again.",
+          variant: "destructive",
+        })
+      }
     } finally {
-      setCloudSyncStatus("idle")
+      if (!silent) setCloudSyncStatus("idle")
     }
   }
 
@@ -599,39 +612,38 @@ export default function Audit() {
   // Auto-sync functions
   const toggleAutoSync = async (enabled: boolean) => {
     setAutoSyncEnabled(enabled)
-    await handleSaveCloudSettings()
+    await handleSaveCloudSettings(true) // Silent save - no toast
 
     if (enabled) {
       toast({
-        title: "Auto-Sync Enabled",
-        description: `Data will sync automatically every ${syncInterval} minutes.`,
+        title: "Real-Time Sync Enabled",
+        description: "Data will sync silently in the background.",
       })
     } else {
       toast({
-        title: "Auto-Sync Disabled",
+        title: "Real-Time Sync Disabled",
         description: "Automatic synchronization has been turned off.",
       })
     }
   }
 
   const startAutoSync = () => {
-    if (!autoSyncEnabled || cloudConnectionStatus !== "success" || !cloudUrl.trim()) {
+    if (!autoSyncEnabled || cloudConnectionStatus !== "success" || !cloudUrl.trim() || !isVerified || !auditToken) {
       return
     }
 
-    // Export every interval (bidirectional sync is better handled with user choice)
+    // Real-time sync with short interval (silent mode - no alerts)
     const intervalId = setInterval(
       async () => {
         try {
-          console.log("[Auto-Sync] Triggered")
-          // Always export on auto-sync to keep cloud updated with local changes
-          await handleExportToCloud()
+          await handleExportToCloud(true) // Silent mode - no toast notifications
+          setLastSyncTime(new Date())
+          setPendingChanges(0)
         } catch (error) {
-          console.error("[Auto-Sync] Error:", error)
-          // Don't disable auto-sync, just log the error
+          console.error("[Real-Time Sync] Error:", error)
         }
       },
-      syncInterval * 60 * 1000,
+      syncInterval * 1000, // Convert seconds to milliseconds
     )
 
     return () => clearInterval(intervalId)
@@ -640,7 +652,7 @@ export default function Audit() {
   useEffect(() => {
     const cleanup = startAutoSync()
     return cleanup
-  }, [autoSyncEnabled, syncInterval, cloudConnectionStatus, cloudUrl])
+  }, [autoSyncEnabled, syncInterval, cloudConnectionStatus, cloudUrl, isVerified, auditToken])
 
   useEffect(() => {
     const storedToken = sessionStorage.getItem("auditToken")
@@ -1508,85 +1520,139 @@ export default function Audit() {
     returnsLoading
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
-      <div className="flex items-center justify-between gap-4 p-4 border-b flex-wrap">
-        <div className="flex items-center gap-2">
-          <ShieldCheck className="h-6 w-6 text-primary" />
-          <h1 className="text-2xl font-bold">Audit Reports</h1>
+    <div className="glass-page flex flex-col h-full overflow-hidden">
+      <div className="glass-surface m-4 mb-0 p-4">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="h-6 w-6 text-primary" />
+            <h1 className="text-2xl font-bold">Audit Reports</h1>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 w-48 glass-input"
+                data-testid="input-audit-search"
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Calendar className="h-4 w-4 text-muted-foreground" />
+              <Input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="w-36 glass-input"
+                data-testid="input-date-from"
+              />
+              <span className="text-muted-foreground">to</span>
+              <Input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                className="w-36 glass-input"
+                data-testid="input-date-to"
+              />
+            </div>
+
+            {hasActiveFilters && (
+              <Button variant="ghost" size="sm" onClick={clearFilters} data-testid="button-clear-filters">
+                <X className="h-4 w-4 mr-1" />
+                Clear
+              </Button>
+            )}
+          </div>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 w-48"
-              data-testid="input-audit-search"
-            />
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Calendar className="h-4 w-4 text-muted-foreground" />
-            <Input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              className="w-36"
-              data-testid="input-date-from"
-            />
-            <span className="text-muted-foreground">to</span>
-            <Input
-              type="date"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-              className="w-36"
-              data-testid="input-date-to"
-            />
-          </div>
-
-          {hasActiveFilters && (
-            <Button variant="ghost" size="sm" onClick={clearFilters} data-testid="button-clear-filters">
-              <X className="h-4 w-4 mr-1" />
-              Clear
-            </Button>
-          )}
+        {/* Horizontal Tab Navigation */}
+        <div className="mt-4 border-t pt-4">
+          <nav className="flex items-center gap-1 flex-wrap">
+            <button
+              onClick={() => setActiveTab("stock")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                activeTab === "stock"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              }`}
+              data-testid="menu-stock-audit"
+            >
+              <Package className="h-4 w-4" />
+              Stock
+            </button>
+            <button
+              onClick={() => setActiveTab("sales")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                activeTab === "sales"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              }`}
+              data-testid="menu-sales-audit"
+            >
+              <BarChart3 className="h-4 w-4" />
+              Sales
+            </button>
+            <button
+              onClick={() => setActiveTab("unpaid")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                activeTab === "unpaid"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              }`}
+              data-testid="menu-unpaid-audit"
+            >
+              <CreditCard className="h-4 w-4" />
+              Unpaid Bills
+            </button>
+            <button
+              onClick={() => setActiveTab("payments")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                activeTab === "payments"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              }`}
+              data-testid="menu-payments-audit"
+            >
+              <Wallet className="h-4 w-4" />
+              Payments
+            </button>
+            <button
+              onClick={() => setActiveTab("returns")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                activeTab === "returns"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              }`}
+              data-testid="menu-returns-audit"
+            >
+              <RotateCcw className="h-4 w-4" />
+              Returns
+            </button>
+            <button
+              onClick={() => setActiveTab("settings")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                activeTab === "settings"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              }`}
+              data-testid="menu-audit-settings"
+            >
+              <Settings className="h-4 w-4" />
+              Settings
+            </button>
+          </nav>
         </div>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
-        <div className="border-b px-4">
-          <TabsList className="h-12 flex-wrap">
-            <TabsTrigger value="stock" className="flex items-center gap-2" data-testid="tab-stock-audit">
-              <Package className="h-4 w-4" />
-              Stock
-            </TabsTrigger>
-            <TabsTrigger value="sales" className="flex items-center gap-2" data-testid="tab-sales-audit">
-              <BarChart3 className="h-4 w-4" />
-              Sales
-            </TabsTrigger>
-            <TabsTrigger value="unpaid" className="flex items-center gap-2" data-testid="tab-unpaid-audit">
-              <CreditCard className="h-4 w-4" />
-              Unpaid Bills
-            </TabsTrigger>
-            <TabsTrigger value="payments" className="flex items-center gap-2" data-testid="tab-payments-audit">
-              <Wallet className="h-4 w-4" />
-              Payments
-            </TabsTrigger>
-            <TabsTrigger value="returns" className="flex items-center gap-2" data-testid="tab-returns-audit">
-              <RotateCcw className="h-4 w-4" />
-              Returns
-            </TabsTrigger>
-            <TabsTrigger value="settings" className="flex items-center gap-2" data-testid="tab-audit-settings">
-              <Settings className="h-4 w-4" />
-              Settings
-            </TabsTrigger>
-          </TabsList>
-        </div>
-
-        {/* STOCK AUDIT TAB */}
-        <TabsContent value="stock" className="flex-1 overflow-auto p-4 space-y-4">
+      <div className="flex-1 overflow-hidden mt-4">
+        {/* Main Content Area */}
+        <div className="h-full overflow-hidden">
+          {/* STOCK AUDIT CONTENT */}
+          {activeTab === "stock" && (
+            <div className="h-full overflow-auto p-4 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <Card>
               <CardHeader className="pb-2">
@@ -1774,10 +1840,12 @@ export default function Audit() {
               )}
             </CardContent>
           </Card>
-        </TabsContent>
+            </div>
+          )}
 
-        {/* SALES AUDIT TAB */}
-        <TabsContent value="sales" className="flex-1 overflow-auto p-4 space-y-4">
+          {/* SALES AUDIT CONTENT */}
+          {activeTab === "sales" && (
+            <div className="h-full overflow-auto p-4 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <Card>
               <CardHeader className="pb-2">
@@ -1916,10 +1984,12 @@ export default function Audit() {
               )}
             </CardContent>
           </Card>
-        </TabsContent>
+            </div>
+          )}
 
-        {/* UNPAID BILLS TAB */}
-        <TabsContent value="unpaid" className="flex-1 overflow-auto p-4 space-y-4">
+          {/* UNPAID BILLS CONTENT */}
+          {activeTab === "unpaid" && (
+            <div className="h-full overflow-auto p-4 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Card>
               <CardHeader className="pb-2">
@@ -2050,10 +2120,12 @@ export default function Audit() {
               )}
             </CardContent>
           </Card>
-        </TabsContent>
+            </div>
+          )}
 
-        {/* PAYMENTS AUDIT TAB */}
-        <TabsContent value="payments" className="flex-1 overflow-auto p-4 space-y-4">
+          {/* PAYMENTS AUDIT CONTENT */}
+          {activeTab === "payments" && (
+            <div className="h-full overflow-auto p-4 space-y-4">
           {/* Summary cards for all transaction types */}
           <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
             <Card>
@@ -2279,10 +2351,12 @@ export default function Audit() {
               )}
             </CardContent>
           </Card>
-        </TabsContent>
+            </div>
+          )}
 
-        {/* RETURNS AUDIT TAB */}
-        <TabsContent value="returns" className="flex-1 overflow-auto p-4 space-y-4">
+          {/* RETURNS AUDIT CONTENT */}
+          {activeTab === "returns" && (
+            <div className="h-full overflow-auto p-4 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Card>
               <CardHeader className="pb-2">
@@ -2396,10 +2470,12 @@ export default function Audit() {
               )}
             </CardContent>
           </Card>
-        </TabsContent>
+            </div>
+          )}
 
-        {/* SETTINGS TAB - COMPLETELY REORGANIZED WITH SEPARATE TABS */}
-        <TabsContent value="settings" className="flex-1 overflow-auto p-4">
+          {/* SETTINGS CONTENT */}
+          {activeTab === "settings" && (
+            <div className="h-full overflow-auto p-4">
           <div className="max-w-4xl mx-auto">
             <Tabs value={settingsTab} onValueChange={setSettingsTab} className="w-full">
               <TabsList className="grid grid-cols-4 mb-6">
@@ -2804,11 +2880,11 @@ export default function Audit() {
                               : "Test Connection"}
                       </Button>
 
-                      {/* Auto-Sync Settings */}
+                      {/* Real-Time Sync Settings */}
                       <div className="border-t pt-4">
                         <h4 className="font-medium mb-3 flex items-center gap-2">
                           <RefreshCw className="h-4 w-4" />
-                          Auto-Sync Settings
+                          Real-Time Sync
                         </h4>
 
                         <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
@@ -2819,11 +2895,11 @@ export default function Audit() {
                               ) : (
                                 <WifiOff className="h-4 w-4 text-gray-500" />
                               )}
-                              Automatic Cloud Sync
+                              Real-Time Cloud Sync
                             </Label>
                             <p className="text-xs text-muted-foreground">
                               {autoSyncEnabled
-                                ? `Syncing every ${syncInterval} minute${syncInterval !== 1 ? "s" : ""}`
+                                ? `Auto-syncing every ${syncInterval} seconds`
                                 : "Manual sync only"}
                             </p>
                           </div>
@@ -2835,24 +2911,46 @@ export default function Audit() {
                         </div>
 
                         {autoSyncEnabled && (
-                          <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                            <Label htmlFor="syncInterval" className="flex items-center gap-2 mb-2">
-                              <RefreshCw className="h-4 w-4" />
-                              Sync Interval (Minutes)
-                            </Label>
-                            <div className="flex items-center gap-3">
-                              <Input
-                                id="syncInterval"
-                                type="number"
-                                min="1"
-                                max="60"
-                                value={syncInterval}
-                                onChange={(e) => setSyncInterval(Number(e.target.value))}
-                                className="w-20"
-                              />
-                              <span className="text-sm text-muted-foreground">
-                                {syncInterval === 1 ? "minute" : "minutes"}
-                              </span>
+                          <div className="mt-3 space-y-3">
+                            <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                              <div className="flex items-center justify-between mb-2">
+                                <Label className="flex items-center gap-2 text-green-700 dark:text-green-400">
+                                  <Check className="h-4 w-4" />
+                                  Sync Active
+                                </Label>
+                                {lastSyncTime && (
+                                  <span className="text-xs text-muted-foreground">
+                                    Last: {lastSyncTime.toLocaleTimeString()}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs text-green-600 dark:text-green-400">
+                                Changes sync to cloud automatically every {syncInterval} seconds
+                              </p>
+                            </div>
+
+                            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                              <Label htmlFor="syncInterval" className="flex items-center gap-2 mb-2">
+                                <RefreshCw className="h-4 w-4" />
+                                Sync Speed (Seconds)
+                              </Label>
+                              <div className="flex items-center gap-3">
+                                <Input
+                                  id="syncInterval"
+                                  type="number"
+                                  min="3"
+                                  max="30"
+                                  value={syncInterval}
+                                  onChange={(e) => setSyncInterval(Math.max(3, Math.min(30, Number(e.target.value))))}
+                                  className="w-20"
+                                />
+                                <span className="text-sm text-muted-foreground">
+                                  seconds
+                                </span>
+                              </div>
+                              <p className="text-xs text-muted-foreground mt-1">
+                                Lower = faster sync, Higher = less network usage (3-30 sec)
+                              </p>
                             </div>
                           </div>
                         )}
@@ -3091,8 +3189,10 @@ export default function Audit() {
               </TabsContent>
             </Tabs>
           </div>
-        </TabsContent>
-      </Tabs>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }

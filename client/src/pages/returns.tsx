@@ -528,19 +528,19 @@ export default function Returns() {
   }
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex flex-col gap-2">
+    <div className="glass-page p-6 space-y-6">
+      <div className="glass-surface p-4">
         <h1 className="text-2xl font-bold tracking-tight">Returns Management</h1>
         <p className="text-muted-foreground">Process bill returns and quick item returns with stock restoration</p>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full max-w-md grid-cols-2">
-          <TabsTrigger value="bill">
+        <TabsList className="glass-tabs-list grid w-full max-w-md grid-cols-2">
+          <TabsTrigger value="bill" className="glass-tab" data-testid="tab-bill-returns">
             <FileText className="w-4 h-4 mr-2" />
             Bill Returns
           </TabsTrigger>
-          <TabsTrigger value="history">
+          <TabsTrigger value="history" className="glass-tab" data-testid="tab-history">
             <AlertTriangle className="w-4 h-4 mr-2" />
             History
           </TabsTrigger>

@@ -200,6 +200,10 @@ export const settings = sqliteTable("settings", {
   cardButtonColor: text("card_button_color").notNull().default("gray-900"), // gray-900, blue-600, green-600, etc
   cardPriceColor: text("card_price_color").notNull().default("blue-600"), // blue-600, green-600, gray-900, etc
   showStockBadgeBorder: integer("show_stock_badge_border", { mode: "boolean" }).notNull().default(false),
+  // Display Theme Settings
+  displayTheme: text("display_theme").notNull().default("glass"), // glass, classic, minimal
+  displayShadowIntensity: text("display_shadow_intensity").notNull().default("medium"), // light, medium, strong
+  displayBlurIntensity: text("display_blur_intensity").notNull().default("medium"), // light, medium, strong
   // Audit PIN Settings (stored as hash for security)
   auditPinHash: text("audit_pin_hash"), // SHA-256 hash of PIN
   auditPinSalt: text("audit_pin_salt"), // Random salt for hashing

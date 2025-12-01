@@ -1211,6 +1211,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
+  // OPTIMIZED: Paginated stock history endpoint for large datasets
+  app.get("/api/stock-in/history/paginated", async (req, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1
+      const limit = parseInt(req.query.limit as string) || 100
+      const result = await storage.getStockInHistoryPaginated({ page, limit })
+      res.json(result)
+    } catch (error) {
+      console.error("Error fetching paginated stock history:", error)
+      res.status(500).json({ error: "Failed to fetch paginated stock history" })
+    }
+  })
+
   // Filtered Stock In History - FIXED: Corrected arrow function syntax
   app.get("/api/stock-in/history/filtered", async (req, res) => {
     try {
@@ -1368,6 +1381,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching all payment history:", error)
       res.status(500).json({ error: "Failed to fetch payment history" })
+    }
+  })
+
+  // OPTIMIZED: Paginated payment history endpoint for large datasets
+  app.get("/api/payment-history/paginated", async (req, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1
+      const limit = parseInt(req.query.limit as string) || 100
+      const result = await storage.getAllPaymentHistoryPaginated({ page, limit })
+      res.json(result)
+    } catch (error) {
+      console.error("Error fetching paginated payment history:", error)
+      res.status(500).json({ error: "Failed to fetch paginated payment history" })
     }
   })
 
@@ -1552,6 +1578,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
+  // OPTIMIZED: Paginated sales endpoint for large datasets
+  app.get("/api/sales/paginated", async (req, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1
+      const limit = parseInt(req.query.limit as string) || 100
+      const result = await storage.getSalesPaginated({ page, limit })
+      res.json(result)
+    } catch (error) {
+      console.error("Error fetching paginated sales:", error)
+      res.status(500).json({ error: "Failed to fetch paginated sales" })
+    }
+  })
+
   // Unpaid sales - FIXED
   app.get("/api/sales/unpaid", async (_req, res) => {
     try {
@@ -1562,6 +1601,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("[API] Error fetching unpaid sales:", error)
       res.status(500).json({ error: "Failed to fetch unpaid sales" })
+    }
+  })
+
+  // OPTIMIZED: Paginated unpaid sales endpoint
+  app.get("/api/sales/unpaid/paginated", async (req, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1
+      const limit = parseInt(req.query.limit as string) || 100
+      const result = await storage.getUnpaidSalesPaginated({ page, limit })
+      res.json(result)
+    } catch (error) {
+      console.error("Error fetching paginated unpaid sales:", error)
+      res.status(500).json({ error: "Failed to fetch paginated unpaid sales" })
     }
   })
 
@@ -2457,10 +2509,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // Get cloud sync status
+  // ENHANCED: Get cloud sync status with detailed stats
   app.get("/api/cloud/status", verifyAuditToken, async (_req, res) => {
     try {
       const settings = await storage.getSettings()
+      const syncStatus = storage.getSyncStatus()
 
       // Test connection if configured
       let connectionStatus = "not_configured"
@@ -2472,8 +2525,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const sql = neon(settings.cloudDatabaseUrl)
           await sql`SELECT 1 as test`
           connectionStatus = "connected"
+          storage.setOnlineStatus(true)
         } catch (error) {
           connectionStatus = "connection_failed"
+          storage.setOnlineStatus(false)
         }
       }
 
@@ -2484,10 +2539,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
         lastSyncTime: lastSync,
         lastSyncFormatted: lastSync ? new Date(lastSync).toLocaleString() : null,
         autoSyncEnabled: autoSyncEnabled,
+        // Enhanced status info
+        isOnline: syncStatus.isOnline,
+        pendingChanges: syncStatus.pendingChanges,
+        syncInProgress: syncStatus.syncInProgress,
+        lastError: syncStatus.lastError,
+        syncStats: syncStatus.syncStats,
       })
     } catch (error) {
       console.error("Error getting cloud status:", error)
       res.status(500).json({ error: "Failed to get cloud status" })
+    }
+  })
+
+  // ENHANCED: Get pending sync queue
+  app.get("/api/cloud/queue", verifyAuditToken, async (_req, res) => {
+    try {
+      const queue = await storage.getSyncQueue()
+      res.json({
+        pending: queue.length,
+        queue: queue.map(c => ({
+          id: c.id,
+          action: c.action,
+          entity: c.entity,
+          entityId: c.entityId,
+          timestamp: c.timestamp,
+          retryCount: c.retryCount,
+        })),
+      })
+    } catch (error) {
+      console.error("Error getting sync queue:", error)
+      res.status(500).json({ error: "Failed to get sync queue" })
+    }
+  })
+
+  // ENHANCED: Set online/offline status (for manual override)
+  app.post("/api/cloud/online-status", verifyAuditToken, async (req, res) => {
+    try {
+      const { isOnline } = req.body
+      storage.setOnlineStatus(isOnline)
+      res.json({ ok: true, isOnline })
+    } catch (error) {
+      console.error("Error setting online status:", error)
+      res.status(500).json({ error: "Failed to set online status" })
     }
   })
 
@@ -2521,11 +2615,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // Manual auto-sync trigger
+  // ENHANCED: Manual sync trigger with stats
   app.post("/api/cloud/trigger-sync", verifyAuditToken, async (_req, res) => {
     try {
-      await triggerAutoSync()
-      res.json({ ok: true, message: "Manual sync triggered" })
+      const result = await storage.triggerAutoSync()
+      res.json({
+        ok: result.success,
+        message: result.message,
+        stats: result.stats,
+      })
     } catch (error: any) {
       console.error("Error triggering sync:", error)
       res.status(500).json({ error: "Failed to trigger sync" })

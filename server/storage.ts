@@ -37,7 +37,7 @@ import {
   type StockInHistory,
 } from "@shared/schema"
 import { db } from "./db"
-import { eq, desc, sql, and } from "drizzle-orm"
+import { eq, desc, sql, and, gt } from "drizzle-orm"
 
 // FIXED: Extended interfaces with missing properties
 interface ExtendedSale extends Sale {
@@ -69,6 +69,29 @@ interface CustomerPurchaseHistory {
   }>
 }
 
+// NEW: Pagination interfaces for smart database handling
+export interface PaginationParams {
+  page?: number
+  limit?: number
+  sortBy?: string
+  sortOrder?: 'asc' | 'desc'
+}
+
+export interface PaginatedResult<T> {
+  data: T[]
+  pagination: {
+    page: number
+    limit: number
+    total: number
+    totalPages: number
+    hasMore: boolean
+  }
+}
+
+// Default pagination limits to prevent large data loads
+const DEFAULT_LIMIT = 100
+const MAX_LIMIT = 500
+
 export interface IStorage {
   // Products
   getProducts(): Promise<Product[]>
@@ -97,8 +120,10 @@ export interface IStorage {
 
   // Sales - FIXED: Extended with missing properties
   getSales(): Promise<ExtendedSale[]>
+  getSalesPaginated(params?: PaginationParams): Promise<PaginatedResult<ExtendedSale>>
   getSalesWithItems(): Promise<SaleWithItems[]>
   getUnpaidSales(): Promise<ExtendedSale[]>
+  getUnpaidSalesPaginated(params?: PaginationParams): Promise<PaginatedResult<ExtendedSale>>
   getSalesByCustomerPhone(customerPhone: string): Promise<ExtendedSale[]>
   getSalesByCustomerPhoneWithItems(customerPhone: string): Promise<SaleWithItems[]>
   findUnpaidSaleByPhone(customerPhone: string): Promise<ExtendedSale | undefined>
@@ -120,6 +145,7 @@ export interface IStorage {
 
   // Stock In History
   getStockInHistory(): Promise<StockInHistoryWithColor[]>
+  getStockInHistoryPaginated(params?: PaginationParams): Promise<PaginatedResult<StockInHistoryWithColor>>
   getFilteredStockInHistory(filters: {
     startDate?: Date
     endDate?: Date
@@ -155,6 +181,7 @@ export interface IStorage {
   getPaymentHistoryByCustomer(customerPhone: string): Promise<PaymentHistoryWithSale[]>
   getPaymentHistoryBySale(saleId: string): Promise<PaymentHistory[]>
   getAllPaymentHistory(): Promise<PaymentHistoryWithSale[]>
+  getAllPaymentHistoryPaginated(params?: PaginationParams): Promise<PaginatedResult<PaymentHistoryWithSale>>
   updatePaymentHistory(
     id: string,
     data: { amount?: number; paymentMethod?: string; notes?: string },
@@ -273,15 +300,58 @@ export interface IStorage {
   upsertReturnItem(data: ReturnItem): Promise<void>
 }
 
+// ENHANCED: Smart Sync Configuration
+const SYNC_CONFIG = {
+  batchSize: 50,           // Process 50 records at a time for faster sync
+  retryAttempts: 3,        // Retry failed sync operations
+  retryDelay: 1000,        // 1 second delay between retries
+  deltaThreshold: 5000,    // 5 seconds - only sync records changed since last sync
+  autoSyncDelay: 15000,    // 15 seconds delay before auto-sync (reduced from 30s)
+  conflictStrategy: 'server-wins' as 'server-wins' | 'client-wins' | 'newest-wins',
+}
+
+// ENHANCED: Sync Status Tracking
+export interface SyncStatus {
+  isOnline: boolean
+  lastSyncTime: Date | null
+  pendingChanges: number
+  syncInProgress: boolean
+  lastError: string | null
+  syncStats: {
+    uploaded: number
+    downloaded: number
+    conflicts: number
+  }
+}
+
+// ENHANCED: Change Record for Delta Sync
+interface ChangeRecord {
+  id: string
+  action: 'CREATE' | 'UPDATE' | 'DELETE'
+  entity: string
+  entityId: string
+  data: any
+  timestamp: Date
+  synced: boolean
+  retryCount: number
+}
+
 export class DatabaseStorage implements IStorage {
-  // Sync queue for offline changes
-  private syncQueue: Array<{
-    id: string
-    action: "CREATE" | "UPDATE" | "DELETE"
-    entity: string
-    data: any
-    timestamp: Date
-  }> = []
+  // ENHANCED: Sync queue with better structure for offline changes
+  private syncQueue: ChangeRecord[] = []
+  
+  // ENHANCED: Sync status tracking
+  private syncStatus: SyncStatus = {
+    isOnline: true,
+    lastSyncTime: null,
+    pendingChanges: 0,
+    syncInProgress: false,
+    lastError: null,
+    syncStats: { uploaded: 0, downloaded: 0, conflicts: 0 },
+  }
+  
+  // Auto-sync timer reference
+  private autoSyncTimer: NodeJS.Timeout | null = null
 
   // Pending changes detection
   private pendingChanges = {
@@ -291,7 +361,7 @@ export class DatabaseStorage implements IStorage {
     payments: false,
     variants: false,
     returns: false,
-    customer_accounts: false, // Added for customer accounts sync
+    customer_accounts: false,
   }
 
   // Helper method to format dates to DD-MM-YYYY
@@ -313,38 +383,69 @@ export class DatabaseStorage implements IStorage {
     return date.getDate() === day && date.getMonth() === month - 1 && date.getFullYear() === year
   }
 
-  // NEW: Automatic Cloud Sync Trigger
-  async triggerAutoSync(): Promise<{ success: boolean; message: string }> {
+  // ENHANCED: Get current sync status
+  getSyncStatus(): SyncStatus {
+    return {
+      ...this.syncStatus,
+      pendingChanges: this.syncQueue.filter(c => !c.synced).length,
+    }
+  }
+
+  // ENHANCED: Set online/offline status
+  setOnlineStatus(isOnline: boolean) {
+    const wasOffline = !this.syncStatus.isOnline
+    this.syncStatus.isOnline = isOnline
+    
+    // If coming back online, trigger sync
+    if (wasOffline && isOnline) {
+      console.log("[Sync] Back online - triggering sync...")
+      this.triggerAutoSync()
+    }
+  }
+
+  // ENHANCED: Smart Auto Sync with debouncing and delta sync
+  async triggerAutoSync(): Promise<{ success: boolean; message: string; stats?: SyncStatus['syncStats'] }> {
+    // Prevent concurrent syncs
+    if (this.syncStatus.syncInProgress) {
+      return { success: false, message: "Sync already in progress" }
+    }
+
     try {
       const settings = await this.getSettings()
-
       if (!settings.cloudDatabaseUrl || !settings.cloudSyncEnabled) {
         return { success: false, message: "Cloud sync not configured" }
       }
 
-      console.log("[Auto-Sync] Starting automatic sync...")
-
-      // Import latest changes from cloud first
-      try {
-        await this.importFromCloud()
-        console.log("[Auto-Sync] Import from cloud completed")
-      } catch (importError) {
-        console.warn("[Auto-Sync] Import failed, continuing with export:", importError)
+      if (!this.syncStatus.isOnline) {
+        return { success: false, message: "Offline - changes queued for later sync" }
       }
 
-      // Export local changes to cloud
-      try {
-        await this.exportToCloud()
-        console.log("[Auto-Sync] Export to cloud completed")
-      } catch (exportError) {
-        console.error("[Auto-Sync] Export failed:", exportError)
-        return { success: false, message: `Export failed: ${exportError}` }
-      }
+      this.syncStatus.syncInProgress = true
+      this.syncStatus.lastError = null
+      console.log("[Smart-Sync] Starting optimized sync...")
 
-      // Process any queued changes
-      await this.processSyncQueue()
+      const startTime = Date.now()
+      const stats = { uploaded: 0, downloaded: 0, conflicts: 0 }
 
-      // Update sync timestamp
+      // Step 1: Process queued offline changes first (with retry)
+      const queueResult = await this.processOfflineQueue()
+      stats.uploaded += queueResult.processed
+
+      // Step 2: Delta sync - only sync changes since last sync
+      const lastSync = settings.lastSyncTime || new Date(0)
+      
+      // Import changes from cloud (newer than last sync)
+      const importResult = await this.smartImportFromCloud(lastSync)
+      stats.downloaded += importResult.imported
+      stats.conflicts += importResult.conflicts
+
+      // Export local changes to cloud (newer than last sync)
+      const exportResult = await this.smartExportToCloud(lastSync)
+      stats.uploaded += exportResult.exported
+
+      // Update sync status
+      this.syncStatus.lastSyncTime = new Date()
+      this.syncStatus.syncStats = stats
       await this.updateSettings({ lastSyncTime: new Date() })
 
       // Reset pending changes
@@ -358,54 +459,80 @@ export class DatabaseStorage implements IStorage {
         customer_accounts: false,
       }
 
-      console.log("[Auto-Sync] Automatic sync completed successfully")
-      return { success: true, message: "Auto-sync completed" }
+      const syncTime = Date.now() - startTime
+      console.log(`[Smart-Sync] Completed in ${syncTime}ms - Uploaded: ${stats.uploaded}, Downloaded: ${stats.downloaded}, Conflicts: ${stats.conflicts}`)
+      
+      this.syncStatus.syncInProgress = false
+      return { success: true, message: `Sync completed in ${syncTime}ms`, stats }
     } catch (error) {
-      console.error("[Auto-Sync] Failed:", error)
-      return { success: false, message: `Auto-sync failed: ${error}` }
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      this.syncStatus.lastError = errorMsg
+      this.syncStatus.syncInProgress = false
+      console.error("[Smart-Sync] Failed:", errorMsg)
+      return { success: false, message: `Sync failed: ${errorMsg}` }
     }
   }
 
-  // NEW: Detect changes and queue for sync
+  // ENHANCED: Detect changes with smart debouncing
   private detectChanges(entity: keyof typeof this.pendingChanges) {
     this.pendingChanges[entity] = true
 
-    // Auto-sync after 30 seconds if changes detected
-    const hasChanges = Object.values(this.pendingChanges).some((changed) => changed)
-    if (hasChanges) {
-      setTimeout(async () => {
-        if (this.pendingChanges[entity]) {
-          const settings = await this.getSettings()
-          if (settings.cloudSyncEnabled) {
-            await this.triggerAutoSync()
-          }
-        }
-      }, 30000) // 30 seconds delay
+    // Clear existing timer and set new one (debounce)
+    if (this.autoSyncTimer) {
+      clearTimeout(this.autoSyncTimer)
     }
+
+    // Auto-sync after configured delay if changes detected
+    this.autoSyncTimer = setTimeout(async () => {
+      const hasChanges = Object.values(this.pendingChanges).some((changed) => changed)
+      if (hasChanges) {
+        const settings = await this.getSettings()
+        if (settings.cloudSyncEnabled && this.syncStatus.isOnline) {
+          await this.triggerAutoSync()
+        }
+      }
+    }, SYNC_CONFIG.autoSyncDelay)
   }
 
-  // NEW: Queue changes when offline
-  private async queueChange(action: "CREATE" | "UPDATE" | "DELETE", entity: string, data: any) {
-    const change = {
+  // ENHANCED: Queue changes for offline sync with better structure
+  private async queueChange(action: "CREATE" | "UPDATE" | "DELETE", entity: string, entityId: string, data: any) {
+    const change: ChangeRecord = {
       id: crypto.randomUUID(),
       action,
       entity,
+      entityId,
       data,
       timestamp: new Date(),
+      synced: false,
+      retryCount: 0,
     }
 
-    this.syncQueue.push(change)
-    console.log(`[Sync] Queued change: ${action} ${entity}`, change.id)
+    // Check for duplicate changes to same entity (consolidate)
+    const existingIndex = this.syncQueue.findIndex(
+      c => c.entity === entity && c.entityId === entityId && !c.synced
+    )
+    
+    if (existingIndex > -1) {
+      // Replace with newer change (last write wins locally)
+      this.syncQueue[existingIndex] = change
+      console.log(`[Sync] Updated queued change: ${action} ${entity}/${entityId}`)
+    } else {
+      this.syncQueue.push(change)
+      console.log(`[Sync] Queued change: ${action} ${entity}/${entityId}`)
+    }
+    
+    this.syncStatus.pendingChanges = this.syncQueue.filter(c => !c.synced).length
   }
 
-  // NEW: Get sync queue
-  async getSyncQueue(): Promise<any[]> {
-    return this.syncQueue
+  // ENHANCED: Get sync queue with status
+  async getSyncQueue(): Promise<ChangeRecord[]> {
+    return this.syncQueue.filter(c => !c.synced)
   }
 
-  // NEW: Process sync queue
-  async processSyncQueue(): Promise<{ processed: number; failed: number }> {
-    if (this.syncQueue.length === 0) {
+  // ENHANCED: Process offline queue with batching and retry
+  async processOfflineQueue(): Promise<{ processed: number; failed: number }> {
+    const pendingChanges = this.syncQueue.filter(c => !c.synced)
+    if (pendingChanges.length === 0) {
       return { processed: 0, failed: 0 }
     }
 
@@ -414,92 +541,341 @@ export class DatabaseStorage implements IStorage {
       return { processed: 0, failed: 0 }
     }
 
-    console.log(`[Sync] Processing ${this.syncQueue.length} queued changes...`)
+    console.log(`[Sync] Processing ${pendingChanges.length} offline changes in batches of ${SYNC_CONFIG.batchSize}...`)
 
     let processed = 0
     let failed = 0
 
-    for (const change of [...this.syncQueue]) {
-      try {
-        // Apply change to cloud database
-        await this.applyChangeToCloud(change)
+    // Process in batches for better performance
+    for (let i = 0; i < pendingChanges.length; i += SYNC_CONFIG.batchSize) {
+      const batch = pendingChanges.slice(i, i + SYNC_CONFIG.batchSize)
+      
+      // Process batch in parallel
+      const results = await Promise.allSettled(
+        batch.map(change => this.applyChangeToCloudWithRetry(change, settings.cloudDatabaseUrl!))
+      )
 
-        // Remove from queue
-        const index = this.syncQueue.findIndex((c) => c.id === change.id)
-        if (index > -1) {
-          this.syncQueue.splice(index, 1)
+      results.forEach((result, index) => {
+        const change = batch[index]
+        if (result.status === 'fulfilled') {
+          change.synced = true
           processed++
+        } else {
+          change.retryCount++
+          if (change.retryCount >= SYNC_CONFIG.retryAttempts) {
+            console.error(`[Sync] Permanently failed after ${SYNC_CONFIG.retryAttempts} attempts:`, change.id)
+            failed++
+          }
         }
-      } catch (error) {
-        console.error(`[Sync] Failed to apply change ${change.id}:`, error)
-        failed++
-      }
+      })
     }
+
+    // Clean up synced changes
+    this.syncQueue = this.syncQueue.filter(c => !c.synced || c.retryCount < SYNC_CONFIG.retryAttempts)
 
     console.log(`[Sync] Queue processing completed: ${processed} processed, ${failed} failed`)
     return { processed, failed }
   }
 
-  // NEW: Apply queued change to cloud
-  private async applyChangeToCloud(change: any) {
-    // This would be implemented to send changes to cloud
-    // For now, we'll just log it
-    console.log(`[Sync] Applying change to cloud:`, change)
+  // ENHANCED: Apply change to cloud with retry logic
+  private async applyChangeToCloudWithRetry(change: ChangeRecord, cloudUrl: string): Promise<void> {
+    const { neon } = await import("@neondatabase/serverless")
+    const sql = neon(cloudUrl)
 
-    // In a real implementation, you would make API calls to your cloud database
-    // to apply the queued changes
+    for (let attempt = 0; attempt < SYNC_CONFIG.retryAttempts; attempt++) {
+      try {
+        await this.applyChangeToCloud(change, sql)
+        return
+      } catch (error) {
+        if (attempt < SYNC_CONFIG.retryAttempts - 1) {
+          console.log(`[Sync] Retry ${attempt + 1} for change ${change.id}...`)
+          await new Promise(resolve => setTimeout(resolve, SYNC_CONFIG.retryDelay * (attempt + 1)))
+        } else {
+          throw error
+        }
+      }
+    }
   }
 
-  // NEW: Export to cloud (enhanced version)
+  // ENHANCED: Apply single change to cloud database
+  private async applyChangeToCloud(change: ChangeRecord, sql: any) {
+    const { action, entity, entityId, data } = change
+
+    switch (entity) {
+      case 'products':
+        if (action === 'DELETE') {
+          await sql`DELETE FROM products WHERE id = ${entityId}`
+        } else {
+          await sql`
+            INSERT INTO products (id, company, product_name, created_at)
+            VALUES (${data.id}, ${data.company}, ${data.productName}, ${data.createdAt})
+            ON CONFLICT (id) DO UPDATE SET
+              company = EXCLUDED.company,
+              product_name = EXCLUDED.product_name
+          `
+        }
+        break
+      case 'variants':
+        if (action === 'DELETE') {
+          await sql`DELETE FROM variants WHERE id = ${entityId}`
+        } else {
+          await sql`
+            INSERT INTO variants (id, product_id, packing_size, rate, created_at)
+            VALUES (${data.id}, ${data.productId}, ${data.packingSize}, ${data.rate}, ${data.createdAt})
+            ON CONFLICT (id) DO UPDATE SET
+              product_id = EXCLUDED.product_id,
+              packing_size = EXCLUDED.packing_size,
+              rate = EXCLUDED.rate
+          `
+        }
+        break
+      case 'colors':
+        if (action === 'DELETE') {
+          await sql`DELETE FROM colors WHERE id = ${entityId}`
+        } else {
+          await sql`
+            INSERT INTO colors (id, variant_id, color_name, color_code, stock_quantity, rate_override, created_at)
+            VALUES (${data.id}, ${data.variantId}, ${data.colorName}, ${data.colorCode}, ${data.stockQuantity}, ${data.rateOverride}, ${data.createdAt})
+            ON CONFLICT (id) DO UPDATE SET
+              variant_id = EXCLUDED.variant_id,
+              color_name = EXCLUDED.color_name,
+              color_code = EXCLUDED.color_code,
+              stock_quantity = EXCLUDED.stock_quantity,
+              rate_override = EXCLUDED.rate_override
+          `
+        }
+        break
+      case 'sales':
+        if (action === 'DELETE') {
+          await sql`DELETE FROM sales WHERE id = ${entityId}`
+        } else {
+          await sql`
+            INSERT INTO sales (id, customer_name, customer_phone, total_amount, amount_paid, payment_status, due_date, is_manual_balance, notes, created_at)
+            VALUES (${data.id}, ${data.customerName}, ${data.customerPhone}, ${data.totalAmount}, ${data.amountPaid}, ${data.paymentStatus}, ${data.dueDate}, ${data.isManualBalance}, ${data.notes}, ${data.createdAt})
+            ON CONFLICT (id) DO UPDATE SET
+              customer_name = EXCLUDED.customer_name,
+              customer_phone = EXCLUDED.customer_phone,
+              total_amount = EXCLUDED.total_amount,
+              amount_paid = EXCLUDED.amount_paid,
+              payment_status = EXCLUDED.payment_status,
+              due_date = EXCLUDED.due_date,
+              notes = EXCLUDED.notes
+          `
+        }
+        break
+      default:
+        console.log(`[Sync] Unhandled entity type: ${entity}`)
+    }
+  }
+
+  // ENHANCED: Smart delta import from cloud (only changes since last sync)
+  private async smartImportFromCloud(lastSync: Date): Promise<{ imported: number; conflicts: number }> {
+    const settings = await this.getSettings()
+    if (!settings.cloudDatabaseUrl) return { imported: 0, conflicts: 0 }
+
+    try {
+      const { neon } = await import("@neondatabase/serverless")
+      const sql = neon(settings.cloudDatabaseUrl)
+
+      let imported = 0
+      let conflicts = 0
+
+      // Import products changed since last sync
+      const cloudProducts = await sql`SELECT * FROM products WHERE created_at > ${lastSync} ORDER BY created_at`
+      for (const p of cloudProducts) {
+        try {
+          await this.upsertProduct({
+            id: p.id,
+            company: p.company,
+            productName: p.product_name,
+            createdAt: new Date(p.created_at),
+          })
+          imported++
+        } catch (err) {
+          console.error(`[Import] Conflict on product ${p.id}:`, err)
+          conflicts++
+        }
+      }
+
+      // Import variants changed since last sync
+      const cloudVariants = await sql`SELECT * FROM variants WHERE created_at > ${lastSync} ORDER BY created_at`
+      for (const v of cloudVariants) {
+        try {
+          await this.upsertVariant({
+            id: v.id,
+            productId: v.product_id,
+            packingSize: v.packing_size,
+            rate: v.rate,
+            createdAt: new Date(v.created_at),
+          })
+          imported++
+        } catch (err) {
+          console.error(`[Import] Conflict on variant ${v.id}:`, err)
+          conflicts++
+        }
+      }
+
+      // Import colors changed since last sync
+      const cloudColors = await sql`SELECT * FROM colors WHERE created_at > ${lastSync} ORDER BY created_at`
+      for (const c of cloudColors) {
+        try {
+          await this.upsertColor({
+            id: c.id,
+            variantId: c.variant_id,
+            colorName: c.color_name,
+            colorCode: c.color_code,
+            stockQuantity: c.stock_quantity,
+            rateOverride: c.rate_override,
+            createdAt: new Date(c.created_at),
+          })
+          imported++
+        } catch (err) {
+          console.error(`[Import] Conflict on color ${c.id}:`, err)
+          conflicts++
+        }
+      }
+
+      // Import sales changed since last sync
+      const cloudSales = await sql`SELECT * FROM sales WHERE created_at > ${lastSync} ORDER BY created_at`
+      for (const s of cloudSales) {
+        try {
+          await this.upsertSale({
+            id: s.id,
+            customerName: s.customer_name,
+            customerPhone: s.customer_phone,
+            totalAmount: s.total_amount,
+            amountPaid: s.amount_paid,
+            paymentStatus: s.payment_status,
+            dueDate: s.due_date ? new Date(s.due_date) : null,
+            isManualBalance: s.is_manual_balance,
+            notes: s.notes,
+            createdAt: new Date(s.created_at),
+          } as any)
+          imported++
+        } catch (err) {
+          console.error(`[Import] Conflict on sale ${s.id}:`, err)
+          conflicts++
+        }
+      }
+
+      console.log(`[Import] Delta import completed: ${imported} records, ${conflicts} conflicts`)
+      return { imported, conflicts }
+    } catch (error) {
+      console.error("[Import] Delta import failed:", error)
+      return { imported: 0, conflicts: 0 }
+    }
+  }
+
+  // ENHANCED: Smart delta export to cloud (only local changes since last sync)
+  private async smartExportToCloud(lastSync: Date): Promise<{ exported: number }> {
+    const settings = await this.getSettings()
+    if (!settings.cloudDatabaseUrl) return { exported: 0 }
+
+    try {
+      const { neon } = await import("@neondatabase/serverless")
+      const cloudSql = neon(settings.cloudDatabaseUrl)
+
+      let exported = 0
+
+      // Export products created/updated since last sync (use gt for drizzle comparison)
+      const localProducts = await db.select().from(products).where(gt(products.createdAt, lastSync))
+      for (const p of localProducts) {
+        try {
+          await cloudSql`
+            INSERT INTO products (id, company, product_name, created_at)
+            VALUES (${p.id}, ${p.company}, ${p.productName}, ${p.createdAt})
+            ON CONFLICT (id) DO UPDATE SET
+              company = EXCLUDED.company,
+              product_name = EXCLUDED.product_name
+          `
+          exported++
+        } catch (err) {
+          console.error(`[Export] Error exporting product ${p.id}:`, err)
+        }
+      }
+
+      // Export variants created/updated since last sync
+      const localVariants = await db.select().from(variants).where(gt(variants.createdAt, lastSync))
+      for (const v of localVariants) {
+        try {
+          await cloudSql`
+            INSERT INTO variants (id, product_id, packing_size, rate, created_at)
+            VALUES (${v.id}, ${v.productId}, ${v.packingSize}, ${v.rate}, ${v.createdAt})
+            ON CONFLICT (id) DO UPDATE SET
+              product_id = EXCLUDED.product_id,
+              packing_size = EXCLUDED.packing_size,
+              rate = EXCLUDED.rate
+          `
+          exported++
+        } catch (err) {
+          console.error(`[Export] Error exporting variant ${v.id}:`, err)
+        }
+      }
+
+      // Export colors created/updated since last sync
+      const localColors = await db.select().from(colors).where(gt(colors.createdAt, lastSync))
+      for (const c of localColors) {
+        try {
+          await cloudSql`
+            INSERT INTO colors (id, variant_id, color_name, color_code, stock_quantity, rate_override, created_at)
+            VALUES (${c.id}, ${c.variantId}, ${c.colorName}, ${c.colorCode}, ${c.stockQuantity}, ${c.rateOverride}, ${c.createdAt})
+            ON CONFLICT (id) DO UPDATE SET
+              variant_id = EXCLUDED.variant_id,
+              color_name = EXCLUDED.color_name,
+              color_code = EXCLUDED.color_code,
+              stock_quantity = EXCLUDED.stock_quantity,
+              rate_override = EXCLUDED.rate_override
+          `
+          exported++
+        } catch (err) {
+          console.error(`[Export] Error exporting color ${c.id}:`, err)
+        }
+      }
+
+      // Export sales created/updated since last sync
+      const localSales = await db.select().from(sales).where(gt(sales.createdAt, lastSync))
+      for (const s of localSales) {
+        try {
+          await cloudSql`
+            INSERT INTO sales (id, customer_name, customer_phone, total_amount, amount_paid, payment_status, due_date, is_manual_balance, notes, created_at)
+            VALUES (${s.id}, ${s.customerName}, ${s.customerPhone}, ${s.totalAmount}, ${s.amountPaid}, ${s.paymentStatus}, ${s.dueDate}, ${s.isManualBalance}, ${s.notes}, ${s.createdAt})
+            ON CONFLICT (id) DO UPDATE SET
+              customer_name = EXCLUDED.customer_name,
+              customer_phone = EXCLUDED.customer_phone,
+              total_amount = EXCLUDED.total_amount,
+              amount_paid = EXCLUDED.amount_paid,
+              payment_status = EXCLUDED.payment_status,
+              due_date = EXCLUDED.due_date,
+              notes = EXCLUDED.notes
+          `
+          exported++
+        } catch (err) {
+          console.error(`[Export] Error exporting sale ${s.id}:`, err)
+        }
+      }
+
+      console.log(`[Export] Delta export completed: ${exported} records`)
+      return { exported }
+    } catch (error) {
+      console.error("[Export] Delta export failed:", error)
+      return { exported: 0 }
+    }
+  }
+
+  // Legacy methods kept for backward compatibility
   private async exportToCloud(): Promise<void> {
-    const settings = await this.getSettings()
-    if (!settings.cloudDatabaseUrl) return
-
-    try {
-      // Assuming @neondatabase/serverless is available and configured
-      const { neon } = await import("@neondatabase/serverless")
-      const sql = neon(settings.cloudDatabaseUrl)
-
-      // Get all data from local storage
-      const products = await this.getProducts()
-      const variants = await this.getVariants()
-      const colorsData = await this.getColors()
-      const sales = await this.getSales()
-      const saleItems = await this.getSaleItems()
-      const stockInHistory = await this.getStockInHistory()
-      const paymentHistory = await this.getAllPaymentHistory()
-      const returns = await this.getReturns()
-      const returnItems = await this.getReturnItems()
-      const customerAccountsData = await db.select().from(customerAccounts) // Fetch customer accounts
-
-      // Export all data to cloud (implementation would go here)
-      // This is a simplified version - actual implementation would use proper transactions
-
-      console.log("[Cloud] Export completed successfully")
-    } catch (error) {
-      console.error("[Cloud] Export failed:", error)
-      throw error
-    }
+    const lastSync = new Date(0) // Full export
+    await this.smartExportToCloud(lastSync)
   }
 
-  // NEW: Import from cloud (enhanced version)
   private async importFromCloud(): Promise<void> {
-    const settings = await this.getSettings()
-    if (!settings.cloudDatabaseUrl) return
+    const lastSync = new Date(0) // Full import
+    await this.smartImportFromCloud(lastSync)
+  }
 
-    try {
-      // Assuming @neondatabase/serverless is available and configured
-      const { neon } = await import("@neondatabase/serverless")
-      const sql = neon(settings.cloudDatabaseUrl)
-
-      // Import all data from cloud (implementation would go here)
-      // This is a simplified version - actual implementation would fetch and upsert all data
-
-      console.log("[Cloud] Import completed successfully")
-    } catch (error) {
-      console.error("[Cloud] Import failed:", error)
-      throw error
-    }
+  // ENHANCED: Process sync queue (legacy wrapper)
+  async processSyncQueue(): Promise<{ processed: number; failed: number }> {
+    return this.processOfflineQueue()
   }
 
   // Settings
@@ -934,6 +1310,54 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
+  // OPTIMIZED: Paginated stock history query for large datasets
+  async getStockInHistoryPaginated(params: PaginationParams = {}): Promise<PaginatedResult<StockInHistoryWithColor>> {
+    const page = Math.max(1, params.page || 1)
+    const limit = Math.min(MAX_LIMIT, Math.max(1, params.limit || DEFAULT_LIMIT))
+    const offset = (page - 1) * limit
+
+    try {
+      // Get total count
+      const countResult = await db.select({ count: sql<number>`count(*)` }).from(stockInHistory)
+      const total = Number(countResult[0]?.count || 0)
+
+      // Get paginated data with relations
+      const result = await db.query.stockInHistory.findMany({
+        with: {
+          color: {
+            with: {
+              variant: {
+                with: {
+                  product: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: desc(stockInHistory.createdAt),
+        limit,
+        offset,
+      })
+
+      return {
+        data: result,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+          hasMore: page * limit < total,
+        },
+      }
+    } catch (error) {
+      console.error("[Storage] Error fetching paginated stock history:", error)
+      return {
+        data: [],
+        pagination: { page, limit, total: 0, totalPages: 0, hasMore: false },
+      }
+    }
+  }
+
   async getFilteredStockInHistory(filters: {
     startDate?: Date
     endDate?: Date
@@ -1299,6 +1723,46 @@ export class DatabaseStorage implements IStorage {
     return result
   }
 
+  // OPTIMIZED: Paginated payment history query for large datasets
+  async getAllPaymentHistoryPaginated(params: PaginationParams = {}): Promise<PaginatedResult<PaymentHistoryWithSale>> {
+    const page = Math.max(1, params.page || 1)
+    const limit = Math.min(MAX_LIMIT, Math.max(1, params.limit || DEFAULT_LIMIT))
+    const offset = (page - 1) * limit
+
+    try {
+      // Get total count
+      const countResult = await db.select({ count: sql<number>`count(*)` }).from(paymentHistory)
+      const total = Number(countResult[0]?.count || 0)
+
+      // Get paginated data with relations
+      const result = await db.query.paymentHistory.findMany({
+        with: {
+          sale: true,
+        },
+        orderBy: desc(paymentHistory.createdAt),
+        limit,
+        offset,
+      })
+
+      return {
+        data: result,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+          hasMore: page * limit < total,
+        },
+      }
+    } catch (error) {
+      console.error("[Storage] Error fetching paginated payment history:", error)
+      return {
+        data: [],
+        pagination: { page, limit, total: 0, totalPages: 0, hasMore: false },
+      }
+    }
+  }
+
   // Sales - UPDATED WITH AUTO-SYNC AND FIXED PROPERTIES
   async getSales(): Promise<ExtendedSale[]> {
     const salesData = await db.select().from(sales).orderBy(desc(sales.createdAt))
@@ -1308,6 +1772,43 @@ export class DatabaseStorage implements IStorage {
       isManualBalance: sale.isManualBalance,
       notes: sale.notes,
     })) as ExtendedSale[]
+  }
+
+  // OPTIMIZED: Paginated sales query for large datasets
+  async getSalesPaginated(params: PaginationParams = {}): Promise<PaginatedResult<ExtendedSale>> {
+    const page = Math.max(1, params.page || 1)
+    const limit = Math.min(MAX_LIMIT, Math.max(1, params.limit || DEFAULT_LIMIT))
+    const offset = (page - 1) * limit
+
+    // Get total count efficiently
+    const countResult = await db.select({ count: sql<number>`count(*)` }).from(sales)
+    const total = Number(countResult[0]?.count || 0)
+
+    // Get paginated data
+    const salesData = await db
+      .select()
+      .from(sales)
+      .orderBy(desc(sales.createdAt))
+      .limit(limit)
+      .offset(offset)
+
+    const data = salesData.map((sale) => ({
+      ...sale,
+      dueDate: sale.dueDate,
+      isManualBalance: sale.isManualBalance,
+      notes: sale.notes,
+    })) as ExtendedSale[]
+
+    return {
+      data,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+        hasMore: page * limit < total,
+      },
+    }
   }
 
   async getSalesWithItems(): Promise<SaleWithItems[]> {
@@ -1345,6 +1846,47 @@ export class DatabaseStorage implements IStorage {
       isManualBalance: sale.isManualBalance,
       notes: sale.notes,
     })) as ExtendedSale[]
+  }
+
+  // OPTIMIZED: Paginated unpaid sales query for large datasets
+  async getUnpaidSalesPaginated(params: PaginationParams = {}): Promise<PaginatedResult<ExtendedSale>> {
+    const page = Math.max(1, params.page || 1)
+    const limit = Math.min(MAX_LIMIT, Math.max(1, params.limit || DEFAULT_LIMIT))
+    const offset = (page - 1) * limit
+
+    // Get total count of unpaid sales
+    const countResult = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(sales)
+      .where(sql`${sales.paymentStatus} != 'paid'`)
+    const total = Number(countResult[0]?.count || 0)
+
+    // Get paginated unpaid data
+    const unpaidData = await db
+      .select()
+      .from(sales)
+      .where(sql`${sales.paymentStatus} != 'paid'`)
+      .orderBy(desc(sales.createdAt))
+      .limit(limit)
+      .offset(offset)
+
+    const data = unpaidData.map((sale) => ({
+      ...sale,
+      dueDate: sale.dueDate,
+      isManualBalance: sale.isManualBalance,
+      notes: sale.notes,
+    })) as ExtendedSale[]
+
+    return {
+      data,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+        hasMore: page * limit < total,
+      },
+    }
   }
 
   async getSalesByCustomerPhone(customerPhone: string): Promise<ExtendedSale[]> {

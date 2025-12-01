@@ -219,37 +219,37 @@ export default function Sales() {
     });
   }, [filteredSales]);
 
+  const refundTotals = useMemo(() => {
+    return returns.reduce((acc, ret) => {
+      if (ret.status === "completed") {
+        const refund = parseFloat(ret.totalRefund) || 0;
+        return {
+          totalRefund: acc.totalRefund + refund,
+          count: acc.count + 1
+        };
+      }
+      return acc;
+    }, {
+      totalRefund: 0,
+      count: 0
+    });
+  }, [returns]);
+
   const getPaymentStatusBadge = (status: string) => {
     switch (status) {
       case "paid":
-        return (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
-            Paid
-          </span>
-        );
+        return <span className="status-paid">Paid</span>;
       case "partial":
-        return (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
-            Partial
-          </span>
-        );
+        return <span className="status-partial">Partial</span>;
       case "unpaid":
-        return (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
-            Unpaid
-          </span>
-        );
+        return <span className="status-unpaid">Unpaid</span>;
       default:
-        return (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400">
-            {status}
-          </span>
-        );
+        return <span className="status-partial">{status}</span>;
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-950">
+    <div className="glass-page">
       <div className="p-4 md:p-6 space-y-5 max-w-6xl mx-auto">
         
         {/* Header Section - Clean & Minimal */}
@@ -267,16 +267,17 @@ export default function Sales() {
             size="sm"
             onClick={refreshSales}
             className="text-muted-foreground hover:text-foreground"
+            data-testid="button-refresh-sales"
           >
             <RefreshCw className="h-4 w-4" />
           </Button>
         </div>
 
         {/* Glassy Metrics Bar */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div className="relative overflow-hidden rounded-xl bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl border border-white/20 dark:border-zinc-800/50 p-4 shadow-sm">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          <div className="glass-metric">
             <div className="flex items-center gap-3">
-              <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400">
+              <div className="metric-icon-blue">
                 <TrendingUp className="h-4 w-4" />
               </div>
               <div>
@@ -288,9 +289,9 @@ export default function Sales() {
             </div>
           </div>
           
-          <div className="relative overflow-hidden rounded-xl bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl border border-white/20 dark:border-zinc-800/50 p-4 shadow-sm">
+          <div className="glass-metric">
             <div className="flex items-center gap-3">
-              <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+              <div className="metric-icon-green">
                 <Wallet className="h-4 w-4" />
               </div>
               <div>
@@ -302,9 +303,9 @@ export default function Sales() {
             </div>
           </div>
           
-          <div className="relative overflow-hidden rounded-xl bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl border border-white/20 dark:border-zinc-800/50 p-4 shadow-sm">
+          <div className="glass-metric">
             <div className="flex items-center gap-3">
-              <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-green-500/10 text-green-600 dark:text-green-400">
+              <div className="metric-icon-green">
                 <TrendingUp className="h-4 w-4" />
               </div>
               <div>
@@ -316,9 +317,9 @@ export default function Sales() {
             </div>
           </div>
           
-          <div className="relative overflow-hidden rounded-xl bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl border border-white/20 dark:border-zinc-800/50 p-4 shadow-sm">
+          <div className="glass-metric">
             <div className="flex items-center gap-3">
-              <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-red-500/10 text-red-600 dark:text-red-400">
+              <div className="metric-icon-red">
                 <AlertCircle className="h-4 w-4" />
               </div>
               <div>
@@ -329,10 +330,25 @@ export default function Sales() {
               </div>
             </div>
           </div>
+          
+          <div className="glass-metric">
+            <div className="flex items-center gap-3">
+              <div className="metric-icon-orange">
+                <RotateCcw className="h-4 w-4" />
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Refunds</p>
+                <p className="text-lg font-semibold tabular-nums text-orange-600 dark:text-orange-400">
+                  Rs. {Math.round(refundTotals.totalRefund).toLocaleString()}
+                </p>
+                <p className="text-[10px] text-muted-foreground">{refundTotals.count} returns</p>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Glassy Filter Bar */}
-        <div className="rounded-xl bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl border border-white/20 dark:border-zinc-800/50 p-3 shadow-sm">
+        <div className="glass-toolbar">
           <div className="flex flex-col gap-3">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -385,7 +401,7 @@ export default function Sales() {
         {isLoading ? (
           <div className="space-y-3">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="rounded-xl bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl border border-white/20 dark:border-zinc-800/50 p-4">
+              <div key={i} className="glass-surface p-4">
                 <Skeleton className="h-5 w-32 mb-3" />
                 <Skeleton className="h-4 w-48 mb-2" />
                 <Skeleton className="h-4 w-24" />
@@ -393,7 +409,7 @@ export default function Sales() {
             ))}
           </div>
         ) : filteredSales.length === 0 ? (
-          <div className="rounded-xl bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl border border-white/20 dark:border-zinc-800/50 p-12 text-center">
+          <div className="glass-surface p-12 text-center">
             <div className="flex flex-col items-center gap-3">
               <div className="w-12 h-12 rounded-full bg-muted/50 flex items-center justify-center">
                 <TrendingUp className="h-6 w-6 text-muted-foreground" />
@@ -422,7 +438,7 @@ export default function Sales() {
               return (
                 <div
                   key={sale.id}
-                  className="group rounded-xl bg-white/70 dark:bg-zinc-900/70 backdrop-blur-xl border border-white/30 dark:border-zinc-800/50 p-4 shadow-sm hover:shadow-md hover:bg-white/80 dark:hover:bg-zinc-900/80 transition-all duration-200"
+                  className="group glass-card-hover p-4"
                   data-testid={`card-sale-${sale.id}`}
                 >
                   <div className="flex items-center justify-between gap-4">
@@ -434,7 +450,7 @@ export default function Sales() {
                         </span>
                         {getPaymentStatusBadge(sale.paymentStatus)}
                         {saleReturns.length > 0 && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
+                          <span className="status-return">
                             <RotateCcw className="h-3 w-3 mr-1" />
                             {saleReturns.length}
                           </span>
@@ -550,7 +566,7 @@ export default function Sales() {
 
         {/* Footer Summary */}
         {filteredSales.length > 0 && (
-          <div className="rounded-xl bg-white/40 dark:bg-zinc-900/40 backdrop-blur-lg border border-white/20 dark:border-zinc-800/50 px-4 py-3">
+          <div className="glass-footer">
             <div className="flex flex-col sm:flex-row justify-between items-center gap-2 text-xs">
               <span className="text-muted-foreground">
                 Showing {filteredSales.length} of {sales.length}
@@ -573,7 +589,7 @@ export default function Sales() {
 
       {/* Delete Dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent className="bg-white/90 dark:bg-zinc-900/90 backdrop-blur-xl border-white/20 dark:border-zinc-800/50">
+        <AlertDialogContent className="glass-dialog">
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Sale</AlertDialogTitle>
             <AlertDialogDescription>
