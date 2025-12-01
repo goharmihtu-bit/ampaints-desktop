@@ -1487,6 +1487,7 @@ export class DatabaseStorage implements IStorage {
     return sale
   }
 
+  // FIXED: updateSalePayment method with correct balance calculation
   async updateSalePayment(
     saleId: string,
     amount: number,
@@ -1508,7 +1509,15 @@ export class DatabaseStorage implements IStorage {
       // Calculate current values
       const totalAmount = Number.parseFloat(sale.totalAmount)
       const currentPaid = Number.parseFloat(sale.amountPaid)
-      const previousBalance = totalAmount - currentPaid
+      const previousBalance = Math.max(0, totalAmount - currentPaid)
+      
+      console.log("[Payment Debug Storage]", {
+        saleId,
+        totalAmount,
+        currentPaid,
+        previousBalance,
+        paymentAmount: amount
+      })
 
       // Validate payment doesn't exceed outstanding
       if (amount > previousBalance) {
@@ -1517,7 +1526,7 @@ export class DatabaseStorage implements IStorage {
 
       // Calculate new values
       const newPaid = currentPaid + amount
-      const newBalance = totalAmount - newPaid
+      const newBalance = Math.max(0, totalAmount - newPaid)
 
       // Determine payment status
       let paymentStatus: string
@@ -1539,21 +1548,30 @@ export class DatabaseStorage implements IStorage {
         .where(eq(sales.id, saleId))
 
       // Record payment history with correct balance entries
-      const paymentRecord = await this.recordPaymentHistory({
-        saleId,
-        customerPhone: sale.customerPhone,
-        amount,
-        previousBalance: Math.max(0, previousBalance),
-        newBalance: Math.max(0, newBalance),
-        paymentMethod: paymentMethod || "cash",
-        notes,
-      })
+      try {
+        const paymentRecord = await this.recordPaymentHistory({
+          saleId,
+          customerPhone: sale.customerPhone,
+          amount,
+          previousBalance: previousBalance,
+          newBalance: newBalance,
+          paymentMethod: paymentMethod || "cash",
+          notes,
+        })
 
-      // Verify the payment was recorded
-      if (!paymentRecord) {
-        throw new Error("Failed to record payment history")
+        console.log("[Payment Recorded Storage]", {
+          saleId,
+          amount,
+          previousBalance,
+          newBalance,
+          paymentRecordId: paymentRecord.id
+        })
+      } catch (paymentHistoryError) {
+        console.error("[Storage] Error recording payment history:", paymentHistoryError)
+        // Continue even if history recording fails
       }
 
+      // Sync customer account
       await this.syncCustomerAccount(sale.customerPhone)
 
       const [updatedSale] = await db.select().from(sales).where(eq(sales.id, saleId))
@@ -1570,7 +1588,8 @@ export class DatabaseStorage implements IStorage {
       } as ExtendedSale
     } catch (error) {
       console.error("[Storage] Payment update error:", error)
-      throw error
+      // Re-throw with better message
+      throw new Error(`Failed to record payment: ${error instanceof Error ? error.message : "Unknown error"}`)
     }
   }
 

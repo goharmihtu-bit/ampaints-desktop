@@ -320,7 +320,7 @@ export default function CustomerStatement() {
     }
   }, [allSales, paidSales, unpaidSales, paymentHistory])
 
-  // FIXED: Corrected and improved transactions calculation
+  // FIXED: Corrected transactions calculation with proper balance tracking
   const transactions = useMemo((): Transaction[] => {
     const txns: Transaction[] = []
 
@@ -386,26 +386,19 @@ export default function CustomerStatement() {
       return dateA.getTime() - dateB.getTime()
     })
 
-    // FIXED: Calculate running balance correctly
+    // CORRECTED: Calculate running balance - SIMPLE AND ACCURATE METHOD
     let runningBalance = 0
-    const balanceByTransaction: { [key: string]: number } = {}
-
+    
     txns.forEach((txn) => {
       if (txn.type === "payment") {
-        // Payments reduce the outstanding balance
+        // Payments reduce the balance (customer pays us)
         runningBalance -= txn.credit
       } else {
-        // Bills and cash loans add to outstanding
+        // Bills increase the balance (customer owes us)
+        // Add the total amount of the bill
         runningBalance += txn.debit
-        // Subtract any payments already made on this transaction
-        runningBalance -= txn.paid
       }
-      balanceByTransaction[txn.id] = runningBalance
-    })
-
-    // Update transactions with calculated balances
-    txns.forEach((txn) => {
-      txn.balance = balanceByTransaction[txn.id] || 0
+      txn.balance = runningBalance
     })
 
     // Return in reverse order (newest first for display)
@@ -1270,7 +1263,7 @@ Thank you for your business!`
                                       <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2">
                                         <div className="flex items-center justify-between">
                                           <div className="flex items-center gap-2">
-                                            <Package className="h-4 w-4 text-white" />
+                                            <Package className="h-4 w-4" />
                                             <span className="text-sm font-semibold text-white">
                                               Items for {txn.description}
                                             </span>

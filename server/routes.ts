@@ -1674,7 +1674,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // Record payment - UPDATED WITH REAL-TIME INVALIDATION
+  // FIXED: Record payment - UPDATED WITH BETTER ERROR HANDLING
   app.post("/api/sales/:id/payment", requirePerm("payment:edit"), async (req, res) => {
     try {
       const { amount, paymentMethod, notes } = req.body
@@ -1695,7 +1695,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const amountPaid = Number.parseFloat(sale.amountPaid || "0")
       const outstanding = Math.max(0, totalAmount - amountPaid)
 
-      console.log("[Payment Debug]", {
+      console.log("[Payment Debug API]", {
         saleId: req.params.id,
         totalAmount,
         amountPaid,
@@ -1730,7 +1730,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     } catch (error) {
       console.error("Error recording payment:", error)
-      res.status(500).json({ error: error instanceof Error ? error.message : "Failed to record payment" })
+      res.status(500).json({ 
+        error: error instanceof Error ? error.message : "Failed to record payment" 
+      })
     }
   })
 
