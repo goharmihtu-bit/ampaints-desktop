@@ -263,10 +263,23 @@ function createTables() {
         quantity INTEGER NOT NULL,
         rate TEXT NOT NULL,
         subtotal TEXT NOT NULL,
+        quantity_returned INTEGER NOT NULL DEFAULT 0,
         FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE CASCADE,
         FOREIGN KEY (color_id) REFERENCES colors(id)
       );
     `)
+
+    const saleItemsCheck = sqlite
+      .prepare(`SELECT name FROM pragma_table_info('sale_items') WHERE name = 'quantity_returned'`)
+      .get()
+    if (!saleItemsCheck) {
+      console.log("[Database] Adding missing quantity_returned column to sale_items")
+      try {
+        sqlite.exec("ALTER TABLE sale_items ADD COLUMN quantity_returned INTEGER NOT NULL DEFAULT 0")
+      } catch (e) {
+        console.log("[Database] quantity_returned column might already exist")
+      }
+    }
 
     // Create stock_in_history table
     sqlite.exec(`

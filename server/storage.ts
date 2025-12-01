@@ -1363,26 +1363,40 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getSalesByCustomerPhoneWithItems(customerPhone: string): Promise<SaleWithItems[]> {
-    const customerSales = await db.query.sales.findMany({
-      where: eq(sales.customerPhone, customerPhone),
-      with: {
-        saleItems: {
-          with: {
-            color: {
-              with: {
-                variant: {
-                  with: {
-                    product: true,
+    try {
+      const customerSales = await db.query.sales.findMany({
+        where: eq(sales.customerPhone, customerPhone),
+        with: {
+          saleItems: {
+            with: {
+              color: {
+                with: {
+                  variant: {
+                    with: {
+                      product: true,
+                    },
                   },
                 },
               },
             },
           },
         },
-      },
-      orderBy: [desc(sales.createdAt)],
-    })
-    return customerSales
+        orderBy: [desc(sales.createdAt)],
+      })
+
+      // Ensure all saleItems have quantityReturned set
+      return customerSales.map((sale) => ({
+        ...sale,
+        saleItems: (sale.saleItems || []).map((item) => ({
+          ...item,
+          quantityReturned: item.quantityReturned ?? 0,
+        })),
+      }))
+    } catch (error) {
+      console.error("[Storage] Error in getSalesByCustomerPhoneWithItems:", error)
+      // Return empty array instead of throwing
+      return []
+    }
   }
 
   async findUnpaidSaleByPhone(customerPhone: string): Promise<ExtendedSale | undefined> {
@@ -2112,27 +2126,32 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getReturnsByCustomerPhone(customerPhone: string): Promise<ReturnWithItems[]> {
-    const result = await db.query.returns.findMany({
-      where: eq(returns.customerPhone, customerPhone),
-      with: {
-        sale: true,
-        returnItems: {
-          with: {
-            color: {
-              with: {
-                variant: {
-                  with: {
-                    product: true,
+    try {
+      const result = await db.query.returns.findMany({
+        where: eq(returns.customerPhone, customerPhone),
+        with: {
+          sale: true,
+          returnItems: {
+            with: {
+              color: {
+                with: {
+                  variant: {
+                    with: {
+                      product: true,
+                    },
                   },
                 },
               },
             },
           },
         },
-      },
-      orderBy: desc(returns.createdAt),
-    })
-    return result as ReturnWithItems[]
+        orderBy: desc(returns.createdAt),
+      })
+      return (result || []) as ReturnWithItems[]
+    } catch (error) {
+      console.error("[Storage] Error in getReturnsByCustomerPhone:", error)
+      return [] // Return empty array instead of throwing
+    }
   }
 
   async getReturnItems(): Promise<ReturnItem[]> {
@@ -2159,33 +2178,47 @@ export class DatabaseStorage implements IStorage {
         throw new Error("Customer phone is required")
       }
 
-      // Get all sales for the customer
-      const sales = await this.getSalesByCustomerPhoneWithItems(customerPhone)
+      let sales: SaleWithItems[] = []
+      try {
+        sales = await this.getSalesByCustomerPhoneWithItems(customerPhone)
+      } catch (salesError) {
+        console.error("[Storage] Error fetching sales:", salesError)
+        sales = []
+      }
       console.log(`[Storage] Retrieved ${sales.length} sales for customer`)
 
-      // Get all returns for the customer
-      const returns = await this.getReturnsByCustomerPhone(customerPhone)
+      let returns: ReturnWithItems[] = []
+      try {
+        returns = await this.getReturnsByCustomerPhone(customerPhone)
+      } catch (returnsError) {
+        console.error("[Storage] Error fetching returns:", returnsError)
+        returns = []
+      }
       console.log(`[Storage] Retrieved ${returns.length} returns for customer`)
 
       // Create a map to track returned quantities per sale item
       const returnedQuantities = new Map<string, number>()
 
       // Process returns to calculate returned quantities
-      returns.forEach((returnRecord) => {
-        if (returnRecord.returnItems && Array.isArray(returnRecord.returnItems)) {
-          returnRecord.returnItems.forEach((returnItem) => {
-            if (returnItem.saleItemId) {
-              const key = returnItem.saleItemId
-              const currentQty = returnedQuantities.get(key) || 0
-              returnedQuantities.set(key, currentQty + (returnItem.quantity || 0))
-            }
-          })
-        }
-      })
+      if (returns && Array.isArray(returns)) {
+        returns.forEach((returnRecord) => {
+          if (returnRecord && returnRecord.returnItems && Array.isArray(returnRecord.returnItems)) {
+            returnRecord.returnItems.forEach((returnItem) => {
+              if (returnItem && returnItem.saleItemId) {
+                const key = returnItem.saleItemId
+                const currentQty = returnedQuantities.get(key) || 0
+                returnedQuantities.set(key, currentQty + (returnItem.quantity || 0))
+              }
+            })
+          }
+        })
+      }
 
       // Create adjusted sales data
-      const adjustedSales: SaleWithItems[] = sales
+      const adjustedSales: SaleWithItems[] = (sales || [])
         .map((sale) => {
+          if (!sale) return null
+
           const isManualBalance = sale.isManualBalance
 
           if (isManualBalance) {
@@ -2193,24 +2226,29 @@ export class DatabaseStorage implements IStorage {
           }
 
           if (!sale.saleItems || !Array.isArray(sale.saleItems)) {
-            return sale
+            return { ...sale, saleItems: [] }
           }
 
           const adjustedSaleItems = sale.saleItems
+            .filter((item) => item != null)
             .map((item) => {
               const returnedQty = returnedQuantities.get(item.id) || 0
               const availableQty = Math.max(0, (item.quantity || 0) - returnedQty)
+              const rate = item.rate ? String(item.rate) : "0"
 
               return {
                 ...item,
                 quantity: availableQty,
-                subtotal: (availableQty * Number.parseFloat(item.rate || "0")).toString(),
+                subtotal: (availableQty * Number.parseFloat(rate)).toString(),
               }
             })
             .filter((item) => item.quantity > 0)
 
           // Recalculate sale total
-          const totalAmount = adjustedSaleItems.reduce((sum, item) => sum + Number.parseFloat(item.subtotal || "0"), 0)
+          const totalAmount = adjustedSaleItems.reduce((sum, item) => {
+            const subtotal = item.subtotal ? String(item.subtotal) : "0"
+            return sum + Number.parseFloat(subtotal)
+          }, 0)
 
           return {
             ...sale,
@@ -2218,14 +2256,21 @@ export class DatabaseStorage implements IStorage {
             totalAmount: totalAmount.toString(),
           }
         })
-        .filter((sale) => sale.saleItems.length > 0 || sale.isManualBalance)
+        .filter(
+          (sale): sale is SaleWithItems =>
+            sale !== null && (sale.saleItems.length > 0 || sale.isManualBalance === true),
+        )
 
       // Create flat list of available items for easy access
-      const availableItems = sales.flatMap((sale) =>
-        (sale.saleItems || [])
+      const availableItems = (sales || []).flatMap((sale) => {
+        if (!sale || !sale.saleItems || !Array.isArray(sale.saleItems)) return []
+
+        return sale.saleItems
+          .filter((item) => item != null)
           .map((item) => {
             const returnedQty = returnedQuantities.get(item.id) || 0
             const availableQty = Math.max(0, (item.quantity || 0) - returnedQty)
+            const rate = item.rate ? String(item.rate) : "0"
 
             return {
               saleId: sale.id,
@@ -2234,26 +2279,30 @@ export class DatabaseStorage implements IStorage {
               color: item.color,
               originalQuantity: item.quantity || 0,
               availableQuantity: availableQty,
-              rate: Number.parseFloat(item.rate || "0"),
-              subtotal: availableQty * Number.parseFloat(item.rate || "0"),
+              rate: Number.parseFloat(rate),
+              subtotal: availableQty * Number.parseFloat(rate),
               saleDate: sale.createdAt,
             }
           })
-          .filter((item) => item.availableQuantity > 0),
-      )
+          .filter((item) => item.availableQuantity > 0)
+      })
 
       console.log(
         `[Storage] Purchase history calculated: ${sales.length} original sales, ${adjustedSales.length} adjusted sales, ${availableItems.length} available items`,
       )
 
       return {
-        originalSales: sales,
-        adjustedSales,
-        availableItems,
+        originalSales: sales || [],
+        adjustedSales: adjustedSales || [],
+        availableItems: availableItems || [],
       }
     } catch (error) {
       console.error("[Storage] Error getting customer purchase history:", error)
-      throw new Error(`Failed to get purchase history: ${error instanceof Error ? error.message : String(error)}`)
+      return {
+        originalSales: [],
+        adjustedSales: [],
+        availableItems: [],
+      }
     }
   }
 

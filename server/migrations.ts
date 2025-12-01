@@ -326,6 +326,32 @@ export function migrateDatabase(db: Database.Database): void {
 
     console.log("[Migration] Current sale_items columns:", saleItemsColumnNames)
 
+    // Add quantity_returned column if missing
+    if (!saleItemsColumnNames.includes("quantity_returned")) {
+      console.log("[Migration] Adding quantity_returned column to sale_items table")
+      try {
+        db.exec("ALTER TABLE sale_items ADD COLUMN quantity_returned INTEGER NOT NULL DEFAULT 0")
+
+        // Backfill from return_items table if exists
+        try {
+          db.exec(`
+            UPDATE sale_items 
+            SET quantity_returned = COALESCE(
+              (SELECT SUM(ri.quantity) 
+               FROM return_items ri 
+               WHERE ri.sale_item_id = sale_items.id), 
+              0
+            )
+          `)
+          console.log("[Migration] Backfilled quantity_returned from return_items")
+        } catch (backfillError) {
+          console.log("[Migration] Could not backfill quantity_returned:", backfillError)
+        }
+      } catch (error) {
+        console.log("[Migration] Column quantity_returned might already exist:", error)
+      }
+    }
+
     // Add editable columns if missing (for inline editing in unpaid bills)
     const saleItemEnhancements = [
       { name: "is_edited", sql: "ALTER TABLE sale_items ADD COLUMN is_edited INTEGER NOT NULL DEFAULT 0" },
