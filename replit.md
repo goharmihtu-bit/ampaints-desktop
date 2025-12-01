@@ -52,7 +52,7 @@ None specified yet.
 ### System Design Choices
 - **Database**: Lightweight, file-based SQLite managed by Drizzle ORM.
 - **Schema Management**: Automatic migration system for smooth upgrades and backward compatibility.
-- **Performance**: Optimized SQLite queries with composite indexes. Smart database pagination system with configurable limits (DEFAULT_LIMIT: 100, MAX_LIMIT: 500) to prevent software hangs with large datasets.
+- **Performance**: Optimized SQLite queries with composite indexes. Smart database pagination system with configurable limits (DEFAULT_LIMIT: 100, MAX_LIMIT: 500) to prevent software hangs with large datasets. Background data loading with React.lazy + Suspense for instant navigation, useDeferredValue for deferred heavy processing, and sidebar hover prefetching to warm caches before navigation.
 - **Pagination API**: Paginated endpoints for Sales (`/api/sales/paginated`), Unpaid Sales (`/api/sales/unpaid/paginated`), Stock History (`/api/stock-in/history/paginated`), and Payment History (`/api/payment-history/paginated`). Each returns data with pagination metadata (page, limit, total, totalPages, hasMore).
 - **UI/UX**: Clean, responsive interface using Radix UI and Tailwind CSS, with intuitive product card designs and a bank-style customer statement. Glassmorphism theme with blue accent icons and neutral color scheme.
 - **Error Handling**: Enhanced logging and debugging for troubleshooting.

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useDeferredValue } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -93,13 +93,14 @@ export default function POSSales() {
   const [posInstances, setPosInstances] = useState<number>(1);
   const [activeInstance, setActiveInstance] = useState<number>(1);
 
-  const { data: colors = [], isLoading } =
+  const { data: colorsRaw = [], isLoading } =
     useQuery<ColorWithVariantAndProduct[]>({
       queryKey: ["/api/colors"],
-      refetchOnWindowFocus: true, // Auto-refresh when tab becomes active
+      refetchOnWindowFocus: true,
     });
 
-  // FIXED: Show ALL customer suggestions without limit
+  const colors = useDeferredValue(colorsRaw);
+
   const { data: customerSuggestions = [] } = useQuery<CustomerSuggestion[]>({
     queryKey: ["/api/customers/suggestions"],
   });

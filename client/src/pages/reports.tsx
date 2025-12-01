@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useDeferredValue } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -61,20 +61,24 @@ export default function Reports() {
   const [sortField, setSortField] = useState<SortField>("date");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
 
-  const { data: allSales = [], isLoading: salesLoading } = useQuery<Sale[]>({
+  const { data: allSalesRaw = [], isLoading: salesLoading } = useQuery<Sale[]>({
     queryKey: ["/api/sales"],
     refetchOnWindowFocus: true,
   });
 
-  const { data: paymentHistory = [], isLoading: historyLoading } = useQuery<PaymentHistoryWithSale[]>({
+  const { data: paymentHistoryRaw = [], isLoading: historyLoading } = useQuery<PaymentHistoryWithSale[]>({
     queryKey: ["/api/payment-history"],
     refetchOnWindowFocus: true,
   });
 
-  const { data: returns = [], isLoading: returnsLoading } = useQuery<Return[]>({
+  const { data: returnsRaw = [], isLoading: returnsLoading } = useQuery<Return[]>({
     queryKey: ["/api/returns"],
     refetchOnWindowFocus: true,
   });
+
+  const allSales = useDeferredValue(allSalesRaw);
+  const paymentHistory = useDeferredValue(paymentHistoryRaw);
+  const returns = useDeferredValue(returnsRaw);
 
   const parseDate = (dateStr: string | Date | null): Date | null => {
     if (!dateStr) return null;

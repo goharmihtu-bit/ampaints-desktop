@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Suspense, lazy, startTransition } from "react";
 import { Switch, Route } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -8,38 +8,42 @@ import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { DateFormatProvider } from "@/hooks/use-date-format";
 import { NavigationRefreshContext } from "@/hooks/use-navigation-refresh";
+import { PageSkeleton } from "@/components/page-skeleton";
 import ActivationScreen from "@/components/activation-screen";
 import NotFound from "@/pages/not-found";
-import Dashboard from "@/pages/dashboard";
-import StockManagement from "@/pages/stock-management";
-import POSSales from "@/pages/pos-sales";
-import Sales from "@/pages/sales";
-import UnpaidBills from "@/pages/unpaid-bills";
-import CustomerStatement from "@/pages/customer-statement";
-import Reports from "@/pages/reports";
-import RateManagement from "@/pages/rate-management";
-import BillPrint from "@/pages/bill-print";
-import Returns from "@/pages/returns";
-import Audit from "@/pages/audit";
-import Settings from "@/pages/settings";
+
+const Dashboard = lazy(() => import("@/pages/dashboard"));
+const StockManagement = lazy(() => import("@/pages/stock-management"));
+const POSSales = lazy(() => import("@/pages/pos-sales"));
+const Sales = lazy(() => import("@/pages/sales"));
+const UnpaidBills = lazy(() => import("@/pages/unpaid-bills"));
+const CustomerStatement = lazy(() => import("@/pages/customer-statement"));
+const Reports = lazy(() => import("@/pages/reports"));
+const RateManagement = lazy(() => import("@/pages/rate-management"));
+const BillPrint = lazy(() => import("@/pages/bill-print"));
+const Returns = lazy(() => import("@/pages/returns"));
+const Audit = lazy(() => import("@/pages/audit"));
+const Settings = lazy(() => import("@/pages/settings"));
 
 function Router() {
   return (
-    <Switch>
-      <Route path="/" component={Dashboard} />
-      <Route path="/stock" component={StockManagement} />
-      <Route path="/pos" component={POSSales} />
-      <Route path="/sales" component={Sales} />
-      <Route path="/unpaid-bills" component={UnpaidBills} />
-      <Route path="/customer/:phone" component={CustomerStatement} />
-      <Route path="/reports" component={Reports} />
-      <Route path="/returns" component={Returns} />
-      <Route path="/audit" component={Audit} />
-      <Route path="/rates" component={RateManagement} />
-      <Route path="/settings" component={Settings} />
-      <Route path="/bill/:id" component={BillPrint} />
-      <Route component={NotFound} />
-    </Switch>
+    <Suspense fallback={<PageSkeleton />}>
+      <Switch>
+        <Route path="/" component={Dashboard} />
+        <Route path="/stock" component={StockManagement} />
+        <Route path="/pos" component={POSSales} />
+        <Route path="/sales" component={Sales} />
+        <Route path="/unpaid-bills" component={UnpaidBills} />
+        <Route path="/customer/:phone" component={CustomerStatement} />
+        <Route path="/reports" component={Reports} />
+        <Route path="/returns" component={Returns} />
+        <Route path="/audit" component={Audit} />
+        <Route path="/rates" component={RateManagement} />
+        <Route path="/settings" component={Settings} />
+        <Route path="/bill/:id" component={BillPrint} />
+        <Route component={NotFound} />
+      </Switch>
+    </Suspense>
   );
 }
 
@@ -49,7 +53,9 @@ export default function App() {
   const [refreshKey, setRefreshKey] = useState(0);
 
   const triggerRefresh = useCallback(() => {
-    setRefreshKey(prev => prev + 1);
+    startTransition(() => {
+      setRefreshKey(prev => prev + 1);
+    });
   }, []);
 
   useEffect(() => {
@@ -59,11 +65,9 @@ export default function App() {
   async function checkActivationStatus() {
     try {
       if (window.electron?.getActivationStatus) {
-        // Desktop app - check electron store
         const status = await window.electron.getActivationStatus();
         setIsActivated(status);
       } else {
-        // Web fallback - check localStorage
         const status = localStorage.getItem("paintpulse_activated") === "true";
         setIsActivated(status);
       }
@@ -84,7 +88,6 @@ export default function App() {
     "--sidebar-width-icon": "3rem",
   };
 
-  // Show loading state while checking activation
   if (isCheckingActivation) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -96,7 +99,6 @@ export default function App() {
     );
   }
 
-  // Show activation screen if not activated
   if (!isActivated) {
     return (
       <QueryClientProvider client={queryClient}>
@@ -108,7 +110,6 @@ export default function App() {
     );
   }
 
-  // Show main app if activated
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>

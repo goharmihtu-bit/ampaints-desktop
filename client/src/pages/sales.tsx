@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useDeferredValue } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -70,13 +70,17 @@ export default function Sales() {
   const queryClient = useQueryClient();
   const { canDeleteSales } = usePermissions();
 
-  const { data: sales = [], isLoading } = useQuery<Sale[]>({
+  const { data: salesRaw = [], isLoading } = useQuery<Sale[]>({
     queryKey: ["/api/sales"],
   });
 
-  const { data: returns = [] } = useQuery<Return[]>({
+  const sales = useDeferredValue(salesRaw);
+
+  const { data: returnsRaw = [] } = useQuery<Return[]>({
     queryKey: ["/api/returns"],
   });
+
+  const returns = useDeferredValue(returnsRaw);
 
   const returnsBySaleId = useMemo(() => {
     const map = new Map<string, Return[]>();

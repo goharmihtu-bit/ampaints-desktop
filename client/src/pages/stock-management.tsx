@@ -1,5 +1,5 @@
 // stock-management.tsx - Premium Glass Theme Redesign
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useDeferredValue } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -249,25 +249,30 @@ export default function StockManagement() {
   /* -------------------------
      Queries
      ------------------------- */
-  const { data: products = [], isLoading: productsLoading } = useQuery<Product[]>({
+  const { data: productsRaw = [], isLoading: productsLoading } = useQuery<Product[]>({
     queryKey: ["/api/products"],
     refetchOnWindowFocus: true,
   });
 
-  const { data: variantsData = [], isLoading: variantsLoading } = useQuery<VariantWithProduct[]>({
+  const { data: variantsRaw = [], isLoading: variantsLoading } = useQuery<VariantWithProduct[]>({
     queryKey: ["/api/variants"],
     refetchOnWindowFocus: true,
   });
 
-  const { data: colorsData = [], isLoading: colorsLoading } = useQuery<ColorWithVariantAndProduct[]>({
+  const { data: colorsRaw = [], isLoading: colorsLoading } = useQuery<ColorWithVariantAndProduct[]>({
     queryKey: ["/api/colors"],
     refetchOnWindowFocus: true,
   });
 
   /* Stock In History Query */
-  const { data: stockInHistory = [], isLoading: historyLoading, refetch: refetchStockHistory } = useQuery<StockInHistory[]>({
+  const { data: stockInHistoryRaw = [], isLoading: historyLoading, refetch: refetchStockHistory } = useQuery<StockInHistory[]>({
     queryKey: ["/api/stock-in/history"],
   });
+
+  const products = useDeferredValue(productsRaw);
+  const variantsData = useDeferredValue(variantsRaw);
+  const colorsData = useDeferredValue(colorsRaw);
+  const stockInHistory = useDeferredValue(stockInHistoryRaw);
 
   /* Filtered Stock In History */
   const filteredStockInHistory = useMemo(() => {
@@ -340,9 +345,11 @@ export default function StockManagement() {
   }, [stockInHistory, historyCompanyFilter, historyProductFilter, historyDateFilter, historySearchQuery, historyStartDate, historyEndDate]);
 
   /* Stock Out History Query (Items sold through POS) */
-  const { data: stockOutHistory = [], isLoading: stockOutLoading, refetch: refetchStockOutHistory } = useQuery<StockOutHistory[]>({
+  const { data: stockOutHistoryRaw = [], isLoading: stockOutLoading, refetch: refetchStockOutHistory } = useQuery<StockOutHistory[]>({
     queryKey: ["/api/stock-out/history"],
   });
+
+  const stockOutHistory = useDeferredValue(stockOutHistoryRaw);
 
   /* Filtered Stock Out History */
   const filteredStockOutHistory = useMemo(() => {

@@ -47,11 +47,42 @@ export const queryClient = new QueryClient({
       queryFn: getQueryFn({ on401: "throw" }),
       refetchInterval: false,
       refetchOnWindowFocus: false,
-      staleTime: Infinity,
+      staleTime: 60000,
+      gcTime: 1000 * 60 * 30,
       retry: false,
+      refetchOnMount: "always",
+      networkMode: "offlineFirst",
+      structuralSharing: true,
     },
     mutations: {
       retry: false,
     },
   },
 });
+
+export function prefetchPageData(page: string) {
+  const pageEndpoints: Record<string, string[]> = {
+    "/": ["/api/dashboard-stats", "/api/settings"],
+    "/stock": ["/api/products", "/api/variants", "/api/colors", "/api/stock-in/history", "/api/stock-out/history"],
+    "/pos": ["/api/colors", "/api/settings", "/api/customers/suggestions"],
+    "/sales": ["/api/sales", "/api/returns"],
+    "/unpaid-bills": ["/api/sales", "/api/customers/suggestions"],
+    "/reports": ["/api/sales", "/api/returns", "/api/payment-history"],
+    "/returns": ["/api/returns", "/api/sales"],
+    "/rates": ["/api/products", "/api/variants", "/api/colors"],
+    "/audit": ["/api/settings"],
+    "/settings": ["/api/settings"],
+  };
+
+  const endpoints = pageEndpoints[page] || [];
+  
+  endpoints.forEach((endpoint) => {
+    const cached = queryClient.getQueryData([endpoint]);
+    if (!cached) {
+      queryClient.prefetchQuery({
+        queryKey: [endpoint],
+        staleTime: 60000,
+      });
+    }
+  });
+}

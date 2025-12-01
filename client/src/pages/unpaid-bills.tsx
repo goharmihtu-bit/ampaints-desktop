@@ -1,7 +1,7 @@
 "use client"
 
 // unpaid-bills.tsx - COMPLETE FIXED VERSION
-import { useState, useMemo, useEffect } from "react"
+import { useState, useMemo, useEffect, useDeferredValue } from "react"
 import { useLocation } from "wouter"
 import { useQuery, useMutation } from "@tanstack/react-query"
 import { Card, CardContent } from "@/components/ui/card"
@@ -82,8 +82,8 @@ interface BalanceNote {
   createdAt: string
 }
 
-// FIXED: Extended Sale interface with missing properties
-interface ExtendedSale extends Sale {
+// Extended Sale interface with missing properties
+type ExtendedSale = Sale & {
   dueDate?: string | Date | null
   isManualBalance?: boolean
   notes?: string | null
@@ -115,6 +115,7 @@ type FilterType = {
   }
   sortBy: "oldest" | "newest" | "highest" | "lowest" | "name"
   paymentStatus: "all" | "overdue" | "due_soon" | "no_due_date"
+  billStatus: "all" | "unpaid" | "fully_paid"
 }
 
 export default function UnpaidBills() {
@@ -179,18 +180,21 @@ export default function UnpaidBills() {
     },
     sortBy: "oldest",
     paymentStatus: "all",
+    billStatus: "unpaid",
   })
 
-  // FIXED: Proper typing for unpaid sales
+  // Fetch ALL sales to show both paid and unpaid customers
   const {
-    data: unpaidSales = [],
+    data: allSalesRaw = [],
     isLoading,
-    refetch: refetchUnpaidSales,
+    refetch: refetchAllSales,
   } = useQuery<ExtendedSale[]>({
-    queryKey: ["/api/sales/unpaid"],
-    refetchInterval: 30000, // Auto-refresh every 30 seconds
-    refetchOnWindowFocus: true, // Refresh when tab becomes active
+    queryKey: ["/api/sales"],
+    refetchInterval: 30000,
+    refetchOnWindowFocus: true,
   })
+
+  const allSales = useDeferredValue(allSalesRaw)
 
   // Fetch payment history for a specific customer
   const { data: paymentHistory = [], refetch: refetchPaymentHistory } = useQuery<PaymentRecord[]>({
@@ -231,7 +235,7 @@ export default function UnpaidBills() {
       return response.json()
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] })
+      queryClient.invalidateQueries({ queryKey: ["/api/sales"] })
       if (selectedSaleId) {
         queryClient.invalidateQueries({ queryKey: [`/api/sales/${selectedSaleId}`] })
       }
@@ -241,7 +245,7 @@ export default function UnpaidBills() {
         queryClient.invalidateQueries({ queryKey: [`/api/payment-history/customer/${selectedCustomer.customerPhone}`] })
       }
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] })
-      refetchUnpaidSales()
+      refetchAllSales()
       toast({
         title: "Payment recorded successfully",
         description: `Payment of Rs. ${Number.parseFloat(paymentAmount).toLocaleString()} has been recorded.`,
@@ -270,11 +274,11 @@ export default function UnpaidBills() {
       return response.json()
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] })
+      queryClient.invalidateQueries({ queryKey: ["/api/sales"] })
       if (viewingNotesCustomerPhone) {
         queryClient.invalidateQueries({ queryKey: [`/api/customer/${viewingNotesCustomerPhone}/notes`] })
       }
-      refetchUnpaidSales()
+      refetchAllSales()
       refetchBalanceNotes()
       toast({ title: "Note added successfully" })
       setNotesDialogOpen(false)
@@ -298,9 +302,9 @@ export default function UnpaidBills() {
       return response.json()
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] })
+      queryClient.invalidateQueries({ queryKey: ["/api/sales"] })
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] })
-      refetchUnpaidSales()
+      refetchAllSales()
       toast({
         title: "New pending balance added successfully",
         description: "A new separate bill has been created for this customer",
@@ -329,11 +333,11 @@ export default function UnpaidBills() {
       return response.json()
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] })
+      queryClient.invalidateQueries({ queryKey: ["/api/sales"] })
       if (selectedSaleId) {
         queryClient.invalidateQueries({ queryKey: [`/api/sales/${selectedSaleId}`] })
       }
-      refetchUnpaidSales()
+      refetchAllSales()
       toast({ title: "Due date updated successfully" })
       setDueDateDialogOpen(false)
       setEditingSaleId(null)
@@ -389,7 +393,7 @@ export default function UnpaidBills() {
     }
 
     try {
-      await refetchUnpaidSales()
+      await refetchAllSales()
 
       // Sort bills by date (oldest first) and apply payment
       const sortedBills = [...selectedCustomer.bills].sort(
@@ -505,11 +509,11 @@ export default function UnpaidBills() {
     }
   }
 
-  // FIXED: Proper memoization with correct dependencies
+  // Consolidate all customers from all sales
   const consolidatedCustomers = useMemo(() => {
     const customerMap = new Map<string, ConsolidatedCustomer>()
 
-    unpaidSales.forEach((sale) => {
+    allSales.forEach((sale) => {
       const phone = sale.customerPhone
       const existing = customerMap.get(phone)
 
@@ -545,10 +549,17 @@ export default function UnpaidBills() {
     })
 
     return Array.from(customerMap.values())
-  }, [unpaidSales])
+  }, [allSales])
 
   const filteredAndSortedCustomers = useMemo(() => {
     let filtered = [...consolidatedCustomers]
+
+    // Apply bill status filter (all/unpaid/fully_paid)
+    if (filters.billStatus === "unpaid") {
+      filtered = filtered.filter((customer) => customer.totalOutstanding > 0)
+    } else if (filters.billStatus === "fully_paid") {
+      filtered = filtered.filter((customer) => customer.totalOutstanding <= 0)
+    }
 
     // Apply search filter
     if (filters.search) {
@@ -559,12 +570,12 @@ export default function UnpaidBills() {
       )
     }
 
-    // Apply amount range filter
-    if (filters.amountRange.min) {
+    // Apply amount range filter (only for unpaid customers)
+    if (filters.amountRange.min && filters.billStatus !== "fully_paid") {
       const min = Number.parseFloat(filters.amountRange.min)
       filtered = filtered.filter((customer) => customer.totalOutstanding >= min)
     }
-    if (filters.amountRange.max) {
+    if (filters.amountRange.max && filters.billStatus !== "fully_paid") {
       const max = Number.parseFloat(filters.amountRange.max)
       filtered = filtered.filter((customer) => customer.totalOutstanding <= max)
     }
@@ -637,7 +648,8 @@ export default function UnpaidBills() {
     filters.daysOverdue ||
     filters.dueDate.from ||
     filters.dueDate.to ||
-    filters.paymentStatus !== "all"
+    filters.paymentStatus !== "all" ||
+    filters.billStatus !== "unpaid"
 
   const clearFilters = () => {
     setFilters({
@@ -647,6 +659,7 @@ export default function UnpaidBills() {
       dueDate: { from: "", to: "" },
       sortBy: "oldest",
       paymentStatus: "all",
+      billStatus: "unpaid",
     })
   }
 
@@ -656,9 +669,9 @@ export default function UnpaidBills() {
   // FIXED: Refresh data when customer details dialog opens with cleanup
   useEffect(() => {
     if (selectedCustomerPhone) {
-      refetchUnpaidSales()
+      refetchAllSales()
     }
-  }, [selectedCustomerPhone, refetchUnpaidSales])
+  }, [selectedCustomerPhone, refetchAllSales])
 
   // Generate PDF Statement as Blob
   const generateStatementPDFBlob = (customer: ConsolidatedCustomer): Blob => {
@@ -954,8 +967,32 @@ export default function UnpaidBills() {
           </div>
         </div>
 
+        {/* Bill Status Tabs */}
+        <div className="flex items-center gap-2 mt-6">
+          {[
+            { value: "all", label: "All Customers", icon: User },
+            { value: "unpaid", label: "Unpaid", icon: Wallet },
+            { value: "fully_paid", label: "Fully Paid", icon: CheckCircle },
+          ].map((status) => (
+            <Button
+              key={status.value}
+              variant={filters.billStatus === status.value ? "default" : "outline"}
+              onClick={() => setFilters((prev) => ({ ...prev, billStatus: status.value as any }))}
+              className={`flex items-center gap-2 ${
+                filters.billStatus === status.value
+                  ? "gradient-bg text-white"
+                  : "glass-card border-white/20"
+              }`}
+              data-testid={`button-filter-${status.value}`}
+            >
+              <status.icon className="h-4 w-4" />
+              {status.label}
+            </Button>
+          ))}
+        </div>
+
         {/* Search and Filter Row */}
-        <div className="flex items-center gap-3 mt-6 flex-wrap">
+        <div className="flex items-center gap-3 mt-4 flex-wrap">
           <div className="relative flex-1 min-w-[280px]">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
             <Input
@@ -963,6 +1000,7 @@ export default function UnpaidBills() {
               value={filters.search}
               onChange={(e) => setFilters((prev) => ({ ...prev, search: e.target.value }))}
               className="pl-10 glass-card border-white/20 focus:border-purple-300 transition-colors"
+              data-testid="input-search-customers"
             />
           </div>
 
@@ -1239,7 +1277,7 @@ export default function UnpaidBills() {
                 className="glass-card rounded-2xl p-6 border border-white/20 hover-elevate group cursor-pointer"
                 onClick={() => {
                   // Refresh data before opening customer details
-                  refetchUnpaidSales()
+                  refetchAllSales()
                   setLocation(`/customer/${encodeURIComponent(customer.customerPhone)}`)
                 }}
                 data-testid={`card-customer-${customer.customerPhone}`}

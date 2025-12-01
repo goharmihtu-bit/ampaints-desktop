@@ -1,7 +1,9 @@
+import { startTransition } from "react";
 import { LayoutDashboard, Package, ShoppingCart, Receipt, CreditCard, TrendingUp, Settings, BarChart3, RotateCcw, ShieldCheck } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigationRefresh } from "@/hooks/use-navigation-refresh";
+import { prefetchPageData } from "@/lib/queryClient";
 import {
   Sidebar,
   SidebarContent,
@@ -82,8 +84,14 @@ export function AppSidebar() {
   const handleNavClick = (url: string, e: React.MouseEvent) => {
     if (location === url) {
       e.preventDefault();
-      triggerRefresh();
+      startTransition(() => {
+        triggerRefresh();
+      });
     }
+  };
+
+  const handleMouseEnter = (url: string) => {
+    prefetchPageData(url);
   };
 
   return (
@@ -110,6 +118,7 @@ export function AppSidebar() {
                         href={item.url} 
                         data-testid={`link-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
                         onClick={(e) => handleNavClick(item.url, e)}
+                        onMouseEnter={() => handleMouseEnter(item.url)}
                       >
                         <item.icon className="h-4 w-4" />
                         <span>{item.title}</span>
