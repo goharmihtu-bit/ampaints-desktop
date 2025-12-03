@@ -39,13 +39,6 @@ import {
 import { db } from "./db"
 import { eq, desc, sql, and, gt } from "drizzle-orm"
 
-// FIXED: Utility function to safely parse numbers (includes negative values)
-function safeParseFloat(value: string | number | null | undefined): number {
-  if (value === null || value === undefined) return 0
-  const num = typeof value === "string" ? parseFloat(value) : value
-  return isNaN(num) || !isFinite(num) ? 0 : num
-}
-
 // FIXED: Extended interfaces with missing properties
 interface ExtendedSale extends Sale {
   dueDate?: string | Date | null
@@ -57,22 +50,6 @@ interface ExtendedInsertSale extends InsertSale {
   dueDate?: string | Date | null
   isManualBalance?: boolean
   notes?: string | null
-}
-
-// NEW: StockOutItem interface with previousStock and newStock fields (optional)
-interface StockOutItem {
-  id: string
-  colorId: string
-  quantity: number
-  previousStock?: number
-  newStock?: number
-  movementType: "sale" | "return" | "adjustment" | "damage"
-  referenceId?: string | null
-  referenceType?: string | null
-  reason?: string | null
-  stockOutDate: string
-  notes?: string | null
-  createdAt: Date
 }
 
 // NEW: Customer purchase history interface
@@ -273,7 +250,7 @@ export interface IStorage {
     startDate?: string
     endDate?: string
     movementType?: string
-  }): Promise<StockOutItem[]>
+  }): Promise<any[]>
 
   // NEW: CUSTOMER ACCOUNTS MANAGEMENT
   createOrUpdateCustomerAccount(data: {
@@ -1643,7 +1620,7 @@ export class DatabaseStorage implements IStorage {
       return null
     }
 
-    const oldAmount = safeParseFloat(existing.amount)
+    const oldAmount = Number.parseFloat(existing.amount)
     const newAmount = data.amount !== undefined ? data.amount : oldAmount
     const amountDifference = newAmount - oldAmount
 
@@ -1663,8 +1640,8 @@ export class DatabaseStorage implements IStorage {
     if (amountDifference !== 0) {
       const [sale] = await db.select().from(sales).where(eq(sales.id, existing.saleId))
       if (sale) {
-        const totalAmount = safeParseFloat(sale.totalAmount)
-        const currentPaid = safeParseFloat(sale.amountPaid)
+        const totalAmount = Number.parseFloat(sale.totalAmount)
+        const currentPaid = Number.parseFloat(sale.amountPaid)
         const newPaid = Math.max(0, currentPaid + amountDifference)
 
         let newPaymentStatus: string
@@ -1701,14 +1678,14 @@ export class DatabaseStorage implements IStorage {
       return false
     }
 
-    const deletedAmount = safeParseFloat(existing.amount)
+    const deletedAmount = Number.parseFloat(existing.amount)
     const [sale] = await db.select().from(sales).where(eq(sales.id, existing.saleId))
 
     await db.delete(paymentHistory).where(eq(paymentHistory.id, id))
 
     if (sale) {
-      const totalAmount = safeParseFloat(sale.totalAmount)
-      const currentPaid = safeParseFloat(sale.amountPaid)
+      const totalAmount = Number.parseFloat(sale.totalAmount)
+      const currentPaid = Number.parseFloat(sale.amountPaid)
       const newPaid = Math.max(0, currentPaid - deletedAmount)
 
       let newPaymentStatus: string
@@ -2051,7 +2028,7 @@ export class DatabaseStorage implements IStorage {
         `[Storage] Stock reduced: ${currentColor?.colorName || item.colorId} - Previous: ${previousStock}, Sold: ${item.quantity}, New: ${newStock}`,
       )
       
-      // Record in stock_out_history using safeParseFloat
+      // Record in stock_out_history
       if (sqliteDb) {
         try {
           sqliteDb
@@ -2086,7 +2063,7 @@ export class DatabaseStorage implements IStorage {
     return sale
   }
 
-  // FIXED: updateSalePayment method with correct balance calculation using safeParseFloat
+  // FIXED: updateSalePayment method with correct balance calculation
   async updateSalePayment(
     saleId: string,
     amount: number,
@@ -2105,9 +2082,9 @@ export class DatabaseStorage implements IStorage {
         throw new Error("Sale not found")
       }
 
-      // Calculate current values using safeParseFloat
-      const totalAmount = safeParseFloat(sale.totalAmount)
-      const currentPaid = safeParseFloat(sale.amountPaid)
+      // Calculate current values
+      const totalAmount = Number.parseFloat(sale.totalAmount)
+      const currentPaid = Number.parseFloat(sale.amountPaid)
       const previousBalance = Math.max(0, totalAmount - currentPaid)
       
       console.log("[Payment Debug Storage]", {
@@ -2199,8 +2176,8 @@ export class DatabaseStorage implements IStorage {
     dueDate: Date | null
     notes?: string
   }): Promise<ExtendedSale> {
-    const amount = safeParseFloat(data.totalAmount)
-    if (amount <= 0) {
+    const amount = Number.parseFloat(data.totalAmount)
+    if (isNaN(amount) || amount <= 0) {
       throw new Error("Invalid manual balance amount: must be a positive number")
     }
 
@@ -2266,10 +2243,10 @@ export class DatabaseStorage implements IStorage {
       .where(eq(colors.id, item.colorId))
 
     const allItems = await db.select().from(saleItems).where(eq(saleItems.saleId, saleId))
-    const newTotal = allItems.reduce((sum, item) => sum + safeParseFloat(item.subtotal), 0)
+    const newTotal = allItems.reduce((sum, item) => sum + Number.parseFloat(item.subtotal), 0)
 
     const [sale] = await db.select().from(sales).where(eq(sales.id, saleId))
-    const amountPaid = safeParseFloat(sale.amountPaid)
+    const amountPaid = Number.parseFloat(sale.amountPaid)
 
     let paymentStatus: string
     if (amountPaid >= newTotal) {
@@ -2324,10 +2301,10 @@ export class DatabaseStorage implements IStorage {
 
       const saleId = currentItem.saleId
       const allItems = await db.select().from(saleItems).where(eq(saleItems.saleId, saleId))
-      const newTotal = allItems.reduce((sum, item) => sum + safeParseFloat(item.subtotal), 0)
+      const newTotal = allItems.reduce((sum, item) => sum + Number.parseFloat(item.subtotal), 0)
 
       const [sale] = await db.select().from(sales).where(eq(sales.id, saleId))
-      const amountPaid = safeParseFloat(sale.amountPaid)
+      const amountPaid = Number.parseFloat(sale.amountPaid)
 
       let paymentStatus: string
       if (amountPaid >= newTotal) {
@@ -2374,10 +2351,10 @@ export class DatabaseStorage implements IStorage {
     await db.delete(saleItems).where(eq(saleItems.id, saleItemId))
 
     const allItems = await db.select().from(saleItems).where(eq(saleItems.saleId, saleId))
-    const newTotal = allItems.reduce((sum, item) => sum + safeParseFloat(item.subtotal), 0)
+    const newTotal = allItems.reduce((sum, item) => sum + Number.parseFloat(item.subtotal), 0)
 
     const [sale] = await db.select().from(sales).where(eq(sales.id, saleId))
-    const amountPaid = safeParseFloat(sale.amountPaid)
+    const amountPaid = Number.parseFloat(sale.amountPaid)
 
     let paymentStatus: string
     if (newTotal === 0) {
@@ -2899,7 +2876,7 @@ export class DatabaseStorage implements IStorage {
               return {
                 ...item,
                 quantity: availableQty,
-                subtotal: (availableQty * safeParseFloat(rate)).toString(),
+                subtotal: (availableQty * Number.parseFloat(rate)).toString(),
               }
             })
             .filter((item) => item.quantity > 0)
@@ -2907,7 +2884,7 @@ export class DatabaseStorage implements IStorage {
           // Recalculate sale total
           const totalAmount = adjustedSaleItems.reduce((sum, item) => {
             const subtotal = item.subtotal ? String(item.subtotal) : "0"
-            return sum + safeParseFloat(subtotal)
+            return sum + Number.parseFloat(subtotal)
           }, 0)
 
           return {
@@ -2939,8 +2916,8 @@ export class DatabaseStorage implements IStorage {
               color: item.color,
               originalQuantity: item.quantity || 0,
               availableQuantity: availableQty,
-              rate: safeParseFloat(rate),
-              subtotal: availableQty * safeParseFloat(rate),
+              rate: Number.parseFloat(rate),
+              subtotal: availableQty * Number.parseFloat(rate),
               saleDate: sale.createdAt,
             }
           })
@@ -3049,7 +3026,7 @@ export class DatabaseStorage implements IStorage {
     startDate?: string
     endDate?: string
     movementType?: string
-  }): Promise<StockOutItem[]> {
+  }): Promise<any[]> {
     try {
       const { sqliteDb } = await import("./db")
       if (!sqliteDb) return []
@@ -3079,23 +3056,7 @@ export class DatabaseStorage implements IStorage {
 
       query += " ORDER BY created_at DESC"
 
-      const results = sqliteDb.prepare(query).all(...params) as any[]
-      
-      // Convert to StockOutItem type
-      return results.map((row): StockOutItem => ({
-        id: row.id,
-        colorId: row.color_id,
-        quantity: row.quantity,
-        previousStock: row.previous_stock,
-        newStock: row.new_stock,
-        movementType: row.movement_type,
-        referenceId: row.reference_id,
-        referenceType: row.reference_type,
-        reason: row.reason,
-        stockOutDate: row.stock_out_date,
-        notes: row.notes,
-        createdAt: new Date(row.created_at),
-      }))
+      return sqliteDb.prepare(query).all(...params) as any[]
     } catch (error) {
       console.error("[Storage] Error fetching stock out history:", error)
       return []
@@ -3230,8 +3191,8 @@ export class DatabaseStorage implements IStorage {
       const billDates: Date[] = []
 
       customerSales.forEach((sale) => {
-        totalAmount += safeParseFloat(sale.totalAmount || "0")
-        totalPaid += safeParseFloat(sale.amountPaid || "0")
+        totalAmount += Number.parseFloat(sale.totalAmount || "0")
+        totalPaid += Number.parseFloat(sale.amountPaid || "0")
         const createdAt = sale.createdAt instanceof Date ? sale.createdAt : new Date(sale.createdAt)
         billDates.push(createdAt)
       })
@@ -3452,8 +3413,8 @@ export class DatabaseStorage implements IStorage {
       const allSales = await this.getSalesWithItems()
 
       for (const sale of allSales) {
-        const totalAmount = safeParseFloat(sale.totalAmount)
-        const amountPaid = safeParseFloat(sale.amountPaid)
+        const totalAmount = Number(sale.totalAmount)
+        const amountPaid = Number(sale.amountPaid)
         const currentBalance = Math.max(0, totalAmount - amountPaid)
 
         await this.createOrUpdateCustomerAccount({

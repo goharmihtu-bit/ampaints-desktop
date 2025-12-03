@@ -1,4 +1,4 @@
-// routes.ts - UPDATED VERSION WITH FIXED STOCK OUT HISTORY AND CALCULATIONS
+// routes.ts - COMPLETE FIXED VERSION WITH ALL MISSING ROUTES
 import type { Express } from "express"
 import { createServer, type Server } from "http"
 import { storage } from "./storage"
@@ -115,21 +115,6 @@ interface ExtendedSale {
   createdAt: Date
 }
 
-// NEW: StockOutItem interface with previousStock and newStock fields
-interface StockOutItem {
-  id: string
-  saleId: string
-  colorId: string
-  quantity: number
-  rate: string
-  subtotal: string
-  previousStock?: number
-  newStock?: number
-  soldAt: Date
-  customerName: string
-  customerPhone: string
-}
-
 // Audit token storage (in-memory for session management)
 const auditTokens = new Map<string, { createdAt: number }>()
 
@@ -145,7 +130,6 @@ const cache = {
   products: null as CacheEntry<any[]> | null,
   variants: null as CacheEntry<any[]> | null,
   colors: null as CacheEntry<any[]> | null,
-  stockOutHistory: null as CacheEntry<any[]> | null,
 }
 
 const CACHE_TTL = {
@@ -153,7 +137,6 @@ const CACHE_TTL = {
   products: 30000, // 30 seconds for products
   variants: 30000, // 30 seconds for variants
   colors: 30000,   // 30 seconds for colors
-  stockOutHistory: 30000, // 30 seconds for stock out history
 }
 
 function getCached<T>(key: keyof typeof cache): T | null {
@@ -178,7 +161,6 @@ function invalidateCache(key?: keyof typeof cache): void {
     cache.products = null
     cache.variants = null
     cache.colors = null
-    cache.stockOutHistory = null
   }
 }
 
@@ -187,14 +169,6 @@ function invalidateInventoryCache(): void {
   cache.products = null
   cache.variants = null
   cache.colors = null
-  cache.stockOutHistory = null
-}
-
-// FIXED: Utility function to safely parse numbers (includes negative values)
-function safeParseFloat(value: string | number | null | undefined): number {
-  if (value === null || value === undefined) return 0
-  const num = typeof value === "string" ? parseFloat(value) : value
-  return isNaN(num) || !isFinite(num) ? 0 : num
 }
 
 // Auto-sync state
@@ -1060,7 +1034,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const variant = await storage.updateVariant(req.params.id, {
         productId,
         packingSize,
-        rate: safeParseFloat(rate),
+        rate: Number.parseFloat(rate),
       })
 
       // Auto-sync trigger & cache invalidation
@@ -1433,45 +1407,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // NEW: Get Stock Out History with previousStock and newStock calculations
+  // Stock Out History (items sold through POS)
   app.get("/api/stock-out/history", async (_req, res) => {
     try {
       console.log("[API] Fetching stock out history (sold items)")
       
-      // Check cache first
-      const cached = getCached<any[]>("stockOutHistory")
-      if (cached) {
-        console.log(`[API] Returning ${cached.length} stock out records from cache`)
-        return res.json(cached)
-      }
-      
-      // Fetch all sales and related data
+      // Fetch all sale items with their related data
       const allSales = await storage.getSales()
       const allColors = await storage.getColors()
-      const stockInHistory = await storage.getStockInHistory()
       
       // Create a map of colors by ID for quick lookup
       const colorMap = new Map(allColors.map(c => [c.id, c]))
       
-      // Create a timeline of stock movements for each color
-      const stockMovementTimeline = new Map<string, Array<{date: Date, type: 'in' | 'out', quantity: number, previousStock?: number, newStock?: number}>>()
-      
-      // Process stock in history
-      for (const sih of stockInHistory) {
-        if (!stockMovementTimeline.has(sih.colorId)) {
-          stockMovementTimeline.set(sih.colorId, [])
-        }
-        stockMovementTimeline.get(sih.colorId)!.push({
-          date: new Date(sih.createdAt),
-          type: 'in',
-          quantity: sih.quantity,
-          previousStock: sih.previousStock,
-          newStock: sih.newStock
-        })
-      }
-      
-      // Build stock out history from sale items with proper stock calculations
-      const stockOutHistory: StockOutItem[] = []
+      // Build stock out history from sale items
+      const stockOutHistory = []
       
       for (const sale of allSales) {
         if (sale.isManualBalance) continue // Skip manual balance entries
@@ -1480,26 +1429,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         for (const item of saleItems) {
           const color = colorMap.get(item.colorId)
           if (color) {
-            // Calculate previous stock by looking at all stock movements before this sale
-            const colorMovements = stockMovementTimeline.get(item.colorId) || []
-            const saleDate = new Date(sale.createdAt)
-            
-            // Find all movements before this sale
-            const movementsBeforeSale = colorMovements.filter(m => m.date < saleDate)
-            
-            // Calculate stock at the time of sale
-            let previousStock = 0
-            for (const movement of movementsBeforeSale) {
-              if (movement.type === 'in') {
-                previousStock += movement.quantity
-              } else {
-                previousStock -= movement.quantity
-              }
-            }
-            
-            // Calculate new stock after this sale
-            const newStock = previousStock - item.quantity
-            
             stockOutHistory.push({
               id: item.id,
               saleId: sale.id,
@@ -1507,23 +1436,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
               quantity: item.quantity,
               rate: item.rate,
               subtotal: item.subtotal,
-              previousStock: previousStock,
-              newStock: newStock,
+              color: color,
               soldAt: sale.createdAt,
               customerName: sale.customerName,
               customerPhone: sale.customerPhone,
-            })
-            
-            // Add this sale to the movement timeline for future calculations
-            if (!stockMovementTimeline.has(item.colorId)) {
-              stockMovementTimeline.set(item.colorId, [])
-            }
-            stockMovementTimeline.get(item.colorId)!.push({
-              date: saleDate,
-              type: 'out',
-              quantity: item.quantity,
-              previousStock: previousStock,
-              newStock: newStock
             })
           }
         }
@@ -1532,10 +1448,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Sort by date (newest first)
       stockOutHistory.sort((a, b) => new Date(b.soldAt).getTime() - new Date(a.soldAt).getTime())
       
-      // Cache the result
-      setCache("stockOutHistory", stockOutHistory, CACHE_TTL.stockOutHistory)
-      
-      console.log(`[API] Returning ${stockOutHistory.length} stock out records with calculated stock levels`)
+      console.log(`[API] Returning ${stockOutHistory.length} stock out records`)
       res.json(stockOutHistory)
     } catch (error) {
       console.error("[API] Error fetching stock out history:", error)
@@ -1594,9 +1507,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const paymentHistory = await storage.recordPaymentHistory({
         saleId: validated.saleId,
         customerPhone: validated.customerPhone,
-        amount: safeParseFloat(validated.amount),
-        previousBalance: safeParseFloat(validated.previousBalance),
-        newBalance: safeParseFloat(validated.newBalance),
+        amount: Number.parseFloat(validated.amount),
+        previousBalance: Number.parseFloat(validated.previousBalance),
+        newBalance: Number.parseFloat(validated.newBalance),
         paymentMethod: validated.paymentMethod,
         notes: validated.notes ?? undefined,
       })
@@ -1622,7 +1535,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { amount, paymentMethod, notes } = req.body
 
       const updated = await storage.updatePaymentHistory(id, {
-        amount: amount !== undefined ? safeParseFloat(amount) : undefined,
+        amount: amount !== undefined ? Number.parseFloat(amount) : undefined,
         paymentMethod,
         notes,
       })
@@ -2068,11 +1981,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
             customerName: sale.customerName,
             customerPhone: sale.customerPhone,
             lastSaleDate: sale.createdAt,
-            totalSpent: (existing?.totalSpent || 0) + safeParseFloat(sale.totalAmount),
+            totalSpent: (existing?.totalSpent || 0) + Number.parseFloat(sale.totalAmount),
             transactionCount: (existing?.transactionCount || 0) + 1,
           })
         } else {
-          existing.totalSpent += safeParseFloat(sale.totalAmount)
+          existing.totalSpent += Number.parseFloat(sale.totalAmount)
           existing.transactionCount += 1
         }
       })
@@ -2147,8 +2060,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return
       }
 
-      const totalAmount = safeParseFloat(sale.totalAmount || "0")
-      const amountPaid = safeParseFloat(sale.amountPaid || "0")
+      const totalAmount = Number.parseFloat(sale.totalAmount || "0")
+      const amountPaid = Number.parseFloat(sale.amountPaid || "0")
       const outstanding = Math.max(0, totalAmount - amountPaid)
 
       console.log("[Payment Debug API]", {
@@ -2303,7 +2216,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return
       }
 
-      if (safeParseFloat(totalAmount) <= 0) {
+      if (Number.parseFloat(totalAmount) <= 0) {
         res.status(400).json({ error: "Amount must be greater than 0" })
         return
       }
@@ -2731,20 +2644,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Stock Out History for Audit (protected)
   app.get("/api/audit/stock-out", verifyAuditToken, async (_req, res) => {
     try {
-      // Check cache first
-      const cached = getCached<any[]>("stockOutHistory")
-      if (cached) {
-        console.log(`[Audit API] Returning ${cached.length} stock out records from cache`)
-        return res.json(cached)
-      }
-      
-      // Fetch from storage
       const stockOut = await storage.getStockOutHistory()
-      
-      // Cache the result
-      setCache("stockOutHistory", stockOut, CACHE_TTL.stockOutHistory)
-      
-      console.log(`[Audit API] Returning ${stockOut.length} stock out records`)
       res.json(stockOut)
     } catch (error) {
       console.error("Error fetching stock out history:", error)
