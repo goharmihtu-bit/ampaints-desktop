@@ -91,6 +91,8 @@ interface StockOutItem {
   soldAt: Date
   customerName: string
   customerPhone: string
+  previousStock?: number
+  newStock?: number
 }
 
 interface PaymentHistoryWithSale extends PaymentHistory {
@@ -158,7 +160,7 @@ function generateStatementPDFBlob(customer: ConsolidatedCustomer): Blob {
   return pdfBlob
 }
 
-// Utility function to safely parse numbers
+// Utility function to safely parse numbers (includes negative values)
 const safeParseFloat = (value: string | number | null | undefined): number => {
   if (value === null || value === undefined) return 0
   const num = typeof value === "string" ? Number.parseFloat(value) : value
@@ -774,9 +776,9 @@ export default function Audit() {
         variant: record.color?.variant?.packingSize || "-",
         colorCode: record.color?.colorCode || "-",
         colorName: record.color?.colorName || "-",
-        quantity: record.quantity,
-        previousStock: record.previousStock,
-        newStock: record.newStock,
+        quantity: safeParseFloat(record.quantity),
+        previousStock: safeParseFloat(record.previousStock),
+        newStock: safeParseFloat(record.newStock),
         reference: `Stock In: ${record.stockInDate}`,
         notes: record.notes || undefined,
       })
@@ -792,7 +794,9 @@ export default function Audit() {
         variant: record.color?.variant?.packingSize || "-",
         colorCode: record.color?.colorCode || "-",
         colorName: record.color?.colorName || "-",
-        quantity: record.quantity,
+        quantity: safeParseFloat(record.quantity),
+        previousStock: safeParseFloat(record.previousStock),
+        newStock: safeParseFloat(record.newStock),
         reference: `Bill #${record.saleId.slice(0, 8).toUpperCase()}`,
         customer: record.customerName,
       })
@@ -882,9 +886,9 @@ export default function Audit() {
   }, [filteredSales, visibleLimit])
 
   const stockSummary = useMemo(() => {
-    const totalIn = stockInHistory.reduce((acc, r) => acc + r.quantity, 0)
-    const totalOut = stockOutHistory.reduce((acc, r) => acc + r.quantity, 0)
-    const currentStock = colors.reduce((acc, c) => acc + c.stockQuantity, 0)
+    const totalIn = stockInHistory.reduce((acc, r) => acc + safeParseFloat(r.quantity), 0)
+    const totalOut = stockOutHistory.reduce((acc, r) => acc + safeParseFloat(r.quantity), 0)
+    const currentStock = colors.reduce((acc, c) => acc + safeParseFloat(c.stockQuantity), 0)
     return { totalIn, totalOut, currentStock }
   }, [stockInHistory, stockOutHistory, colors])
 
@@ -1050,8 +1054,8 @@ export default function Audit() {
     pdf.rect(margin, yPos, pageWidth - 2 * margin, 8, "F")
     pdf.setTextColor(255, 255, 255)
     pdf.setFontSize(8)
-    const headers = ["Date", "Type", "Company", "Product", "Size", "Color", "Qty", "Reference", "Customer"]
-    const colWidths = [25, 15, 35, 35, 25, 40, 15, 45, 40]
+    const headers = ["Date", "Type", "Company", "Product", "Size", "Color", "Qty", "Prev Stock", "New Stock", "Reference", "Customer"]
+    const colWidths = [25, 15, 35, 35, 25, 40, 15, 20, 20, 45, 40]
     let xPos = margin + 2
     headers.forEach((header, i) => {
       pdf.text(header, xPos, yPos + 5.5)
@@ -1094,8 +1098,14 @@ export default function Audit() {
       xPos += colWidths[5]
       pdf.text(m.type === "IN" ? `+${m.quantity}` : `-${m.quantity}`, xPos, yPos + 4)
       xPos += colWidths[6]
-      pdf.text(m.reference.substring(0, 22), xPos, yPos + 4)
+      // Previous Stock - show negative values
+      pdf.text(m.previousStock?.toString() || "0", xPos, yPos + 4)
       xPos += colWidths[7]
+      // New Stock - show negative values
+      pdf.text(m.newStock?.toString() || "0", xPos, yPos + 4)
+      xPos += colWidths[8]
+      pdf.text(m.reference.substring(0, 22), xPos, yPos + 4)
+      xPos += colWidths[9]
       pdf.text((m.customer || "-").substring(0, 18), xPos, yPos + 4)
       yPos += 6
     }
@@ -1789,6 +1799,8 @@ export default function Audit() {
                         <TableHead>Size</TableHead>
                         <TableHead>Color</TableHead>
                         <TableHead>Quantity</TableHead>
+                        <TableHead>Prev Stock</TableHead>
+                        <TableHead>New Stock</TableHead>
                         <TableHead>Reference</TableHead>
                         <TableHead>Customer</TableHead>
                       </TableRow>
@@ -1796,7 +1808,7 @@ export default function Audit() {
                     <TableBody>
                       {filteredStockMovements.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                          <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
                             No stock movements found for the selected filters.
                           </TableCell>
                         </TableRow>
@@ -1843,6 +1855,12 @@ export default function Audit() {
                                 {movement.type === "IN" ? "+" : "-"}
                                 {movement.quantity}
                               </div>
+                            </TableCell>
+                            <TableCell className={movement.previousStock && movement.previousStock < 0 ? "text-red-600 font-medium" : ""}>
+                              {movement.previousStock !== undefined ? movement.previousStock : "-"}
+                            </TableCell>
+                            <TableCell className={movement.newStock && movement.newStock < 0 ? "text-red-600 font-medium" : ""}>
+                              {movement.newStock !== undefined ? movement.newStock : "-"}
                             </TableCell>
                             <TableCell className="text-sm">{movement.reference}</TableCell>
                             <TableCell>{movement.customer || "-"}</TableCell>
