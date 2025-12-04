@@ -171,7 +171,9 @@ function useAuditApiRequest() {
     }
 
     if (!response.ok) {
-      throw new Error(`Request failed with status ${response.status}`)
+      const errorText = await response.text()
+      console.error(`API Error (${response.status}):`, errorText)
+      throw new Error(`Request failed with status ${response.status}: ${errorText}`)
     }
 
     return response.json()
@@ -480,10 +482,11 @@ export default function Audit() {
       if (!silent) {
         toast({
           title: "Export Failed",
-          description: error.message || "Could not export to cloud database.",
+          description: error.message || "Could not export to cloud database. Please check server logs.",
           variant: "destructive",
         })
       }
+      console.error("Cloud export error:", error)
     } finally {
       if (!silent) setCloudSyncStatus("idle")
     }
@@ -529,9 +532,10 @@ export default function Audit() {
     } catch (error: any) {
       toast({
         title: "Import Failed",
-        description: error.message || "Could not import from cloud database.",
+        description: error.message || "Could not import from cloud database. Please check server logs.",
         variant: "destructive",
       })
+      console.error("Cloud import error:", error)
     } finally {
       setCloudSyncStatus("idle")
     }
@@ -1996,9 +2000,9 @@ export default function Audit() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-6">
-                    <p className="text-sm text-muted-foreground" id="cloud-description">
+                    <div className="text-sm text-muted-foreground" id="cloud-description">
                       Connect to a cloud PostgreSQL database (Neon, Supabase) to sync your data across multiple devices.
-                    </p>
+                    </div>
 
                     <div className="space-y-4">
                       <div className="space-y-2">

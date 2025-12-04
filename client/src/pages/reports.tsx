@@ -47,6 +47,12 @@ import {
   Package,
   DollarSign,
   TrendingUp as TrendingUpIcon,
+  PieChart,
+  Target,
+  Activity,
+  Shield,
+  Banknote,
+  Clock,
 } from "lucide-react";
 import { Link } from "wouter";
 import type { Sale, PaymentHistory, Return, SaleWithItems, ReturnWithItems, ColorWithVariantAndProduct } from "@shared/schema";
@@ -363,6 +369,16 @@ export default function Reports() {
     };
   }, [allSales, paymentHistory, returns]);
 
+  // Calculate combined paid + recovery
+  const totalCollectedAmount = useMemo(() => {
+    return filteredSalesPaid + filteredPaymentsTotal;
+  }, [filteredSalesPaid, filteredPaymentsTotal]);
+
+  // Calculate collection rate
+  const collectionRate = useMemo(() => {
+    return filteredSalesTotal > 0 ? (totalCollectedAmount / filteredSalesTotal) * 100 : 0;
+  }, [filteredSalesTotal, totalCollectedAmount]);
+
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
       setSortDirection(sortDirection === "asc" ? "desc" : "asc");
@@ -633,174 +649,6 @@ export default function Reports() {
           </Card>
         </div>
 
-        {/* Report Dashboard Cards */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Main Sales Summary Card */}
-          <Card className="rounded-2xl border border-slate-100 dark:border-slate-700/50 bg-white/80 dark:bg-zinc-800/80 backdrop-blur-sm shadow-lg">
-            <CardContent className="p-6">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-xl">
-                  <Calculator className="h-6 w-6 text-blue-600 dark:text-blue-400" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">Sales Summary</h3>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">Filtered by current search criteria</p>
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <div className="p-2 bg-slate-100 dark:bg-slate-800 rounded-lg">
-                      <Receipt className="h-4 w-4 text-slate-600 dark:text-slate-400" />
-                    </div>
-                    <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Total Sales</span>
-                  </div>
-                  <div className="text-2xl font-bold text-slate-900 dark:text-white tabular-nums">
-                    {filteredSalesTotal.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
-                  </div>
-                  <div className="text-xs text-slate-500 dark:text-slate-400">
-                    {filteredSales.length} bills
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <div className="p-2 bg-emerald-100 dark:bg-emerald-900/20 rounded-lg">
-                      <TrendingUp className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                    </div>
-                    <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Paid</span>
-                  </div>
-                  <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
-                    {filteredSalesPaid.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
-                  </div>
-                  <div className="text-xs text-slate-500 dark:text-slate-400">
-                    {paidSales.length} paid bills
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <div className="p-2 bg-rose-100 dark:bg-rose-900/20 rounded-lg">
-                      <TrendingDown className="h-4 w-4 text-rose-600 dark:text-rose-400" />
-                    </div>
-                    <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Outstanding</span>
-                  </div>
-                  <div className="text-2xl font-bold text-rose-600 dark:text-rose-400 tabular-nums">
-                    {filteredSalesOutstanding.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
-                  </div>
-                  <div className="text-xs text-slate-500 dark:text-slate-400">
-                    {unpaidSales.length} unpaid bills
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <div className="p-2 bg-purple-100 dark:bg-purple-900/20 rounded-lg">
-                      <Wallet className="h-4 w-4 text-purple-600 dark:text-purple-400" />
-                    </div>
-                    <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Recovery</span>
-                  </div>
-                  <div className="text-2xl font-bold text-purple-600 dark:text-purple-400 tabular-nums">
-                    {filteredPaymentsTotal.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
-                  </div>
-                  <div className="text-xs text-slate-500 dark:text-slate-400">
-                    {filteredPayments.length} payments
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Returns & Recovery Analysis Card */}
-          <Card className="rounded-2xl border border-slate-100 dark:border-slate-700/50 bg-white/80 dark:bg-zinc-800/80 backdrop-blur-sm shadow-lg">
-            <CardContent className="p-6">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="p-3 bg-red-100 dark:bg-red-900/30 rounded-xl">
-                  <RotateCcw className="h-6 w-6 text-red-600 dark:text-red-400" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">Returns & Recovery Analysis</h3>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">Return metrics and collection analysis</p>
-                </div>
-              </div>
-              
-              <div className="space-y-6">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <div className="p-2 bg-red-100 dark:bg-red-900/20 rounded-lg">
-                        <AlertTriangle className="h-4 w-4 text-red-600 dark:text-red-400" />
-                      </div>
-                      <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Total Returns</span>
-                    </div>
-                    <div className="text-2xl font-bold text-red-600 dark:text-red-400 tabular-nums">
-                      {returnStats.totalReturns}
-                    </div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400">
-                      {returnStats.billReturns} bills, {returnStats.itemReturns} items
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <div className="p-2 bg-amber-100 dark:bg-amber-900/20 rounded-lg">
-                        <DollarSign className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                      </div>
-                      <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Total Refunded</span>
-                    </div>
-                    <div className="text-2xl font-bold text-amber-600 dark:text-amber-400 tabular-nums">
-                      {returnStats.totalRefunded.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
-                    </div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400">
-                      Filtered returns
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-slate-600 dark:text-slate-400">Collection Rate</span>
-                    <span className="font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
-                      {filteredSalesTotal > 0 
-                        ? ((filteredSalesPaid / filteredSalesTotal) * 100).toFixed(1)
-                        : "0.0"}%
-                    </span>
-                  </div>
-                  <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400"
-                      style={{ 
-                        width: `${filteredSalesTotal > 0 ? Math.min(100, ((filteredSalesPaid + filteredPaymentsTotal) / filteredSalesTotal) * 100) : 0}%` 
-                      }}
-                    />
-                  </div>
-                  <div className="text-xs text-slate-500 dark:text-slate-400">
-                    Total collected amount relative to total sales
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4 p-3 rounded-md bg-slate-50 dark:bg-slate-800/50">
-                  <div>
-                    <span className="text-sm text-slate-600 dark:text-slate-400">Net Sales</span>
-                    <div className="text-lg font-bold text-slate-900 dark:text-white tabular-nums">
-                      {(filteredSalesTotal - filteredReturnsTotal).toLocaleString("en-IN", { minimumFractionDigits: 0 })}
-                    </div>
-                  </div>
-                  <div>
-                    <span className="text-sm text-slate-600 dark:text-slate-400">Refund %</span>
-                    <div className="text-lg font-bold text-rose-600 dark:text-rose-400 tabular-nums">
-                      {filteredSalesTotal > 0 
-                        ? ((filteredReturnsTotal / filteredSalesTotal) * 100).toFixed(1)
-                        : "0.0"}%
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
         {/* Filters Card */}
         <Card className="rounded-2xl border border-slate-100 dark:border-slate-700/50 bg-white/80 dark:bg-zinc-800/80 backdrop-blur-sm shadow-sm">
           <CardContent className="p-5">
@@ -836,7 +684,7 @@ export default function Reports() {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                {activeTab !== "recovery-payments" && activeTab !== "returns" && (
+                {activeTab !== "recovery-payments" && activeTab !== "returns" && activeTab !== "overview" && (
                   <Select value={paymentStatusFilter} onValueChange={setPaymentStatusFilter}>
                     <SelectTrigger className="w-[140px] border-slate-200 dark:border-slate-700 bg-white dark:bg-zinc-900 rounded-xl" data-testid="select-payment-status">
                       <SelectValue placeholder="Status" />
@@ -868,7 +716,15 @@ export default function Reports() {
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-          <TabsList className="grid w-full grid-cols-4 bg-slate-100 dark:bg-zinc-800 rounded-xl p-1">
+          <TabsList className="grid w-full grid-cols-5 bg-slate-100 dark:bg-zinc-800 rounded-xl p-1">
+            <TabsTrigger 
+              value="overview" 
+              data-testid="tab-overview"
+              className="rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-900 data-[state=active]:shadow-sm"
+            >
+              <PieChart className="h-4 w-4 mr-2" />
+              Overview
+            </TabsTrigger>
             <TabsTrigger 
               value="all-sales" 
               data-testid="tab-all-sales"
@@ -902,6 +758,314 @@ export default function Reports() {
               Returns ({filteredReturns.length})
             </TabsTrigger>
           </TabsList>
+
+          {/* Overview Tab */}
+          <TabsContent value="overview">
+            <div className="space-y-6">
+              {/* Top Combined Card */}
+              <Card className="rounded-2xl border border-slate-100 dark:border-slate-700/50 bg-gradient-to-br from-white to-slate-50 dark:from-zinc-800 dark:to-zinc-900 backdrop-blur-sm shadow-lg overflow-hidden">
+                <CardContent className="p-6">
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="p-3 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-xl">
+                      <Target className="h-6 w-6 text-white" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold text-slate-900 dark:text-white">Financial Performance Summary</h3>
+                      <p className="text-sm text-slate-500 dark:text-slate-400">Filtered by current search criteria</p>
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                    {/* Combined Paid + Recovery Card */}
+                    <Card className="border border-emerald-100 dark:border-emerald-900/30 bg-gradient-to-br from-emerald-50/50 to-white dark:from-emerald-900/10 dark:to-zinc-800/50">
+                      <CardContent className="p-5">
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg">
+                              <Banknote className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                            </div>
+                            <div>
+                              <h4 className="font-semibold text-slate-900 dark:text-white">Total Collected</h4>
+                              <p className="text-xs text-slate-500 dark:text-slate-400">Paid + Recovery</p>
+                            </div>
+                          </div>
+                          <Badge className="bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-700">
+                            <TrendingUp className="h-3 w-3 mr-1" />
+                            {collectionRate.toFixed(1)}%
+                          </Badge>
+                        </div>
+                        <div className="text-3xl font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                          {totalCollectedAmount.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
+                        </div>
+                        <div className="flex justify-between mt-3 text-sm">
+                          <div>
+                            <div className="text-slate-500 dark:text-slate-400">Paid</div>
+                            <div className="font-medium text-slate-900 dark:text-white tabular-nums">
+                              {filteredSalesPaid.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-slate-500 dark:text-slate-400">Recovery</div>
+                            <div className="font-medium text-purple-600 dark:text-purple-400 tabular-nums">
+                              {filteredPaymentsTotal.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* Outstanding Card */}
+                    <Card className="border border-rose-100 dark:border-rose-900/30 bg-gradient-to-br from-rose-50/50 to-white dark:from-rose-900/10 dark:to-zinc-800/50">
+                      <CardContent className="p-5">
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2 bg-rose-100 dark:bg-rose-900/30 rounded-lg">
+                              <Clock className="h-5 w-5 text-rose-600 dark:text-rose-400" />
+                            </div>
+                            <div>
+                              <h4 className="font-semibold text-slate-900 dark:text-white">Total Outstanding</h4>
+                              <p className="text-xs text-slate-500 dark:text-slate-400">Pending collection</p>
+                            </div>
+                          </div>
+                          <Badge className="bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-700">
+                            {unpaidSales.length} bills
+                          </Badge>
+                        </div>
+                        <div className="text-3xl font-bold text-rose-600 dark:text-rose-400 tabular-nums">
+                          {filteredSalesOutstanding.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
+                        </div>
+                        <div className="flex justify-between mt-3 text-sm">
+                          <div>
+                            <div className="text-slate-500 dark:text-slate-400">Partial</div>
+                            <div className="font-medium text-slate-900 dark:text-white tabular-nums">
+                              {filteredSales.filter(s => s.paymentStatus === "partial").length} bills
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-slate-500 dark:text-slate-400">Unpaid</div>
+                            <div className="font-medium text-slate-900 dark:text-white tabular-nums">
+                              {filteredSales.filter(s => s.paymentStatus === "unpaid").length} bills
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* Net Sales Card */}
+                    <Card className="border border-blue-100 dark:border-blue-900/30 bg-gradient-to-br from-blue-50/50 to-white dark:from-blue-900/10 dark:to-zinc-800/50">
+                      <CardContent className="p-5">
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                              <Activity className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                            </div>
+                            <div>
+                              <h4 className="font-semibold text-slate-900 dark:text-white">Net Sales</h4>
+                              <p className="text-xs text-slate-500 dark:text-slate-400">After returns</p>
+                            </div>
+                          </div>
+                          <Badge className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-700">
+                            {returnStats.totalReturns} returns
+                          </Badge>
+                        </div>
+                        <div className="text-3xl font-bold text-blue-600 dark:text-blue-400 tabular-nums">
+                          {(filteredSalesTotal - filteredReturnsTotal).toLocaleString("en-IN", { minimumFractionDigits: 0 })}
+                        </div>
+                        <div className="flex justify-between mt-3 text-sm">
+                          <div>
+                            <div className="text-slate-500 dark:text-slate-400">Gross Sales</div>
+                            <div className="font-medium text-slate-900 dark:text-white tabular-nums">
+                              {filteredSalesTotal.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-slate-500 dark:text-slate-400">Refunds</div>
+                            <div className="font-medium text-red-600 dark:text-red-400 tabular-nums">
+                              {filteredReturnsTotal.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  {/* Metrics Grid */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="space-y-2 p-4 rounded-lg bg-slate-50 dark:bg-zinc-900/50">
+                      <div className="flex items-center gap-2">
+                        <div className="p-2 bg-slate-100 dark:bg-slate-800 rounded-lg">
+                          <Receipt className="h-4 w-4 text-slate-600 dark:text-slate-400" />
+                        </div>
+                        <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Total Sales</span>
+                      </div>
+                      <div className="text-2xl font-bold text-slate-900 dark:text-white tabular-nums">
+                        {filteredSalesTotal.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
+                      </div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400">
+                        {filteredSales.length} bills
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 p-4 rounded-lg bg-slate-50 dark:bg-zinc-900/50">
+                      <div className="flex items-center gap-2">
+                        <div className="p-2 bg-emerald-100 dark:bg-emerald-900/20 rounded-lg">
+                          <TrendingUp className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                        </div>
+                        <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Paid</span>
+                      </div>
+                      <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                        {filteredSalesPaid.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
+                      </div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400">
+                        {paidSales.length} paid bills
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 p-4 rounded-lg bg-slate-50 dark:bg-zinc-900/50">
+                      <div className="flex items-center gap-2">
+                        <div className="p-2 bg-rose-100 dark:bg-rose-900/20 rounded-lg">
+                          <TrendingDown className="h-4 w-4 text-rose-600 dark:text-rose-400" />
+                        </div>
+                        <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Outstanding</span>
+                      </div>
+                      <div className="text-2xl font-bold text-rose-600 dark:text-rose-400 tabular-nums">
+                        {filteredSalesOutstanding.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
+                      </div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400">
+                        {unpaidSales.length} unpaid bills
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 p-4 rounded-lg bg-slate-50 dark:bg-zinc-900/50">
+                      <div className="flex items-center gap-2">
+                        <div className="p-2 bg-purple-100 dark:bg-purple-900/20 rounded-lg">
+                          <Wallet className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                        </div>
+                        <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Recovery</span>
+                      </div>
+                      <div className="text-2xl font-bold text-purple-600 dark:text-purple-400 tabular-nums">
+                        {filteredPaymentsTotal.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
+                      </div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400">
+                        {filteredPayments.length} payments
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Progress Bars */}
+                  <div className="mt-8 space-y-4">
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-slate-600 dark:text-slate-400">Collection Rate</span>
+                        <span className="font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                          {collectionRate.toFixed(1)}%
+                        </span>
+                      </div>
+                      <div className="h-3 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full transition-all duration-500"
+                          style={{ 
+                            width: `${Math.min(100, collectionRate)}%` 
+                          }}
+                        />
+                      </div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400">
+                        Collected {totalCollectedAmount.toLocaleString("en-IN")} out of {filteredSalesTotal.toLocaleString("en-IN")}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-slate-600 dark:text-slate-400">Refund Rate</span>
+                        <span className="font-semibold text-red-600 dark:text-red-400 tabular-nums">
+                          {filteredSalesTotal > 0 
+                            ? ((filteredReturnsTotal / filteredSalesTotal) * 100).toFixed(1)
+                            : "0.0"}%
+                        </span>
+                      </div>
+                      <div className="h-3 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full bg-gradient-to-r from-red-500 to-red-400 rounded-full transition-all duration-500"
+                          style={{ 
+                            width: `${filteredSalesTotal > 0 ? Math.min(100, (filteredReturnsTotal / filteredSalesTotal) * 100) : 0}%` 
+                          }}
+                        />
+                      </div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400">
+                        {returnStats.totalReturns} returns totaling {filteredReturnsTotal.toLocaleString("en-IN")}
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Returns & Recovery Analysis Card */}
+              <Card className="rounded-2xl border border-slate-100 dark:border-slate-700/50 bg-white/80 dark:bg-zinc-800/80 backdrop-blur-sm shadow-lg">
+                <CardContent className="p-6">
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="p-3 bg-red-100 dark:bg-red-900/30 rounded-xl">
+                      <RotateCcw className="h-6 w-6 text-red-600 dark:text-red-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold text-slate-900 dark:text-white">Returns & Recovery Analysis</h3>
+                      <p className="text-sm text-slate-500 dark:text-slate-400">Return metrics and collection analysis</p>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <div className="p-2 bg-red-100 dark:bg-red-900/20 rounded-lg">
+                            <AlertTriangle className="h-4 w-4 text-red-600 dark:text-red-400" />
+                          </div>
+                          <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Total Returns</span>
+                        </div>
+                        <div className="text-2xl font-bold text-red-600 dark:text-red-400 tabular-nums">
+                          {returnStats.totalReturns}
+                        </div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400">
+                          {returnStats.billReturns} bills, {returnStats.itemReturns} items
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <div className="p-2 bg-amber-100 dark:bg-amber-900/20 rounded-lg">
+                            <DollarSign className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                          </div>
+                          <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Total Refunded</span>
+                        </div>
+                        <div className="text-2xl font-bold text-amber-600 dark:text-amber-400 tabular-nums">
+                          {returnStats.totalRefunded.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
+                        </div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400">
+                          Filtered returns
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4 p-3 rounded-md bg-slate-50 dark:bg-slate-800/50">
+                      <div>
+                        <span className="text-sm text-slate-600 dark:text-slate-400">Net Sales</span>
+                        <div className="text-lg font-bold text-slate-900 dark:text-white tabular-nums">
+                          {(filteredSalesTotal - filteredReturnsTotal).toLocaleString("en-IN", { minimumFractionDigits: 0 })}
+                        </div>
+                      </div>
+                      <div>
+                        <span className="text-sm text-slate-600 dark:text-slate-400">Refund %</span>
+                        <div className="text-lg font-bold text-rose-600 dark:text-rose-400 tabular-nums">
+                          {filteredSalesTotal > 0 
+                            ? ((filteredReturnsTotal / filteredSalesTotal) * 100).toFixed(1)
+                            : "0.0"}%
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
 
           {/* All Sales Tab */}
           <TabsContent value="all-sales">
