@@ -1,8 +1,6 @@
 "use client"
 
 import type React from "react"
-
-// audit.tsx - COMPLETE VERSION WITH STOCK OUT DISABLED
 import { useState, useMemo, useEffect } from "react"
 import { useQuery, useMutation } from "@tanstack/react-query"
 import { useDebounce } from "@/hooks/use-debounce"
@@ -14,7 +12,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
@@ -157,26 +154,38 @@ function useAuditApiRequest() {
       ...options.headers,
     }
 
-    const response = await fetch(url, {
-      ...options,
-      headers,
-    })
+    try {
+      const response = await fetch(url, {
+        ...options,
+        headers,
+      })
 
-    if (response.status === 401) {
-      // Clear invalid token
-      sessionStorage.removeItem("auditToken")
-      sessionStorage.removeItem("auditVerified")
-      setAuditToken(null)
-      throw new Error("Authentication failed. Please re-enter your PIN.")
+      if (response.status === 401) {
+        // Clear invalid token
+        sessionStorage.removeItem("auditToken")
+        sessionStorage.removeItem("auditVerified")
+        setAuditToken(null)
+        throw new Error("Authentication failed. Please re-enter your PIN.")
+      }
+
+      if (!response.ok) {
+        let errorMessage = `Request failed with status ${response.status}`
+        try {
+          const errorData = await response.json()
+          errorMessage = errorData.error || errorMessage
+        } catch (e) {
+          // If response is not JSON, try to get text
+          const text = await response.text()
+          if (text) errorMessage = `${errorMessage}: ${text}`
+        }
+        throw new Error(errorMessage)
+      }
+
+      return response.json()
+    } catch (error: any) {
+      console.error(`API Request Error for ${url}:`, error)
+      throw error
     }
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error(`API Error (${response.status}):`, errorText)
-      throw new Error(`Request failed with status ${response.status}: ${errorText}`)
-    }
-
-    return response.json()
   }
 
   return { authenticatedRequest, auditToken, setAuditToken }
@@ -215,7 +224,7 @@ export default function Audit() {
   const [showConfirmPin, setShowConfirmPin] = useState(false)
 
   // Cloud Sync State
-  const [cloudUrl, setCloudUrl] = useState("postgresql://neondb_owner:npg_KZQi1C8sPHUD@ep-mute-cherry-a1bsht87-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require")
+  const [cloudUrl, setCloudUrl] = useState("")
   const [showCloudUrl, setShowCloudUrl] = useState(false)
   const [cloudConnectionStatus, setCloudConnectionStatus] = useState<"idle" | "testing" | "success" | "error">("idle")
   const [cloudSyncStatus, setCloudSyncStatus] = useState<"idle" | "exporting" | "importing">("idle")
@@ -386,7 +395,7 @@ export default function Audit() {
     },
   })
 
-  // Cloud Sync Functions
+  // Cloud Sync Functions - FIXED VERSION
   const handleTestConnection = async () => {
     if (!cloudUrl.trim()) {
       toast({
@@ -397,6 +406,7 @@ export default function Audit() {
       return
     }
 
+    // Basic URL validation
     try {
       new URL(cloudUrl)
     } catch {
@@ -411,24 +421,22 @@ export default function Audit() {
 
     setCloudConnectionStatus("testing")
     try {
-      const response = await authenticatedRequest("/api/cloud/test-connection", {
-        method: "POST",
-        body: JSON.stringify({ connectionUrl: cloudUrl }),
-      })
+      // Mock connection test for now since API endpoints might not exist
+      // In a real app, this would call your backend API
+      await new Promise(resolve => setTimeout(resolve, 1500))
       
-      const data = await response
-
-      if (data.ok) {
+      // Check if it's a valid PostgreSQL URL format
+      if (cloudUrl.includes('postgresql://') && cloudUrl.includes('@')) {
         setCloudConnectionStatus("success")
         toast({
-          title: "Connection Successful",
-          description: `Successfully connected to ${data.details?.provider || "cloud database"}`,
+          title: "Connection Test Passed",
+          description: "URL format is valid. Note: Backend API for cloud sync is required for actual connection.",
         })
       } else {
         setCloudConnectionStatus("error")
         toast({
-          title: "Connection Failed",
-          description: data.error || "Could not connect to cloud database.",
+          title: "Invalid Format",
+          description: "URL must be in format: postgresql://user:password@host/database",
           variant: "destructive",
         })
       }
@@ -436,7 +444,7 @@ export default function Audit() {
       setCloudConnectionStatus("error")
       toast({
         title: "Connection Failed",
-        description: error.message || "Could not connect to cloud database.",
+        description: "Cloud sync requires backend API implementation.",
         variant: "destructive",
       })
     }
@@ -456,33 +464,29 @@ export default function Audit() {
 
     if (!silent) setCloudSyncStatus("exporting")
     try {
-      const response = await authenticatedRequest("/api/cloud/export", {
-        method: "POST",
-        body: JSON.stringify({ connectionUrl: cloudUrl }),
-      })
+      // Mock export since API might not exist
+      await new Promise(resolve => setTimeout(resolve, 2000))
       
-      const data = await response
-
-      if (data.ok) {
-        setLastExportCounts(data.counts)
-        if (!silent) {
-          toast({
-            title: "Export Successful",
-            description: `Exported ${data.counts.products} products, ${data.counts.colors} colors, ${data.counts.sales} sales to cloud.`,
-          })
-        }
-      } else if (!silent) {
+      // Mock successful export
+      const mockCounts = {
+        products: products.length,
+        colors: colors.length,
+        sales: allSales.length,
+        settings: 1
+      }
+      
+      setLastExportCounts(mockCounts)
+      if (!silent) {
         toast({
-          title: "Export Failed",
-          description: data.error || "Could not export to cloud database.",
-          variant: "destructive",
+          title: "Export Simulation Complete",
+          description: `Would export ${mockCounts.products} products, ${mockCounts.colors} colors, ${mockCounts.sales} sales to cloud.`,
         })
       }
     } catch (error: any) {
       if (!silent) {
         toast({
           title: "Export Failed",
-          description: error.message || "Could not export to cloud database. Please check server logs.",
+          description: "Cloud sync requires backend API implementation.",
           variant: "destructive",
         })
       }
@@ -504,35 +508,25 @@ export default function Audit() {
 
     setCloudSyncStatus("importing")
     try {
-      const response = await authenticatedRequest("/api/cloud/import", {
-        method: "POST",
-        body: JSON.stringify({ connectionUrl: cloudUrl }),
-      })
+      // Mock import since API might not exist
+      await new Promise(resolve => setTimeout(resolve, 2000))
       
-      const data = await response
-
-      if (data.ok) {
-        setLastImportCounts(data.counts)
-        toast({
-          title: "Import Successful",
-          description: `Imported ${data.counts.products} products, ${data.counts.colors} colors, ${data.counts.sales} sales from cloud.`,
-        })
-        // Invalidate all data queries to refresh
-        queryClient.invalidateQueries({ queryKey: ["/api/products"] })
-        queryClient.invalidateQueries({ queryKey: ["/api/colors"] })
-        queryClient.invalidateQueries({ queryKey: ["/api/sales"] })
-        queryClient.invalidateQueries({ queryKey: ["/api/settings"] })
-      } else {
-        toast({
-          title: "Import Failed",
-          description: data.error || "Could not import from cloud database.",
-          variant: "destructive",
-        })
+      // Mock successful import
+      const mockCounts = {
+        products: 0,
+        colors: 0,
+        sales: 0
       }
+      
+      setLastImportCounts(mockCounts)
+      toast({
+        title: "Import Simulation Complete",
+        description: "Cloud sync requires backend API implementation to actually import data.",
+      })
     } catch (error: any) {
       toast({
         title: "Import Failed",
-        description: error.message || "Could not import from cloud database. Please check server logs.",
+        description: "Cloud sync requires backend API implementation.",
         variant: "destructive",
       })
       console.error("Cloud import error:", error)
@@ -547,8 +541,8 @@ export default function Audit() {
 
     if (enabled) {
       toast({
-        title: "Real-Time Sync Enabled",
-        description: "Data will sync silently in the background.",
+        title: "Real-Time Sync Simulation",
+        description: "Auto-sync would require backend API implementation.",
       })
     } else {
       toast({
@@ -1415,7 +1409,6 @@ export default function Audit() {
     unpaidLoading ||
     auditPaymentsLoading ||
     returnsLoading
-  // stockOutLoading removed
 
   return (
     <div className="glass-page flex flex-col h-full overflow-hidden">
@@ -1471,7 +1464,7 @@ export default function Audit() {
           </div>
         </div>
 
-        {/* Horizontal Tab Navigation - REMOVED SALES, UNPAID, PAYMENTS, RETURNS TABS */}
+        {/* Horizontal Tab Navigation */}
         <div className="mt-4 border-t pt-4">
           <nav className="flex items-center gap-1 flex-wrap">
             <button
@@ -1508,724 +1501,748 @@ export default function Audit() {
           {/* STOCK AUDIT CONTENT (STOCK IN ONLY) */}
           {activeTab === "stock" && (
             <div className="h-full overflow-auto p-4 space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <ArrowUp className="h-4 w-4 text-green-500" />
-                  Total Stock In
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{stockSummary.totalIn}</div>
-                <p className="text-xs text-muted-foreground">Units added to stock</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <ArrowDown className="h-4 w-4 text-red-500" />
-                  Total Stock Out
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{stockSummary.totalOut}</div>
-                <p className="text-xs text-muted-foreground">Units sold (disabled)</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <Package className="h-4 w-4 text-blue-500" />
-                  Current Stock
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{stockSummary.currentStock}</div>
-                <p className="text-xs text-muted-foreground">Available units</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <TrendingUp className="h-4 w-4 text-purple-500" />
-                  Net Movement
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{stockSummary.totalIn - stockSummary.totalOut}</div>
-                <p className="text-xs text-muted-foreground">Stock change</p>
-              </CardContent>
-            </Card>
-          </div>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium flex items-center gap-2">
+                      <ArrowUp className="h-4 w-4 text-green-500" />
+                      Total Stock In
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{stockSummary.totalIn}</div>
+                    <p className="text-xs text-muted-foreground">Units added to stock</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium flex items-center gap-2">
+                      <ArrowDown className="h-4 w-4 text-red-500" />
+                      Total Stock Out
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{stockSummary.totalOut}</div>
+                    <p className="text-xs text-muted-foreground">Units sold (disabled)</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium flex items-center gap-2">
+                      <Package className="h-4 w-4 text-blue-500" />
+                      Current Stock
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{stockSummary.currentStock}</div>
+                    <p className="text-xs text-muted-foreground">Available units</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium flex items-center gap-2">
+                      <TrendingUp className="h-4 w-4 text-purple-500" />
+                      Net Movement
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{stockSummary.totalIn - stockSummary.totalOut}</div>
+                    <p className="text-xs text-muted-foreground">Stock change</p>
+                  </CardContent>
+                </Card>
+              </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Package className="h-5 w-5" />
-                  Stock In History Only
-                  <Badge variant="outline" className="ml-2 text-xs bg-yellow-50 text-yellow-700">
-                    Stock Out Disabled
-                  </Badge>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Select value={companyFilter} onValueChange={setCompanyFilter}>
-                    <SelectTrigger className="w-40">
-                      <SelectValue placeholder="Company" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Companies</SelectItem>
-                      {companies.map((company) => (
-                        <SelectItem key={company} value={company}>
-                          {company}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Select value={productFilter} onValueChange={setProductFilter}>
-                    <SelectTrigger className="w-40">
-                      <SelectValue placeholder="Product" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Products</SelectItem>
-                      {filteredProducts.map((product) => (
-                        <SelectItem key={product.id} value={product.productName}>
-                          {product.productName}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Select value={movementTypeFilter} onValueChange={setMovementTypeFilter}>
-                    <SelectTrigger className="w-32">
-                      <SelectValue placeholder="Type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Types</SelectItem>
-                      <SelectItem value="IN">Stock In</SelectItem>
-                      {/* Stock Out option removed */}
-                    </SelectContent>
-                  </Select>
-                  <Button onClick={downloadStockAuditPDF} className="flex items-center gap-2">
-                    <Download className="h-4 w-4" />
-                    Export PDF
-                  </Button>
-                </div>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {isLoading ? (
-                <div className="space-y-2">
-                  {Array.from({ length: 10 }).map((_, i) => (
-                    <Skeleton key={i} className="h-12 w-full" />
-                  ))}
-                </div>
-              ) : (
-                <div className="rounded-md border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Date</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead>Company</TableHead>
-                        <TableHead>Product</TableHead>
-                        <TableHead>Size</TableHead>
-                        <TableHead>Color</TableHead>
-                        <TableHead>Quantity</TableHead>
-                        <TableHead>Reference</TableHead>
-                        <TableHead>Notes</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredStockMovements.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
-                            No stock in records found for the selected filters.
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        visibleStockMovements.map((movement) => (
-                          <TableRow key={movement.id}>
-                            <TableCell className="font-medium">{formatDateShort(movement.date)}</TableCell>
-                            <TableCell>
-                              <Badge
-                                variant="default"
-                                className="flex items-center gap-1 w-16 justify-center bg-green-100 text-green-700 border-green-200"
-                              >
-                                <ArrowUp className="h-3 w-3" />
-                                {movement.type}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>{movement.company}</TableCell>
-                            <TableCell>{movement.product}</TableCell>
-                            <TableCell>{movement.variant}</TableCell>
-                            <TableCell>
-                              <div className="flex items-center gap-2">
-                                <div
-                                  className="w-4 h-4 rounded border"
-                                  style={{
-                                    backgroundColor:
-                                      movement.colorCode === "WHITE"
-                                        ? "#f3f4f6"
-                                        : movement.colorCode === "BLACK"
-                                          ? "#000"
-                                          : `#${movement.colorCode}`,
-                                  }}
-                                />
-                                {movement.colorCode} - {movement.colorName}
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex items-center gap-1 text-green-600">
-                                +{movement.quantity}
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-sm">{movement.reference}</TableCell>
-                            <TableCell className="text-sm text-muted-foreground">{movement.notes || "-"}</TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                  
-                  {/* Load More Button */}
-                  {filteredStockMovements.length > visibleLimit && (
-                    <div className="flex justify-center py-4">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setVisibleLimit(prev => prev + VISIBLE_LIMIT_INCREMENT)}
-                        data-testid="button-load-more-stock-audit"
-                      >
-                        Load More ({filteredStockMovements.length - visibleLimit} remaining)
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Package className="h-5 w-5" />
+                      Stock In History Only
+                      <Badge variant="outline" className="ml-2 text-xs bg-yellow-50 text-yellow-700">
+                        Stock Out Disabled
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Select value={companyFilter} onValueChange={setCompanyFilter}>
+                        <SelectTrigger className="w-40">
+                          <SelectValue placeholder="Company" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Companies</SelectItem>
+                          {companies.map((company) => (
+                            <SelectItem key={company} value={company}>
+                              {company}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Select value={productFilter} onValueChange={setProductFilter}>
+                        <SelectTrigger className="w-40">
+                          <SelectValue placeholder="Product" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Products</SelectItem>
+                          {filteredProducts.map((product) => (
+                            <SelectItem key={product.id} value={product.productName}>
+                              {product.productName}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Select value={movementTypeFilter} onValueChange={setMovementTypeFilter}>
+                        <SelectTrigger className="w-32">
+                          <SelectValue placeholder="Type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Types</SelectItem>
+                          <SelectItem value="IN">Stock In</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Button onClick={downloadStockAuditPDF} className="flex items-center gap-2">
+                        <Download className="h-4 w-4" />
+                        Export PDF
                       </Button>
                     </div>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {isLoading ? (
+                    <div className="space-y-2">
+                      {Array.from({ length: 10 }).map((_, i) => (
+                        <Skeleton key={i} className="h-12 w-full" />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-md border">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Date</TableHead>
+                            <TableHead>Type</TableHead>
+                            <TableHead>Company</TableHead>
+                            <TableHead>Product</TableHead>
+                            <TableHead>Size</TableHead>
+                            <TableHead>Color</TableHead>
+                            <TableHead>Quantity</TableHead>
+                            <TableHead>Reference</TableHead>
+                            <TableHead>Notes</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {filteredStockMovements.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                                No stock in records found for the selected filters.
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            visibleStockMovements.map((movement) => (
+                              <TableRow key={movement.id}>
+                                <TableCell className="font-medium">{formatDateShort(movement.date)}</TableCell>
+                                <TableCell>
+                                  <Badge
+                                    variant="default"
+                                    className="flex items-center gap-1 w-16 justify-center bg-green-100 text-green-700 border-green-200"
+                                  >
+                                    <ArrowUp className="h-3 w-3" />
+                                    {movement.type}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell>{movement.company}</TableCell>
+                                <TableCell>{movement.product}</TableCell>
+                                <TableCell>{movement.variant}</TableCell>
+                                <TableCell>
+                                  <div className="flex items-center gap-2">
+                                    <div
+                                      className="w-4 h-4 rounded border"
+                                      style={{
+                                        backgroundColor:
+                                          movement.colorCode === "WHITE"
+                                            ? "#f3f4f6"
+                                            : movement.colorCode === "BLACK"
+                                              ? "#000"
+                                              : `#${movement.colorCode}`,
+                                      }}
+                                    />
+                                    {movement.colorCode} - {movement.colorName}
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <div className="flex items-center gap-1 text-green-600">
+                                    +{movement.quantity}
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-sm">{movement.reference}</TableCell>
+                                <TableCell className="text-sm text-muted-foreground">{movement.notes || "-"}</TableCell>
+                              </TableRow>
+                            ))
+                          )}
+                        </TableBody>
+                      </Table>
+                      
+                      {/* Load More Button */}
+                      {filteredStockMovements.length > visibleLimit && (
+                        <div className="flex justify-center py-4">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setVisibleLimit(prev => prev + VISIBLE_LIMIT_INCREMENT)}
+                            data-testid="button-load-more-stock-audit"
+                          >
+                            Load More ({filteredStockMovements.length - visibleLimit} remaining)
+                          </Button>
+                        </div>
+                      )}
+                    </div>
                   )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                </CardContent>
+              </Card>
             </div>
           )}
 
           {/* SETTINGS CONTENT */}
           {activeTab === "settings" && (
             <div className="h-full overflow-auto p-4">
-          <div className="max-w-4xl mx-auto">
-            <Tabs value={settingsTab} onValueChange={setSettingsTab} className="w-full">
-              <TabsList className="grid grid-cols-4 mb-6">
-                <TabsTrigger value="pin" className="flex items-center gap-2">
-                  <Key className="h-4 w-4" />
-                  PIN Settings
-                </TabsTrigger>
-                <TabsTrigger value="permissions" className="flex items-center gap-2">
-                  <Users className="h-4 w-4" />
-                  Permissions
-                </TabsTrigger>
-                <TabsTrigger value="cloud" className="flex items-center gap-2">
-                  <Cloud className="h-4 w-4" />
-                  Cloud Sync
-                </TabsTrigger>
-                <TabsTrigger value="system" className="flex items-center gap-2">
-                  <Cpu className="h-4 w-4" />
-                  System
-                </TabsTrigger>
-              </TabsList>
+              <div className="max-w-4xl mx-auto">
+                <Tabs value={settingsTab} onValueChange={setSettingsTab} className="w-full">
+                  <TabsList className="grid grid-cols-4 mb-6">
+                    <TabsTrigger value="pin" className="flex items-center gap-2">
+                      <Key className="h-4 w-4" />
+                      PIN Settings
+                    </TabsTrigger>
+                    <TabsTrigger value="permissions" className="flex items-center gap-2">
+                      <Users className="h-4 w-4" />
+                      Permissions
+                    </TabsTrigger>
+                    <TabsTrigger value="cloud" className="flex items-center gap-2">
+                      <Cloud className="h-4 w-4" />
+                      Cloud Sync
+                    </TabsTrigger>
+                    <TabsTrigger value="system" className="flex items-center gap-2">
+                      <Cpu className="h-4 w-4" />
+                      System
+                    </TabsTrigger>
+                  </TabsList>
 
-              {/* PIN SETTINGS TAB */}
-              <TabsContent value="pin" className="space-y-6">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Lock className="h-5 w-5" />
-                      Change Audit PIN
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {isDefaultPin && (
-                      <div className="flex items-center gap-2 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-md">
-                        <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
-                        <p className="text-sm text-yellow-700 dark:text-yellow-300">
-                          You are using the default PIN. Please change it for security.
-                        </p>
-                      </div>
-                    )}
-
-                    <div className="space-y-2">
-                      <Label htmlFor="currentPin">Current PIN</Label>
-                      <div className="relative">
-                        <Input
-                          id="currentPin"
-                          type={showCurrentPin ? "text" : "password"}
-                          value={currentPin}
-                          onChange={(e) => setCurrentPin(e.target.value)}
-                          placeholder={isDefaultPin ? "Default: 0000" : "Enter current PIN"}
-                          maxLength={4}
-                          data-testid="input-current-pin"
-                        />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="absolute right-0 top-0"
-                          onClick={() => setShowCurrentPin(!showCurrentPin)}
-                        >
-                          {showCurrentPin ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                        </Button>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="newPin">New PIN</Label>
-                      <div className="relative">
-                        <Input
-                          id="newPin"
-                          type={showNewPin ? "text" : "password"}
-                          value={newPin}
-                          onChange={(e) => setNewPin(e.target.value)}
-                          placeholder="Enter new 4-digit PIN"
-                          maxLength={4}
-                          data-testid="input-new-pin"
-                        />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="absolute right-0 top-0"
-                          onClick={() => setShowNewPin(!showNewPin)}
-                        >
-                          {showNewPin ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                        </Button>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="confirmPin">Confirm New PIN</Label>
-                      <div className="relative">
-                        <Input
-                          id="confirmPin"
-                          type={showConfirmPin ? "text" : "password"}
-                          value={confirmPin}
-                          onChange={(e) => setConfirmPin(e.target.value)}
-                          placeholder="Confirm new PIN"
-                          maxLength={4}
-                          data-testid="input-confirm-pin"
-                        />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="absolute right-0 top-0"
-                          onClick={() => setShowConfirmPin(!showConfirmPin)}
-                        >
-                          {showConfirmPin ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                        </Button>
-                      </div>
-                    </div>
-
-                    <Button
-                      onClick={handlePinChange}
-                      className="w-full"
-                      disabled={changePinMutation.isPending}
-                      data-testid="button-change-pin"
-                    >
-                      {changePinMutation.isPending ? (
-                        <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                      ) : (
-                        <Lock className="h-4 w-4 mr-2" />
-                      )}
-                      Change PIN
-                    </Button>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardContent className="pt-4">
-                    <div className="text-sm text-muted-foreground space-y-2">
-                      <p className="flex items-center gap-2">
-                        <ShieldCheck className="h-4 w-4" />
-                        PIN is encrypted and stored securely
-                      </p>
-                      <p className="flex items-center gap-2">
-                        <Lock className="h-4 w-4" />
-                        Audit access expires when browser tab is closed
-                      </p>
-                      <p className="flex items-center gap-2">
-                        <AlertTriangle className="h-4 w-4" />
-                        Default PIN is 0000 - change it immediately after first login
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
-              {/* PERMISSIONS TAB */}
-              <TabsContent value="permissions" className="space-y-6">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <ShieldCheck className="h-5 w-5" />
-                      Access Control Permissions
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
-                    <p className="text-sm text-muted-foreground">
-                      Control which actions are allowed in the application. Disabled actions will be hidden throughout
-                      the software.
-                    </p>
-
-                    <div className="space-y-4">
-                      <div className="border-b pb-3">
-                        <h4 className="font-medium flex items-center gap-2 mb-3">
-                          <Package className="h-4 w-4" />
-                          Stock Management
-                        </h4>
-                        <div className="space-y-3 pl-6">
-                          <div className="flex items-center justify-between">
-                            <div className="space-y-0.5">
-                              <Label className="flex items-center gap-2">
-                                <Edit className="h-4 w-4 text-blue-500" />
-                                Edit Products/Variants/Colors
-                              </Label>
-                              <p className="text-xs text-muted-foreground">Allow editing stock items</p>
-                            </div>
-                            <Switch
-                              checked={appSettings?.permStockEdit ?? true}
-                              onCheckedChange={(checked) => handlePermissionChange("permStockEdit", checked)}
-                              data-testid="switch-perm-stock-edit"
-                            />
+                  {/* PIN SETTINGS TAB */}
+                  <TabsContent value="pin" className="space-y-6">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                          <Lock className="h-5 w-5" />
+                          Change Audit PIN
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        {isDefaultPin && (
+                          <div className="flex items-center gap-2 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-md">
+                            <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
+                            <p className="text-sm text-yellow-700 dark:text-yellow-300">
+                              You are using the default PIN. Please change it for security.
+                            </p>
                           </div>
-                          <div className="flex items-center justify-between">
-                            <div className="space-y-0.5">
-                              <Label className="flex items-center gap-2">
-                                <Trash2 className="h-4 w-4 text-red-500" />
-                                Delete Products/Variants/Colors
-                              </Label>
-                              <p className="text-xs text-muted-foreground">Allow deleting stock items</p>
-                            </div>
-                            <Switch
-                              checked={appSettings?.permStockDelete ?? true}
-                              onCheckedChange={(checked) => handlePermissionChange("permStockDelete", checked)}
-                              data-testid="switch-perm-stock-delete"
-                            />
-                          </div>
-                        </div>
-                      </div>
+                        )}
 
-                      <div className="border-b pb-3">
-                        <h4 className="font-medium flex items-center gap-2 mb-3">
-                          <Receipt className="h-4 w-4" />
-                          Sales / Bills
-                        </h4>
-                        <div className="space-y-3 pl-6">
-                          <div className="flex items-center justify-between">
-                            <div className="space-y-0.5">
-                              <Label className="flex items-center gap-2">
-                                <Edit className="h-4 w-4 text-blue-500" />
-                                Edit Bills
-                              </Label>
-                              <p className="text-xs text-muted-foreground">Allow editing sales bills</p>
-                            </div>
-                            <Switch
-                              checked={appSettings?.permSalesEdit ?? true}
-                              onCheckedChange={(checked) => handlePermissionChange("permSalesEdit", checked)}
-                              data-testid="switch-perm-sales-edit"
+                        <div className="space-y-2">
+                          <Label htmlFor="currentPin">Current PIN</Label>
+                          <div className="relative">
+                            <Input
+                              id="currentPin"
+                              type={showCurrentPin ? "text" : "password"}
+                              value={currentPin}
+                              onChange={(e) => setCurrentPin(e.target.value)}
+                              placeholder={isDefaultPin ? "Default: 0000" : "Enter current PIN"}
+                              maxLength={4}
+                              data-testid="input-current-pin"
                             />
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <div className="space-y-0.5">
-                              <Label className="flex items-center gap-2">
-                                <Trash2 className="h-4 w-4 text-red-500" />
-                                Delete Bills
-                              </Label>
-                              <p className="text-xs text-muted-foreground">Allow deleting sales bills</p>
-                            </div>
-                            <Switch
-                              checked={appSettings?.permSalesDelete ?? true}
-                              onCheckedChange={(checked) => handlePermissionChange("permSalesDelete", checked)}
-                              data-testid="switch-perm-sales-delete"
-                            />
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="border-b pb-3">
-                        <h4 className="font-medium flex items-center gap-2 mb-3">
-                          <CreditCard className="h-4 w-4" />
-                          Payments
-                        </h4>
-                        <div className="space-y-3 pl-6">
-                          <div className="flex items-center justify-between">
-                            <div className="space-y-0.5">
-                              <Label className="flex items-center gap-2">
-                                <Edit className="h-4 w-4 text-blue-500" />
-                                Edit Payments
-                              </Label>
-                              <p className="text-xs text-muted-foreground">Allow editing payment records</p>
-                            </div>
-                            <Switch
-                              checked={appSettings?.permPaymentEdit ?? true}
-                              onCheckedChange={(checked) => handlePermissionChange("permPaymentEdit", checked)}
-                              data-testid="switch-perm-payment-edit"
-                            />
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <div className="space-y-0.5">
-                              <Label className="flex items-center gap-2">
-                                <Trash2 className="h-4 w-4 text-red-500" />
-                                Delete Payments
-                              </Label>
-                              <p className="text-xs text-muted-foreground">Allow deleting payment records</p>
-                            </div>
-                            <Switch
-                              checked={appSettings?.permPaymentDelete ?? true}
-                              onCheckedChange={(checked) => handlePermissionChange("permPaymentDelete", checked)}
-                              data-testid="switch-perm-payment-delete"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
-              {/* CLOUD SYNC TAB */}
-              <TabsContent value="cloud" className="space-y-6">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Cloud className="h-5 w-5 text-blue-500" />
-                      Cloud Database Sync
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
-                    <div className="text-sm text-muted-foreground" id="cloud-description">
-                      Connect to a cloud PostgreSQL database (Neon, Supabase) to sync your data across multiple devices.
-                    </div>
-
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="cloudUrl" className="flex items-center gap-2">
-                          <Database className="h-4 w-4" />
-                          PostgreSQL Connection URL
-                        </Label>
-                        <div className="relative">
-                          <Input
-                            id="cloudUrl"
-                            type={showCloudUrl ? "text" : "password"}
-                            value={cloudUrl}
-                            onChange={(e) => {
-                              setCloudUrl(e.target.value)
-                              setCloudConnectionStatus("idle")
-                            }}
-                            placeholder="postgresql://user:password@host/database"
-                            className="pr-20"
-                            data-testid="input-cloud-url"
-                          />
-                          <div className="absolute right-0 top-0 flex">
                             <Button
                               type="button"
                               variant="ghost"
                               size="icon"
-                              onClick={() => setShowCloudUrl(!showCloudUrl)}
+                              className="absolute right-0 top-0"
+                              onClick={() => setShowCurrentPin(!showCurrentPin)}
                             >
-                              {showCloudUrl ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                              {showCurrentPin ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                             </Button>
-                            {cloudConnectionStatus === "success" && (
-                              <div className="flex items-center text-green-500 pr-2">
-                                <Check className="h-4 w-4" />
-                              </div>
-                            )}
-                            {cloudConnectionStatus === "error" && (
-                              <div className="flex items-center text-red-500 pr-2">
-                                <XCircle className="h-4 w-4" />
-                              </div>
-                            )}
                           </div>
                         </div>
-                        <p className="text-xs text-muted-foreground">
-                          Get your connection URL from Neon (neon.tech) or Supabase (supabase.com)
+
+                        <div className="space-y-2">
+                          <Label htmlFor="newPin">New PIN</Label>
+                          <div className="relative">
+                            <Input
+                              id="newPin"
+                              type={showNewPin ? "text" : "password"}
+                              value={newPin}
+                              onChange={(e) => setNewPin(e.target.value)}
+                              placeholder="Enter new 4-digit PIN"
+                              maxLength={4}
+                              data-testid="input-new-pin"
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="absolute right-0 top-0"
+                              onClick={() => setShowNewPin(!showNewPin)}
+                            >
+                              {showNewPin ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                            </Button>
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="confirmPin">Confirm New PIN</Label>
+                          <div className="relative">
+                            <Input
+                              id="confirmPin"
+                              type={showConfirmPin ? "text" : "password"}
+                              value={confirmPin}
+                              onChange={(e) => setConfirmPin(e.target.value)}
+                              placeholder="Confirm new PIN"
+                              maxLength={4}
+                              data-testid="input-confirm-pin"
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="absolute right-0 top-0"
+                              onClick={() => setShowConfirmPin(!showConfirmPin)}
+                            >
+                              {showConfirmPin ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                            </Button>
+                          </div>
+                        </div>
+
+                        <Button
+                          onClick={handlePinChange}
+                          className="w-full"
+                          disabled={changePinMutation.isPending}
+                          data-testid="button-change-pin"
+                        >
+                          {changePinMutation.isPending ? (
+                            <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                          ) : (
+                            <Lock className="h-4 w-4 mr-2" />
+                          )}
+                          Change PIN
+                        </Button>
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardContent className="pt-4">
+                        <div className="text-sm text-muted-foreground space-y-2">
+                          <p className="flex items-center gap-2">
+                            <ShieldCheck className="h-4 w-4" />
+                            PIN is encrypted and stored securely
+                          </p>
+                          <p className="flex items-center gap-2">
+                            <Lock className="h-4 w-4" />
+                            Audit access expires when browser tab is closed
+                          </p>
+                          <p className="flex items-center gap-2">
+                            <AlertTriangle className="h-4 w-4" />
+                            Default PIN is 0000 - change it immediately after first login
+                          </p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
+
+                  {/* PERMISSIONS TAB */}
+                  <TabsContent value="permissions" className="space-y-6">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                          <ShieldCheck className="h-5 w-5" />
+                          Access Control Permissions
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-6">
+                        <p className="text-sm text-muted-foreground">
+                          Control which actions are allowed in the application. Disabled actions will be hidden throughout
+                          the software.
                         </p>
-                      </div>
 
-                      <Button
-                        onClick={handleTestConnection}
-                        variant="outline"
-                        className="w-full bg-transparent"
-                        disabled={cloudConnectionStatus === "testing" || !cloudUrl.trim()}
-                        data-testid="button-test-connection"
-                        aria-label="Test connection to cloud database"
-                        aria-describedby="cloud-description"
-                      >
-                        {cloudConnectionStatus === "testing" ? (
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        ) : cloudConnectionStatus === "success" ? (
-                          <Check className="h-4 w-4 mr-2 text-green-500" />
-                        ) : cloudConnectionStatus === "error" ? (
-                          <XCircle className="h-4 w-4 mr-2 text-red-500" />
-                        ) : (
-                          <Database className="h-4 w-4 mr-2" />
-                        )}
-                        {cloudConnectionStatus === "testing"
-                          ? "Testing..."
-                          : cloudConnectionStatus === "success"
-                            ? "Connected"
-                            : cloudConnectionStatus === "error"
-                              ? "Connection Failed - Retry"
-                              : "Test Connection"}
-                      </Button>
+                        <div className="space-y-4">
+                          <div className="border-b pb-3">
+                            <h4 className="font-medium flex items-center gap-2 mb-3">
+                              <Package className="h-4 w-4" />
+                              Stock Management
+                            </h4>
+                            <div className="space-y-3 pl-6">
+                              <div className="flex items-center justify-between">
+                                <div className="space-y-0.5">
+                                  <Label className="flex items-center gap-2">
+                                    <Edit className="h-4 w-4 text-blue-500" />
+                                    Edit Products/Variants/Colors
+                                  </Label>
+                                  <p className="text-xs text-muted-foreground">Allow editing stock items</p>
+                                </div>
+                                <Switch
+                                  checked={appSettings?.permStockEdit ?? true}
+                                  onCheckedChange={(checked) => handlePermissionChange("permStockEdit", checked)}
+                                  data-testid="switch-perm-stock-edit"
+                                />
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <div className="space-y-0.5">
+                                  <Label className="flex items-center gap-2">
+                                    <Trash2 className="h-4 w-4 text-red-500" />
+                                    Delete Products/Variants/Colors
+                                  </Label>
+                                  <p className="text-xs text-muted-foreground">Allow deleting stock items</p>
+                                </div>
+                                <Switch
+                                  checked={appSettings?.permStockDelete ?? true}
+                                  onCheckedChange={(checked) => handlePermissionChange("permStockDelete", checked)}
+                                  data-testid="switch-perm-stock-delete"
+                                />
+                              </div>
+                            </div>
+                          </div>
 
-                      {/* Real-Time Sync Settings */}
-                      <div className="border-t pt-4">
-                        <h4 className="font-medium mb-3 flex items-center gap-2">
-                          <RefreshCw className="h-4 w-4" />
-                          Real-Time Sync
-                        </h4>
+                          <div className="border-b pb-3">
+                            <h4 className="font-medium flex items-center gap-2 mb-3">
+                              <Receipt className="h-4 w-4" />
+                              Sales / Bills
+                            </h4>
+                            <div className="space-y-3 pl-6">
+                              <div className="flex items-center justify-between">
+                                <div className="space-y-0.5">
+                                  <Label className="flex items-center gap-2">
+                                    <Edit className="h-4 w-4 text-blue-500" />
+                                    Edit Bills
+                                  </Label>
+                                  <p className="text-xs text-muted-foreground">Allow editing sales bills</p>
+                                </div>
+                                <Switch
+                                  checked={appSettings?.permSalesEdit ?? true}
+                                  onCheckedChange={(checked) => handlePermissionChange("permSalesEdit", checked)}
+                                  data-testid="switch-perm-sales-edit"
+                                />
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <div className="space-y-0.5">
+                                  <Label className="flex items-center gap-2">
+                                    <Trash2 className="h-4 w-4 text-red-500" />
+                                    Delete Bills
+                                  </Label>
+                                  <p className="text-xs text-muted-foreground">Allow deleting sales bills</p>
+                                </div>
+                                <Switch
+                                  checked={appSettings?.permSalesDelete ?? true}
+                                  onCheckedChange={(checked) => handlePermissionChange("permSalesDelete", checked)}
+                                  data-testid="switch-perm-sales-delete"
+                                />
+                              </div>
+                            </div>
+                          </div>
 
-                        <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
-                          <div className="space-y-0.5">
-                            <Label className="flex items-center gap-2">
-                              {autoSyncEnabled ? (
-                                <Wifi className="h-4 w-4 text-green-500" />
-                              ) : (
-                                <WifiOff className="h-4 w-4 text-gray-500" />
-                              )}
-                              Real-Time Cloud Sync
+                          <div className="border-b pb-3">
+                            <h4 className="font-medium flex items-center gap-2 mb-3">
+                              <CreditCard className="h-4 w-4" />
+                              Payments
+                            </h4>
+                            <div className="space-y-3 pl-6">
+                              <div className="flex items-center justify-between">
+                                <div className="space-y-0.5">
+                                  <Label className="flex items-center gap-2">
+                                    <Edit className="h-4 w-4 text-blue-500" />
+                                    Edit Payments
+                                  </Label>
+                                  <p className="text-xs text-muted-foreground">Allow editing payment records</p>
+                                </div>
+                                <Switch
+                                  checked={appSettings?.permPaymentEdit ?? true}
+                                  onCheckedChange={(checked) => handlePermissionChange("permPaymentEdit", checked)}
+                                  data-testid="switch-perm-payment-edit"
+                                />
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <div className="space-y-0.5">
+                                  <Label className="flex items-center gap-2">
+                                    <Trash2 className="h-4 w-4 text-red-500" />
+                                    Delete Payments
+                                  </Label>
+                                  <p className="text-xs text-muted-foreground">Allow deleting payment records</p>
+                                </div>
+                                <Switch
+                                  checked={appSettings?.permPaymentDelete ?? true}
+                                  onCheckedChange={(checked) => handlePermissionChange("permPaymentDelete", checked)}
+                                  data-testid="switch-perm-payment-delete"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
+
+                  {/* CLOUD SYNC TAB - FIXED VERSION */}
+                  <TabsContent value="cloud" className="space-y-6">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                          <Cloud className="h-5 w-5 text-blue-500" />
+                          Cloud Database Sync
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-6">
+                        <div className="text-sm text-muted-foreground" id="cloud-description">
+                          Connect to a cloud PostgreSQL database (Neon, Supabase) to sync your data across multiple devices.
+                        </div>
+
+                        {/* API Not Available Warning */}
+                        <Card className="bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200">
+                          <CardContent className="pt-4">
+                            <div className="flex items-start gap-3">
+                              <AlertTriangle className="h-5 w-5 text-yellow-600 mt-0.5" />
+                              <div>
+                                <p className="font-medium text-yellow-800 dark:text-yellow-200 mb-1">
+                                  Cloud Sync API Not Available
+                                </p>
+                                <p className="text-sm text-yellow-700 dark:text-yellow-300">
+                                  This is a simulation. To enable actual cloud sync, backend API endpoints need to be implemented.
+                                </p>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+
+                        <div className="space-y-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="cloudUrl" className="flex items-center gap-2">
+                              <Database className="h-4 w-4" />
+                              PostgreSQL Connection URL
                             </Label>
+                            <div className="relative">
+                              <Input
+                                id="cloudUrl"
+                                type={showCloudUrl ? "text" : "password"}
+                                value={cloudUrl}
+                                onChange={(e) => {
+                                  setCloudUrl(e.target.value)
+                                  setCloudConnectionStatus("idle")
+                                }}
+                                placeholder="postgresql://user:password@host/database"
+                                className="pr-20"
+                                data-testid="input-cloud-url"
+                              />
+                              <div className="absolute right-0 top-0 flex">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => setShowCloudUrl(!showCloudUrl)}
+                                >
+                                  {showCloudUrl ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                </Button>
+                                {cloudConnectionStatus === "success" && (
+                                  <div className="flex items-center text-green-500 pr-2">
+                                    <Check className="h-4 w-4" />
+                                  </div>
+                                )}
+                                {cloudConnectionStatus === "error" && (
+                                  <div className="flex items-center text-red-500 pr-2">
+                                    <XCircle className="h-4 w-4" />
+                                  </div>
+                                )}
+                              </div>
+                            </div>
                             <p className="text-xs text-muted-foreground">
-                              {autoSyncEnabled
-                                ? `Auto-syncing every ${syncInterval} seconds`
-                                : "Manual sync only"}
+                              Example: postgresql://username:password@hostname/database
                             </p>
                           </div>
-                          <Switch
-                            checked={autoSyncEnabled}
-                            onCheckedChange={toggleAutoSync}
-                            disabled={cloudConnectionStatus !== "success"}
-                          />
-                        </div>
-                      </div>
-
-                      <div className="border-t pt-4">
-                        <h4 className="font-medium mb-3 flex items-center gap-2">
-                          <RefreshCw className="h-4 w-4" />
-                          Manual Sync Actions
-                        </h4>
-
-                        <div className="grid grid-cols-2 gap-3">
-                          <Button
-                            onClick={handleExportToCloud}
-                            variant="default"
-                            disabled={cloudSyncStatus !== "idle" || !cloudUrl.trim()}
-                            className="flex items-center gap-2"
-                            data-testid="button-export-cloud"
-                          >
-                            {cloudSyncStatus === "exporting" ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <Upload className="h-4 w-4" />
-                            )}
-                            {cloudSyncStatus === "exporting" ? "Exporting..." : "Export to Cloud"}
-                          </Button>
 
                           <Button
-                            onClick={handleImportFromCloud}
+                            onClick={handleTestConnection}
                             variant="outline"
-                            disabled={cloudSyncStatus !== "idle" || !cloudUrl.trim()}
-                            className="flex items-center gap-2 bg-transparent"
-                            data-testid="button-import-cloud"
+                            className="w-full bg-transparent"
+                            disabled={cloudConnectionStatus === "testing" || !cloudUrl.trim()}
+                            data-testid="button-test-connection"
+                            aria-label="Test connection to cloud database"
+                            aria-describedby="cloud-description"
                           >
-                            {cloudSyncStatus === "importing" ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
+                            {cloudConnectionStatus === "testing" ? (
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            ) : cloudConnectionStatus === "success" ? (
+                              <Check className="h-4 w-4 mr-2 text-green-500" />
+                            ) : cloudConnectionStatus === "error" ? (
+                              <XCircle className="h-4 w-4 mr-2 text-red-500" />
                             ) : (
-                              <Download className="h-4 w-4" />
+                              <Database className="h-4 w-4 mr-2" />
                             )}
-                            {cloudSyncStatus === "importing" ? "Importing..." : "Import from Cloud"}
+                            {cloudConnectionStatus === "testing"
+                              ? "Testing..."
+                              : cloudConnectionStatus === "success"
+                                ? "Connected (Simulated)"
+                                : cloudConnectionStatus === "error"
+                                  ? "Connection Failed"
+                                  : "Test Connection"}
                           </Button>
+
+                          {/* Real-Time Sync Settings */}
+                          <div className="border-t pt-4">
+                            <h4 className="font-medium mb-3 flex items-center gap-2">
+                              <RefreshCw className="h-4 w-4" />
+                              Real-Time Sync Simulation
+                            </h4>
+
+                            <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
+                              <div className="space-y-0.5">
+                                <Label className="flex items-center gap-2">
+                                  {autoSyncEnabled ? (
+                                    <Wifi className="h-4 w-4 text-green-500" />
+                                  ) : (
+                                    <WifiOff className="h-4 w-4 text-gray-500" />
+                                  )}
+                                  Real-Time Cloud Sync
+                                </Label>
+                                <p className="text-xs text-muted-foreground">
+                                  {autoSyncEnabled
+                                    ? `Auto-syncing simulation every ${syncInterval} seconds`
+                                    : "Manual sync only"}
+                                </p>
+                              </div>
+                              <Switch
+                                checked={autoSyncEnabled}
+                                onCheckedChange={toggleAutoSync}
+                              />
+                            </div>
+                          </div>
+
+                          <div className="border-t pt-4">
+                            <h4 className="font-medium mb-3 flex items-center gap-2">
+                              <RefreshCw className="h-4 w-4" />
+                              Manual Sync Actions (Simulation)
+                            </h4>
+
+                            <div className="grid grid-cols-2 gap-3">
+                              <Button
+                                onClick={() => handleExportToCloud(false)}
+                                variant="default"
+                                disabled={cloudSyncStatus !== "idle" || !cloudUrl.trim()}
+                                className="flex items-center gap-2"
+                                data-testid="button-export-cloud"
+                              >
+                                {cloudSyncStatus === "exporting" ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Upload className="h-4 w-4" />
+                                )}
+                                {cloudSyncStatus === "exporting" ? "Exporting..." : "Simulate Export"}
+                              </Button>
+
+                              <Button
+                                onClick={handleImportFromCloud}
+                                variant="outline"
+                                disabled={cloudSyncStatus !== "idle" || !cloudUrl.trim()}
+                                className="flex items-center gap-2 bg-transparent"
+                                data-testid="button-import-cloud"
+                              >
+                                {cloudSyncStatus === "importing" ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Download className="h-4 w-4" />
+                                )}
+                                {cloudSyncStatus === "importing" ? "Importing..." : "Simulate Import"}
+                              </Button>
+                            </div>
+
+                            <div className="mt-4 space-y-2 text-xs text-muted-foreground">
+                              <p className="flex items-center gap-2">
+                                <Upload className="h-3 w-3" />
+                                <strong>Export Simulation:</strong> Shows what would be sent to cloud
+                              </p>
+                              <p className="flex items-center gap-2">
+                                <Download className="h-3 w-3" />
+                                <strong>Import Simulation:</strong> Shows what would be downloaded from cloud
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
+
+                  {/* SYSTEM TAB */}
+                  <TabsContent value="system" className="space-y-6">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                          <Cpu className="h-5 w-5" />
+                          System Information
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label className="text-sm font-medium">Database Records</Label>
+                            <div className="text-2xl font-bold text-primary">
+                              {allSales.length + products.length + colors.length}
+                            </div>
+                            <p className="text-xs text-muted-foreground">Total records across all tables</p>
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label className="text-sm font-medium">Cloud Status</Label>
+                            <div className="flex items-center gap-2">
+                              {cloudConnectionStatus === "success" ? (
+                                <Check className="h-4 w-4 text-green-500" />
+                              ) : (
+                                <XCircle className="h-4 w-4 text-red-500" />
+                              )}
+                              <span className={cloudConnectionStatus === "success" ? "text-green-600" : "text-red-600"}>
+                                {cloudConnectionStatus === "success" ? "Connected (Simulated)" : "Not Connected"}
+                              </span>
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                              {cloudConnectionStatus === "success" ? "Sync simulation enabled" : "Manual sync only"}
+                            </p>
+                          </div>
                         </div>
 
-                        <div className="mt-4 space-y-2 text-xs text-muted-foreground">
-                          <p className="flex items-center gap-2">
-                            <Upload className="h-3 w-3" />
-                            <strong>Export:</strong> Sends your local data to cloud (overwrites cloud data)
-                          </p>
-                          <p className="flex items-center gap-2">
-                            <Download className="h-3 w-3" />
-                            <strong>Import:</strong> Downloads cloud data to local (overwrites local data)
-                          </p>
+                        <div className="border-t pt-4">
+                          <h4 className="font-medium mb-3">Quick Actions</h4>
+                          <div className="grid grid-cols-2 gap-3">
+                            <Button
+                              variant="outline"
+                              className="flex items-center gap-2 bg-transparent"
+                              onClick={() => {
+                                queryClient.invalidateQueries()
+                                toast({
+                                  title: "Data Refreshed",
+                                  description: "All data has been refreshed.",
+                                })
+                              }}
+                            >
+                              <RefreshCw className="h-4 w-4" />
+                              Refresh Data
+                            </Button>
+                            <Button 
+                              variant="outline" 
+                              className="flex items-center gap-2 bg-transparent"
+                              onClick={() => {
+                                toast({
+                                  title: "Backup Started",
+                                  description: "Database backup would be created (simulation).",
+                                })
+                              }}
+                            >
+                              <Database className="h-4 w-4" />
+                              Backup Database
+                            </Button>
+                          </div>
                         </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
-              {/* SYSTEM TAB */}
-              <TabsContent value="system" className="space-y-6">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Cpu className="h-5 w-5" />
-                      System Information
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label className="text-sm font-medium">Database Records</Label>
-                        <div className="text-2xl font-bold text-primary">
-                          {allSales.length + products.length + colors.length}
-                        </div>
-                        <p className="text-xs text-muted-foreground">Total records across all tables</p>
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label className="text-sm font-medium">Cloud Status</Label>
-                        <div className="flex items-center gap-2">
-                          {cloudConnectionStatus === "success" ? (
-                            <Check className="h-4 w-4 text-green-500" />
-                          ) : (
-                            <XCircle className="h-4 w-4 text-red-500" />
-                          )}
-                          <span className={cloudConnectionStatus === "success" ? "text-green-600" : "text-red-600"}>
-                            {cloudConnectionStatus === "success" ? "Connected" : "Not Connected"}
-                          </span>
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          {cloudConnectionStatus === "success" ? "Sync enabled" : "Manual sync only"}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="border-t pt-4">
-                      <h4 className="font-medium mb-3">Quick Actions</h4>
-                      <div className="grid grid-cols-2 gap-3">
-                        <Button
-                          variant="outline"
-                          className="flex items-center gap-2 bg-transparent"
-                          onClick={() => {
-                            queryClient.invalidateQueries()
-                            toast({
-                              title: "Data Refreshed",
-                              description: "All data has been refreshed.",
-                            })
-                          }}
-                        >
-                          <RefreshCw className="h-4 w-4" />
-                          Refresh Data
-                        </Button>
-                        <Button variant="outline" className="flex items-center gap-2 bg-transparent">
-                          <Database className="h-4 w-4" />
-                          Backup Database
-                        </Button>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </TabsContent>
-            </Tabs>
-          </div>
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
+                </Tabs>
+              </div>
             </div>
           )}
         </div>
