@@ -53,8 +53,6 @@ import {
   Download,
   Eye,
   EyeOff,
-  ChevronLeft,
-  ChevronRight,
   SlidersHorizontal,
 } from "lucide-react";
 import { Link } from "wouter";
@@ -62,7 +60,6 @@ import type { Sale, PaymentHistory, Return, SaleWithItems, ReturnWithItems, Colo
 import { format, parseISO, isAfter, isBefore, startOfDay, endOfDay, subDays } from "date-fns";
 import { useDateFormat } from "@/hooks/use-date-format";
 import { Label } from "@/components/ui/label";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 
 interface PaymentHistoryWithSale extends PaymentHistory {
@@ -97,7 +94,7 @@ export default function Reports() {
   const [searchQuery, setSearchQuery] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const [datePreset, setDatePreset] = useState<string>("");
+  const [datePreset, setDatePreset] = useState<string>("all");
   const [paymentStatusFilter, setPaymentStatusFilter] = useState<string>("all");
   const [sortField, setSortField] = useState<SortField>("date");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
@@ -182,6 +179,10 @@ export default function Reports() {
       case "custom":
         // Keep current custom dates
         break;
+      case "all":
+        setDateFrom("");
+        setDateTo("");
+        break;
       default:
         setDateFrom("");
         setDateTo("");
@@ -193,14 +194,13 @@ export default function Reports() {
     setSearchQuery("");
     setDateFrom("");
     setDateTo("");
-    setDatePreset("");
+    setDatePreset("all");
     setPaymentStatusFilter("all");
     setShowAdvancedFilters(false);
   };
 
   const hasActiveFilters = searchQuery || dateFrom || dateTo || paymentStatusFilter !== "all";
 
-  // Calculate filtered data (same as before, keeping your existing logic)
   const filteredSales = useMemo(() => {
     let filtered = [...allSales];
 
@@ -356,7 +356,6 @@ export default function Reports() {
     return filteredReturns.slice(0, visibleLimit);
   }, [filteredReturns, visibleLimit]);
 
-  // Keep all your existing useMemo calculations...
   const unpaidSales = useMemo(() => {
     return filteredSales.filter((sale) => sale.paymentStatus !== "paid");
   }, [filteredSales]);
@@ -491,7 +490,6 @@ export default function Reports() {
   };
 
   const TableSummary = ({ tab }: { tab: string }) => {
-    // Keep existing TableSummary implementation...
     switch (tab) {
       case "all-sales":
         return (
@@ -767,7 +765,7 @@ export default function Reports() {
                         <SelectValue placeholder="Date range" />
                       </SelectTrigger>
                       <SelectContent className="bg-white dark:bg-zinc-900 border-slate-200 dark:border-slate-700">
-                        <SelectItem value="" className="text-sm">All time</SelectItem>
+                        <SelectItem value="all" className="text-sm">All time</SelectItem>
                         {DATE_PRESETS.map((preset) => (
                           <SelectItem key={preset.value} value={preset.value} className="text-sm">
                             {preset.label}
