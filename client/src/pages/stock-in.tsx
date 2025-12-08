@@ -53,14 +53,11 @@ export default function StockIn() {
 
   const stockInMutation = useMutation({
     mutationFn: async (data: z.infer<typeof stockInFormSchema>) => {
-      return apiRequest("/api/stock-in", {
-        method: "POST",
-        body: JSON.stringify({
-          colorId: data.colorId,
-          quantity: parseInt(data.quantity),
-          notes: data.notes || "",
-          stockInDate: data.stockInDate,
-        }),
+      return apiRequest("POST", "/api/stock-in", {
+        colorId: data.colorId,
+        quantity: parseInt(data.quantity),
+        notes: data.notes || "",
+        stockInDate: data.stockInDate,
       });
     },
     onSuccess: () => {
@@ -84,7 +81,8 @@ export default function StockIn() {
   });
 
   const filteredColors = useMemo(() => {
-    if (!searchQuery) return colors;
+    // Only show items when user searches - don't show all by default
+    if (!searchQuery.trim()) return [];
     const query = searchQuery.toLowerCase();
     return colors.filter(color =>
       color.colorCode.toLowerCase().includes(query) ||
@@ -161,7 +159,7 @@ export default function StockIn() {
               {filteredColors.length === 0 ? (
                 <div className="text-center py-8 text-slate-500">
                   <Search className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>No colors found matching your search</p>
+                  <p>{searchQuery.trim() ? "No colors found matching your search" : "Type to search for colors by code, name, company or product"}</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

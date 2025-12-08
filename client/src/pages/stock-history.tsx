@@ -184,13 +184,10 @@ export default function StockHistory() {
   const editMutation = useMutation({
     mutationFn: async (data: z.infer<typeof stockHistoryEditSchema>) => {
       if (!editingHistory) return;
-      return apiRequest(`/api/stock-in/history/${editingHistory.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          quantity: parseInt(data.quantity),
-          notes: data.notes || "",
-          stockInDate: data.stockInDate,
-        }),
+      return apiRequest("PATCH", `/api/stock-in/history/${editingHistory.id}`, {
+        quantity: parseInt(data.quantity),
+        notes: data.notes || "",
+        stockInDate: data.stockInDate,
       });
     },
     onSuccess: () => {
@@ -208,7 +205,7 @@ export default function StockHistory() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      return apiRequest(`/api/stock-in/history/${id}`, { method: "DELETE" });
+      return apiRequest("DELETE", `/api/stock-in/history/${id}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/stock-in/history"] });
