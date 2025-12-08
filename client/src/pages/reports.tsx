@@ -332,6 +332,17 @@ export default function Reports() {
     return filteredReturns.reduce((sum, ret) => sum + parseFloat(ret.totalRefund || "0"), 0);
   }, [filteredReturns]);
 
+  // Returns specifically tied to filtered sales (for accurate outstanding calculation)
+  // This ensures we only subtract return credits for sales in our filtered range
+  const filteredSalesReturns = useMemo(() => {
+    const filteredSaleIds = new Set(filteredSales.map(s => s.id));
+    return returns.filter(ret => ret.saleId && filteredSaleIds.has(ret.saleId));
+  }, [filteredSales, returns]);
+
+  const filteredSalesReturnCredits = useMemo(() => {
+    return filteredSalesReturns.reduce((sum, ret) => sum + parseFloat(ret.totalRefund || "0"), 0);
+  }, [filteredSalesReturns]);
+
   // Store Cash Balance Calculation - TRUE CASH FLOW METHOD
   // Goal: Calculate actual cash received during the date range
   // 
@@ -374,9 +385,10 @@ export default function Reports() {
   }, [initialPaymentsForNewSales, recoveryInRange, filteredReturnsTotal]);
 
   const filteredSalesOutstanding = useMemo(() => {
-    // Outstanding = Sales Total - Paid - Return Credits (returns reduce outstanding)
-    return Math.max(0, filteredSalesTotal - filteredSalesPaid - filteredReturnsTotal);
-  }, [filteredSalesTotal, filteredSalesPaid, filteredReturnsTotal]);
+    // Outstanding = Sales Total - Paid - Return Credits (only returns for filtered sales)
+    // This matches Customer Statement logic: Outstanding = Bills - Paid - Returns
+    return Math.max(0, filteredSalesTotal - filteredSalesPaid - filteredSalesReturnCredits);
+  }, [filteredSalesTotal, filteredSalesPaid, filteredSalesReturnCredits]);
 
   const unpaidSalesTotal = useMemo(() => {
     return unpaidSales.reduce((sum, sale) => sum + parseFloat(sale.totalAmount), 0);
@@ -386,13 +398,13 @@ export default function Reports() {
     return unpaidSales.reduce((sum, sale) => sum + parseFloat(sale.amountPaid), 0);
   }, [unpaidSales]);
 
-  // Calculate returns specifically tied to unpaid sales
+  // Calculate returns specifically tied to unpaid sales (use ALL returns, not just filtered)
   const unpaidSalesReturnCredits = useMemo(() => {
     const unpaidSaleIds = new Set(unpaidSales.map(s => s.id));
-    return filteredReturns
+    return returns
       .filter(ret => ret.saleId && unpaidSaleIds.has(ret.saleId))
       .reduce((sum, ret) => sum + parseFloat(ret.totalRefund || "0"), 0);
-  }, [unpaidSales, filteredReturns]);
+  }, [unpaidSales, returns]);
 
   const unpaidSalesOutstanding = useMemo(() => {
     // Subtract only return credits that belong to unpaid sales
@@ -440,9 +452,11 @@ export default function Reports() {
     };
   }, [allSales, paymentHistory, returns]);
 
+  // Total collected for filtered sales = amountPaid (already includes initial + recovery payments)
+  // This matches Customer Statement logic where totalPaid = sum of all sale.amountPaid
   const totalCollectedAmount = useMemo(() => {
-    return filteredSalesPaid + filteredPaymentsTotal;
-  }, [filteredSalesPaid, filteredPaymentsTotal]);
+    return filteredSalesPaid;
+  }, [filteredSalesPaid]);
 
   const collectionRate = useMemo(() => {
     return filteredSalesTotal > 0 ? (totalCollectedAmount / filteredSalesTotal) * 100 : 0;
@@ -943,20 +957,20 @@ export default function Reports() {
                   </CardContent>
                 </Card>
 
-                {/* Refunds */}
+                {/* Refunds (for bills in this period) */}
                 <Card className="rounded-xl border border-amber-200/50 dark:border-amber-800/50 bg-white dark:bg-zinc-900/50">
                   <CardContent className="p-5">
                     <div className="flex items-center gap-2 mb-3">
                       <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/30">
                         <RotateCcw className="h-4 w-4 text-amber-600 dark:text-amber-400" />
                       </div>
-                      <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Refunds</span>
+                      <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Returns</span>
                     </div>
                     <div className="text-2xl font-bold text-amber-600 dark:text-amber-400 tabular-nums">
-                      Rs. {Math.round(filteredReturnsTotal).toLocaleString("en-IN")}
+                      Rs. {Math.round(filteredSalesReturnCredits).toLocaleString("en-IN")}
                     </div>
                     <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                      {filteredReturns.length} returns processed
+                      {filteredSalesReturns.length} returns on these bills
                     </div>
                   </CardContent>
                 </Card>
