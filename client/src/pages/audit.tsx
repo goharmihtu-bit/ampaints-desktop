@@ -64,31 +64,12 @@ import jsPDF from "jspdf"
 import type {
   ColorWithVariantAndProduct,
   Sale,
-  StockInHistory,
   Product,
   PaymentHistory,
   Return,
   Settings as AppSettings,
 } from "@shared/schema"
 import { format, startOfDay, endOfDay, isBefore, isAfter } from "date-fns"
-
-interface StockInHistoryWithColor extends StockInHistory {
-  color: ColorWithVariantAndProduct
-}
-
-interface StockOutItem {
-  id: string
-  saleId: string
-  colorId: string
-  quantity: number
-  rate: string
-  subtotal: string
-  color: ColorWithVariantAndProduct
-  sale: Sale
-  soldAt: Date
-  customerName: string
-  customerPhone: string
-}
 
 interface PaymentHistoryWithSale extends PaymentHistory {
   sale: Sale | null
@@ -203,7 +184,7 @@ export default function Audit() {
   const [isDefaultPin, setIsDefaultPin] = useState(false)
   const [showPinDialog, setShowPinDialog] = useState(true)
 
-  const [activeTab, setActiveTab] = useState("stock")
+  const [activeTab, setActiveTab] = useState("settings")
   const [searchQuery, setSearchQuery] = useState("")
   const [dateFrom, setDateFrom] = useState("")
   const [dateTo, setDateTo] = useState("")
@@ -250,15 +231,6 @@ export default function Audit() {
     enabled: isVerified,
   })
 
-  const { data: stockInHistory = [], isLoading: stockInLoading } = useQuery<StockInHistoryWithColor[]>({
-    queryKey: ["/api/stock-in/history"],
-    enabled: isVerified,
-  })
-
-  // STOCK OUT HISTORY DISABLED - EMPTY ARRAY
-  // Database issues ki wajah se hum stock out data use nahi kar rahe
-  const stockOutHistory: StockOutItem[] = []
-  const stockOutLoading = false
 
   const { data: allSales = [], isLoading: salesLoading } = useQuery<Sale[]>({
     queryKey: ["/api/sales"],
@@ -395,7 +367,7 @@ export default function Audit() {
     },
   })
 
-  // Cloud Sync Functions - FIXED VERSION
+  // Cloud Sync Functions - Using Real Backend API
   const handleTestConnection = async () => {
     if (!cloudUrl.trim()) {
       toast({
@@ -406,14 +378,11 @@ export default function Audit() {
       return
     }
 
-    // Basic URL validation
-    try {
-      new URL(cloudUrl)
-    } catch {
+    if (!cloudUrl.includes('postgresql://') || !cloudUrl.includes('@')) {
       setCloudConnectionStatus("error")
       toast({
-        title: "Invalid URL Format",
-        description: "Please enter a valid PostgreSQL connection URL starting with 'postgresql://'",
+        title: "Invalid Format",
+        description: "URL must be in format: postgresql://user:password@host/database",
         variant: "destructive",
       })
       return
@@ -421,22 +390,22 @@ export default function Audit() {
 
     setCloudConnectionStatus("testing")
     try {
-      // Mock connection test for now since API endpoints might not exist
-      // In a real app, this would call your backend API
-      await new Promise(resolve => setTimeout(resolve, 1500))
+      const response = await authenticatedRequest("/api/cloud/test-connection", {
+        method: "POST",
+        body: JSON.stringify({ connectionUrl: cloudUrl }),
+      })
       
-      // Check if it's a valid PostgreSQL URL format
-      if (cloudUrl.includes('postgresql://') && cloudUrl.includes('@')) {
+      if (response.success) {
         setCloudConnectionStatus("success")
         toast({
-          title: "Connection Test Passed",
-          description: "URL format is valid. Note: Backend API for cloud sync is required for actual connection.",
+          title: "Connection Successful",
+          description: response.message || "Connected to cloud database successfully.",
         })
       } else {
         setCloudConnectionStatus("error")
         toast({
-          title: "Invalid Format",
-          description: "URL must be in format: postgresql://user:password@host/database",
+          title: "Connection Failed",
+          description: response.error || "Could not connect to cloud database.",
           variant: "destructive",
         })
       }
@@ -444,7 +413,7 @@ export default function Audit() {
       setCloudConnectionStatus("error")
       toast({
         title: "Connection Failed",
-        description: "Cloud sync requires backend API implementation.",
+        description: error.message || "Could not connect to cloud database.",
         variant: "destructive",
       })
     }
@@ -464,33 +433,36 @@ export default function Audit() {
 
     if (!silent) setCloudSyncStatus("exporting")
     try {
-      // Mock export since API might not exist
-      await new Promise(resolve => setTimeout(resolve, 2000))
+      const response = await authenticatedRequest("/api/cloud/export", {
+        method: "POST",
+      })
       
-      // Mock successful export
-      const mockCounts = {
-        products: products.length,
-        colors: colors.length,
-        sales: allSales.length,
-        settings: 1
-      }
-      
-      setLastExportCounts(mockCounts)
-      if (!silent) {
-        toast({
-          title: "Export Simulation Complete",
-          description: `Would export ${mockCounts.products} products, ${mockCounts.colors} colors, ${mockCounts.sales} sales to cloud.`,
-        })
+      if (response.success) {
+        setLastExportCounts(response.counts || {})
+        setLastSyncTime(new Date())
+        if (!silent) {
+          toast({
+            title: "Export Complete",
+            description: response.message || "Data exported to cloud successfully.",
+          })
+        }
+      } else {
+        if (!silent) {
+          toast({
+            title: "Export Failed",
+            description: response.error || "Could not export data to cloud.",
+            variant: "destructive",
+          })
+        }
       }
     } catch (error: any) {
       if (!silent) {
         toast({
           title: "Export Failed",
-          description: "Cloud sync requires backend API implementation.",
+          description: error.message || "Could not export data to cloud.",
           variant: "destructive",
         })
       }
-      console.error("Cloud export error:", error)
     } finally {
       if (!silent) setCloudSyncStatus("idle")
     }
@@ -508,28 +480,31 @@ export default function Audit() {
 
     setCloudSyncStatus("importing")
     try {
-      // Mock import since API might not exist
-      await new Promise(resolve => setTimeout(resolve, 2000))
-      
-      // Mock successful import
-      const mockCounts = {
-        products: 0,
-        colors: 0,
-        sales: 0
-      }
-      
-      setLastImportCounts(mockCounts)
-      toast({
-        title: "Import Simulation Complete",
-        description: "Cloud sync requires backend API implementation to actually import data.",
+      const response = await authenticatedRequest("/api/cloud/import", {
+        method: "POST",
       })
+      
+      if (response.success) {
+        setLastImportCounts(response.counts || {})
+        setLastSyncTime(new Date())
+        queryClient.invalidateQueries()
+        toast({
+          title: "Import Complete",
+          description: response.message || "Data imported from cloud successfully.",
+        })
+      } else {
+        toast({
+          title: "Import Failed",
+          description: response.error || "Could not import data from cloud.",
+          variant: "destructive",
+        })
+      }
     } catch (error: any) {
       toast({
         title: "Import Failed",
-        description: "Cloud sync requires backend API implementation.",
+        description: error.message || "Could not import data from cloud.",
         variant: "destructive",
       })
-      console.error("Cloud import error:", error)
     } finally {
       setCloudSyncStatus("idle")
     }
@@ -537,17 +512,32 @@ export default function Audit() {
 
   // Auto-sync functions
   const toggleAutoSync = async (enabled: boolean) => {
-    setAutoSyncEnabled(enabled)
-
-    if (enabled) {
-      toast({
-        title: "Real-Time Sync Simulation",
-        description: "Auto-sync would require backend API implementation.",
+    try {
+      const response = await authenticatedRequest("/api/cloud/auto-sync", {
+        method: "POST",
+        body: JSON.stringify({ enabled, interval: syncInterval }),
       })
-    } else {
+      
+      if (response.success) {
+        setAutoSyncEnabled(enabled)
+        toast({
+          title: enabled ? "Auto-Sync Enabled" : "Auto-Sync Disabled",
+          description: enabled 
+            ? `Auto-syncing every ${syncInterval} seconds.`
+            : "Automatic synchronization has been turned off.",
+        })
+      } else {
+        toast({
+          title: "Failed to Update Auto-Sync",
+          description: response.error || "Could not update auto-sync settings.",
+          variant: "destructive",
+        })
+      }
+    } catch (error: any) {
       toast({
-        title: "Real-Time Sync Disabled",
-        description: "Automatic synchronization has been turned off.",
+        title: "Failed to Update Auto-Sync",
+        description: error.message || "Could not update auto-sync settings.",
+        variant: "destructive",
       })
     }
   }
@@ -637,94 +627,6 @@ export default function Audit() {
     return products.filter((p) => p.company === companyFilter)
   }, [products, companyFilter])
 
-  // STOCK MOVEMENTS - ONLY STOCK IN (Stock out disabled)
-  const stockMovements = useMemo(() => {
-    const movements: {
-      id: string
-      date: Date
-      type: "IN" | "OUT"
-      company: string
-      product: string
-      variant: string
-      colorCode: string
-      colorName: string
-      quantity: number
-      previousStock?: number
-      newStock?: number
-      reference: string
-      customer?: string
-      notes?: string
-    }[] = []
-
-    // Only stock in history (stock out disabled)
-    stockInHistory.forEach((record) => {
-      movements.push({
-        id: record.id,
-        date: new Date(record.createdAt),
-        type: "IN",
-        company: record.color?.variant?.product?.company || "-",
-        product: record.color?.variant?.product?.productName || "-",
-        variant: record.color?.variant?.packingSize || "-",
-        colorCode: record.color?.colorCode || "-",
-        colorName: record.color?.colorName || "-",
-        quantity: record.quantity,
-        previousStock: record.previousStock,
-        newStock: record.newStock,
-        reference: `Stock In: ${record.stockInDate}`,
-        notes: record.notes || undefined,
-      })
-    })
-
-    // Stock out DISABLED - no data added
-    // stockOutHistory.forEach((record) => { ... })
-
-    return movements.sort((a, b) => b.date.getTime() - a.date.getTime())
-  }, [stockInHistory]) // Only stockInHistory dependency
-
-  const filteredStockMovements = useMemo(() => {
-    let filtered = [...stockMovements]
-
-    if (debouncedSearchQuery) {
-      const query = debouncedSearchQuery.toLowerCase()
-      filtered = filtered.filter(
-        (m) =>
-          m.colorCode.toLowerCase().includes(query) ||
-          m.colorName.toLowerCase().includes(query) ||
-          m.product.toLowerCase().includes(query) ||
-          m.company.toLowerCase().includes(query) ||
-          (m.customer && m.customer.toLowerCase().includes(query)),
-      )
-    }
-
-    if (dateFrom) {
-      const fromDate = startOfDay(new Date(dateFrom))
-      filtered = filtered.filter((m) => !isBefore(m.date, fromDate))
-    }
-
-    if (dateTo) {
-      const toDate = endOfDay(new Date(dateTo))
-      filtered = filtered.filter((m) => !isAfter(m.date, toDate))
-    }
-
-    if (companyFilter !== "all") {
-      filtered = filtered.filter((m) => m.company === companyFilter)
-    }
-
-    if (productFilter !== "all") {
-      filtered = filtered.filter((m) => m.product === productFilter)
-    }
-
-    if (movementTypeFilter !== "all") {
-      filtered = filtered.filter((m) => m.type === movementTypeFilter)
-    }
-
-    return filtered
-  }, [stockMovements, debouncedSearchQuery, dateFrom, dateTo, companyFilter, productFilter, movementTypeFilter])
-  
-  const visibleStockMovements = useMemo(() => {
-    return filteredStockMovements.slice(0, visibleLimit)
-  }, [filteredStockMovements, visibleLimit])
-
   const filteredSales = useMemo(() => {
     let filtered = [...allSales]
 
@@ -760,14 +662,6 @@ export default function Audit() {
   const visibleSales = useMemo(() => {
     return filteredSales.slice(0, visibleLimit)
   }, [filteredSales, visibleLimit])
-
-  // STOCK SUMMARY - WITHOUT STOCK OUT
-  const stockSummary = useMemo(() => {
-    const totalIn = stockInHistory.reduce((acc, r) => acc + r.quantity, 0)
-    const totalOut = 0 // Stock out disabled
-    const currentStock = colors.reduce((acc, c) => acc + c.stockQuantity, 0)
-    return { totalIn, totalOut, currentStock }
-  }, [stockInHistory, colors]) // Stock out removed
 
   const salesSummary = useMemo(() => {
     const totalSales = allSales.reduce((acc, s) => acc + safeParseFloat(s.totalAmount), 0)
@@ -889,103 +783,6 @@ export default function Audit() {
     movementTypeFilter !== "all"
 
   // PDF download functions
-  const downloadStockAuditPDF = () => {
-    const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" })
-    const pageWidth = pdf.internal.pageSize.getWidth()
-    const pageHeight = pdf.internal.pageSize.getHeight()
-    const margin = 10
-    let yPos = margin
-
-    pdf.setFillColor(102, 126, 234)
-    pdf.rect(0, 0, pageWidth, 25, "F")
-
-    pdf.setTextColor(255, 255, 255)
-    pdf.setFontSize(18)
-    pdf.setFont("helvetica", "bold")
-    pdf.text(receiptSettings.businessName, pageWidth / 2, 10, { align: "center" })
-    pdf.setFontSize(12)
-    pdf.text("STOCK AUDIT REPORT (Stock In Only)", pageWidth / 2, 18, { align: "center" })
-
-    pdf.setTextColor(0, 0, 0)
-    yPos = 35
-
-    pdf.setFontSize(10)
-    pdf.setFont("helvetica", "normal")
-    pdf.text(`Generated: ${formatDateShort(new Date())}`, margin, yPos)
-    if (dateFrom || dateTo) {
-      pdf.text(`Period: ${dateFrom || "Start"} to ${dateTo || "Present"}`, margin + 80, yPos)
-    }
-    yPos += 8
-
-    pdf.setFillColor(240, 240, 240)
-    pdf.rect(margin, yPos, pageWidth - 2 * margin, 15, "F")
-    pdf.setFontSize(9)
-    pdf.setFont("helvetica", "bold")
-    pdf.text(`Total Stock In: ${stockSummary.totalIn}`, margin + 5, yPos + 10)
-    pdf.text(`Total Stock Out: ${stockSummary.totalOut}`, margin + 70, yPos + 10)
-    pdf.text(`Current Stock: ${stockSummary.currentStock}`, margin + 140, yPos + 10)
-    pdf.text(`Net Movement: ${stockSummary.totalIn - stockSummary.totalOut}`, margin + 200, yPos + 10)
-    yPos += 22
-
-    pdf.setFillColor(50, 50, 50)
-    pdf.rect(margin, yPos, pageWidth - 2 * margin, 8, "F")
-    pdf.setTextColor(255, 255, 255)
-    pdf.setFontSize(8)
-    const headers = ["Date", "Type", "Company", "Product", "Size", "Color", "Qty", "Reference", "Notes"]
-    const colWidths = [25, 15, 35, 35, 25, 40, 15, 45, 40]
-    let xPos = margin + 2
-    headers.forEach((header, i) => {
-      pdf.text(header, xPos, yPos + 5.5)
-      xPos += colWidths[i]
-    })
-    yPos += 10
-    pdf.setTextColor(0, 0, 0)
-
-    const maxRows = Math.min(filteredStockMovements.length, 25)
-    for (let i = 0; i < maxRows; i++) {
-      const m = filteredStockMovements[i]
-      if (yPos > pageHeight - 20) break
-
-      if (i % 2 === 0) {
-        pdf.setFillColor(250, 250, 250)
-        pdf.rect(margin, yPos, pageWidth - 2 * margin, 6, "F")
-      }
-
-      pdf.setFontSize(7)
-      xPos = margin + 2
-      pdf.text(formatDateShort(m.date), xPos, yPos + 4)
-      xPos += colWidths[0]
-
-      pdf.setTextColor(34, 197, 94)
-      pdf.text(m.type, xPos, yPos + 4)
-      xPos += colWidths[1]
-      pdf.setTextColor(0, 0, 0)
-
-      pdf.text(m.company.substring(0, 15), xPos, yPos + 4)
-      xPos += colWidths[2]
-      pdf.text(m.product.substring(0, 15), xPos, yPos + 4)
-      xPos += colWidths[3]
-      pdf.text(m.variant, xPos, yPos + 4)
-      xPos += colWidths[4]
-      pdf.text(`${m.colorCode} - ${m.colorName}`.substring(0, 20), xPos, yPos + 4)
-      xPos += colWidths[5]
-      pdf.text(`+${m.quantity}`, xPos, yPos + 4)
-      xPos += colWidths[6]
-      pdf.text(m.reference.substring(0, 22), xPos, yPos + 4)
-      xPos += colWidths[7]
-      pdf.text((m.notes || "-").substring(0, 18), xPos, yPos + 4)
-      yPos += 6
-    }
-
-    if (filteredStockMovements.length > maxRows) {
-      pdf.setFontSize(8)
-      pdf.text(`... and ${filteredStockMovements.length - maxRows} more records`, margin, yPos + 5)
-    }
-
-    pdf.save(`Stock-Audit-${formatDateShort(new Date()).replace(/\//g, "-")}.pdf`)
-    toast({ title: "PDF Downloaded", description: "Stock Audit Report has been downloaded." })
-  }
-
   const downloadSalesAuditPDF = () => {
     const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" })
     const pageWidth = pdf.internal.pageSize.getWidth()
@@ -1403,7 +1200,6 @@ export default function Audit() {
 
   const isLoading =
     colorsLoading ||
-    stockInLoading ||
     salesLoading ||
     paymentsLoading ||
     unpaidLoading ||
@@ -1416,12 +1212,7 @@ export default function Audit() {
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-2">
             <ShieldCheck className="h-6 w-6 text-primary" />
-            <h1 className="text-2xl font-bold">Audit Reports</h1>
-            {stockOutHistory.length === 0 && (
-              <Badge variant="outline" className="ml-2 text-xs bg-yellow-50 text-yellow-700">
-                Stock Out Disabled
-              </Badge>
-            )}
+            <h1 className="text-2xl font-bold">Audit Settings</h1>
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
@@ -1464,243 +1255,19 @@ export default function Audit() {
           </div>
         </div>
 
-        {/* Horizontal Tab Navigation */}
+        {/* Settings Header */}
         <div className="mt-4 border-t pt-4">
-          <nav className="flex items-center gap-1 flex-wrap">
-            <button
-              onClick={() => setActiveTab("stock")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                activeTab === "stock"
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              }`}
-              data-testid="menu-stock-audit"
-            >
-              <Package className="h-4 w-4" />
-              Stock In
-            </button>
-            <button
-              onClick={() => setActiveTab("settings")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                activeTab === "settings"
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              }`}
-              data-testid="menu-audit-settings"
-            >
-              <Settings className="h-4 w-4" />
-              Settings
-            </button>
-          </nav>
+          <div className="flex items-center gap-2">
+            <Settings className="h-5 w-5 text-muted-foreground" />
+            <span className="text-sm font-medium">Audit Settings & Cloud Sync</span>
+          </div>
         </div>
       </div>
 
       <div className="flex-1 overflow-hidden mt-4">
         {/* Main Content Area */}
         <div className="h-full overflow-hidden">
-          {/* STOCK AUDIT CONTENT (STOCK IN ONLY) */}
-          {activeTab === "stock" && (
-            <div className="h-full overflow-auto p-4 space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium flex items-center gap-2">
-                      <ArrowUp className="h-4 w-4 text-green-500" />
-                      Total Stock In
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">{stockSummary.totalIn}</div>
-                    <p className="text-xs text-muted-foreground">Units added to stock</p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium flex items-center gap-2">
-                      <ArrowDown className="h-4 w-4 text-red-500" />
-                      Total Stock Out
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">{stockSummary.totalOut}</div>
-                    <p className="text-xs text-muted-foreground">Units sold (disabled)</p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium flex items-center gap-2">
-                      <Package className="h-4 w-4 text-blue-500" />
-                      Current Stock
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">{stockSummary.currentStock}</div>
-                    <p className="text-xs text-muted-foreground">Available units</p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium flex items-center gap-2">
-                      <TrendingUp className="h-4 w-4 text-purple-500" />
-                      Net Movement
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">{stockSummary.totalIn - stockSummary.totalOut}</div>
-                    <p className="text-xs text-muted-foreground">Stock change</p>
-                  </CardContent>
-                </Card>
-              </div>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Package className="h-5 w-5" />
-                      Stock In History Only
-                      <Badge variant="outline" className="ml-2 text-xs bg-yellow-50 text-yellow-700">
-                        Stock Out Disabled
-                      </Badge>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Select value={companyFilter} onValueChange={setCompanyFilter}>
-                        <SelectTrigger className="w-40">
-                          <SelectValue placeholder="Company" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">All Companies</SelectItem>
-                          {companies.map((company) => (
-                            <SelectItem key={company} value={company}>
-                              {company}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Select value={productFilter} onValueChange={setProductFilter}>
-                        <SelectTrigger className="w-40">
-                          <SelectValue placeholder="Product" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">All Products</SelectItem>
-                          {filteredProducts.map((product) => (
-                            <SelectItem key={product.id} value={product.productName}>
-                              {product.productName}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Select value={movementTypeFilter} onValueChange={setMovementTypeFilter}>
-                        <SelectTrigger className="w-32">
-                          <SelectValue placeholder="Type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">All Types</SelectItem>
-                          <SelectItem value="IN">Stock In</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <Button onClick={downloadStockAuditPDF} className="flex items-center gap-2">
-                        <Download className="h-4 w-4" />
-                        Export PDF
-                      </Button>
-                    </div>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {isLoading ? (
-                    <div className="space-y-2">
-                      {Array.from({ length: 10 }).map((_, i) => (
-                        <Skeleton key={i} className="h-12 w-full" />
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="rounded-md border">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Date</TableHead>
-                            <TableHead>Type</TableHead>
-                            <TableHead>Company</TableHead>
-                            <TableHead>Product</TableHead>
-                            <TableHead>Size</TableHead>
-                            <TableHead>Color</TableHead>
-                            <TableHead>Quantity</TableHead>
-                            <TableHead>Reference</TableHead>
-                            <TableHead>Notes</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {filteredStockMovements.length === 0 ? (
-                            <TableRow>
-                              <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
-                                No stock in records found for the selected filters.
-                              </TableCell>
-                            </TableRow>
-                          ) : (
-                            visibleStockMovements.map((movement) => (
-                              <TableRow key={movement.id}>
-                                <TableCell className="font-medium">{formatDateShort(movement.date)}</TableCell>
-                                <TableCell>
-                                  <Badge
-                                    variant="default"
-                                    className="flex items-center gap-1 w-16 justify-center bg-green-100 text-green-700 border-green-200"
-                                  >
-                                    <ArrowUp className="h-3 w-3" />
-                                    {movement.type}
-                                  </Badge>
-                                </TableCell>
-                                <TableCell>{movement.company}</TableCell>
-                                <TableCell>{movement.product}</TableCell>
-                                <TableCell>{movement.variant}</TableCell>
-                                <TableCell>
-                                  <div className="flex items-center gap-2">
-                                    <div
-                                      className="w-4 h-4 rounded border"
-                                      style={{
-                                        backgroundColor:
-                                          movement.colorCode === "WHITE"
-                                            ? "#f3f4f6"
-                                            : movement.colorCode === "BLACK"
-                                              ? "#000"
-                                              : `#${movement.colorCode}`,
-                                      }}
-                                    />
-                                    {movement.colorCode} - {movement.colorName}
-                                  </div>
-                                </TableCell>
-                                <TableCell>
-                                  <div className="flex items-center gap-1 text-green-600">
-                                    +{movement.quantity}
-                                  </div>
-                                </TableCell>
-                                <TableCell className="text-sm">{movement.reference}</TableCell>
-                                <TableCell className="text-sm text-muted-foreground">{movement.notes || "-"}</TableCell>
-                              </TableRow>
-                            ))
-                          )}
-                        </TableBody>
-                      </Table>
-                      
-                      {/* Load More Button */}
-                      {filteredStockMovements.length > visibleLimit && (
-                        <div className="flex justify-center py-4">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setVisibleLimit(prev => prev + VISIBLE_LIMIT_INCREMENT)}
-                            data-testid="button-load-more-stock-audit"
-                          >
-                            Load More ({filteredStockMovements.length - visibleLimit} remaining)
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-          )}
-
-          {/* SETTINGS CONTENT */}
+          {/* Settings Content - Direct display since Stock tab removed */}
           {activeTab === "settings" && (
             <div className="h-full overflow-auto p-4">
               <div className="max-w-4xl mx-auto">
@@ -1982,7 +1549,7 @@ export default function Audit() {
                     </Card>
                   </TabsContent>
 
-                  {/* CLOUD SYNC TAB - FIXED VERSION */}
+                  {/* CLOUD SYNC TAB */}
                   <TabsContent value="cloud" className="space-y-6">
                     <Card>
                       <CardHeader>
@@ -1995,23 +1562,6 @@ export default function Audit() {
                         <div className="text-sm text-muted-foreground" id="cloud-description">
                           Connect to a cloud PostgreSQL database (Neon, Supabase) to sync your data across multiple devices.
                         </div>
-
-                        {/* API Not Available Warning */}
-                        <Card className="bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200">
-                          <CardContent className="pt-4">
-                            <div className="flex items-start gap-3">
-                              <AlertTriangle className="h-5 w-5 text-yellow-600 mt-0.5" />
-                              <div>
-                                <p className="font-medium text-yellow-800 dark:text-yellow-200 mb-1">
-                                  Cloud Sync API Not Available
-                                </p>
-                                <p className="text-sm text-yellow-700 dark:text-yellow-300">
-                                  This is a simulation. To enable actual cloud sync, backend API endpoints need to be implemented.
-                                </p>
-                              </div>
-                            </div>
-                          </CardContent>
-                        </Card>
 
                         <div className="space-y-4">
                           <div className="space-y-2">
@@ -2079,7 +1629,7 @@ export default function Audit() {
                             {cloudConnectionStatus === "testing"
                               ? "Testing..."
                               : cloudConnectionStatus === "success"
-                                ? "Connected (Simulated)"
+                                ? "Connected"
                                 : cloudConnectionStatus === "error"
                                   ? "Connection Failed"
                                   : "Test Connection"}
@@ -2089,7 +1639,7 @@ export default function Audit() {
                           <div className="border-t pt-4">
                             <h4 className="font-medium mb-3 flex items-center gap-2">
                               <RefreshCw className="h-4 w-4" />
-                              Real-Time Sync Simulation
+                              Real-Time Sync
                             </h4>
 
                             <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
@@ -2104,7 +1654,7 @@ export default function Audit() {
                                 </Label>
                                 <p className="text-xs text-muted-foreground">
                                   {autoSyncEnabled
-                                    ? `Auto-syncing simulation every ${syncInterval} seconds`
+                                    ? `Auto-syncing every ${syncInterval} seconds`
                                     : "Manual sync only"}
                                 </p>
                               </div>
@@ -2118,7 +1668,7 @@ export default function Audit() {
                           <div className="border-t pt-4">
                             <h4 className="font-medium mb-3 flex items-center gap-2">
                               <RefreshCw className="h-4 w-4" />
-                              Manual Sync Actions (Simulation)
+                              Manual Sync Actions
                             </h4>
 
                             <div className="grid grid-cols-2 gap-3">
@@ -2134,7 +1684,7 @@ export default function Audit() {
                                 ) : (
                                   <Upload className="h-4 w-4" />
                                 )}
-                                {cloudSyncStatus === "exporting" ? "Exporting..." : "Simulate Export"}
+                                {cloudSyncStatus === "exporting" ? "Exporting..." : "Export to Cloud"}
                               </Button>
 
                               <Button
@@ -2149,18 +1699,18 @@ export default function Audit() {
                                 ) : (
                                   <Download className="h-4 w-4" />
                                 )}
-                                {cloudSyncStatus === "importing" ? "Importing..." : "Simulate Import"}
+                                {cloudSyncStatus === "importing" ? "Importing..." : "Import from Cloud"}
                               </Button>
                             </div>
 
                             <div className="mt-4 space-y-2 text-xs text-muted-foreground">
                               <p className="flex items-center gap-2">
                                 <Upload className="h-3 w-3" />
-                                <strong>Export Simulation:</strong> Shows what would be sent to cloud
+                                <strong>Export:</strong> Send local data to cloud database
                               </p>
                               <p className="flex items-center gap-2">
                                 <Download className="h-3 w-3" />
-                                <strong>Import Simulation:</strong> Shows what would be downloaded from cloud
+                                <strong>Import:</strong> Download data from cloud database
                               </p>
                             </div>
                           </div>
@@ -2197,11 +1747,11 @@ export default function Audit() {
                                 <XCircle className="h-4 w-4 text-red-500" />
                               )}
                               <span className={cloudConnectionStatus === "success" ? "text-green-600" : "text-red-600"}>
-                                {cloudConnectionStatus === "success" ? "Connected (Simulated)" : "Not Connected"}
+                                {cloudConnectionStatus === "success" ? "Connected" : "Not Connected"}
                               </span>
                             </div>
                             <p className="text-xs text-muted-foreground">
-                              {cloudConnectionStatus === "success" ? "Sync simulation enabled" : "Manual sync only"}
+                              {cloudConnectionStatus === "success" ? "Cloud sync enabled" : "Manual sync only"}
                             </p>
                           </div>
                         </div>
@@ -2226,11 +1776,37 @@ export default function Audit() {
                             <Button 
                               variant="outline" 
                               className="flex items-center gap-2 bg-transparent"
-                              onClick={() => {
-                                toast({
-                                  title: "Backup Started",
-                                  description: "Database backup would be created (simulation).",
-                                })
+                              onClick={async () => {
+                                try {
+                                  const response = await fetch("/api/database/export")
+                                  if (response.ok) {
+                                    const blob = await response.blob()
+                                    const url = window.URL.createObjectURL(blob)
+                                    const a = document.createElement("a")
+                                    a.href = url
+                                    a.download = `paintpulse-backup-${new Date().toISOString().split("T")[0]}.db`
+                                    document.body.appendChild(a)
+                                    a.click()
+                                    document.body.removeChild(a)
+                                    window.URL.revokeObjectURL(url)
+                                    toast({
+                                      title: "Backup Complete",
+                                      description: "Database backup has been downloaded.",
+                                    })
+                                  } else {
+                                    toast({
+                                      title: "Backup Failed",
+                                      description: "Could not create database backup.",
+                                      variant: "destructive",
+                                    })
+                                  }
+                                } catch (error) {
+                                  toast({
+                                    title: "Backup Failed", 
+                                    description: "Could not create database backup.",
+                                    variant: "destructive",
+                                  })
+                                }
                               }}
                             >
                               <Database className="h-4 w-4" />

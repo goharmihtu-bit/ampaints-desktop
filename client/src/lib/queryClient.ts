@@ -61,28 +61,32 @@ export const queryClient = new QueryClient({
 });
 
 export function prefetchPageData(page: string) {
-  const pageEndpoints: Record<string, string[]> = {
-    "/": ["/api/dashboard-stats", "/api/settings"],
-    "/stock": ["/api/products", "/api/variants", "/api/colors", "/api/stock-in/history", "/api/stock-out/history"],
-    "/pos": ["/api/colors", "/api/settings", "/api/customers/suggestions"],
-    "/sales": ["/api/sales", "/api/returns"],
-    "/unpaid-bills": ["/api/sales", "/api/customers/suggestions"],
-    "/reports": ["/api/sales", "/api/returns", "/api/payment-history"],
-    "/returns": ["/api/returns", "/api/sales"],
-    "/rates": ["/api/products", "/api/variants", "/api/colors"],
+  const lightEndpoints: Record<string, string[]> = {
+    "/": ["/api/settings"],
+    "/stock": ["/api/settings"],
+    "/pos": ["/api/settings"],
+    "/sales": ["/api/settings"],
+    "/unpaid-bills": ["/api/settings"],
+    "/reports": ["/api/settings"],
+    "/returns": ["/api/settings"],
+    "/rates": ["/api/settings"],
     "/audit": ["/api/settings"],
     "/settings": ["/api/settings"],
   };
 
-  const endpoints = pageEndpoints[page] || [];
+  const endpoints = lightEndpoints[page] || [];
   
-  endpoints.forEach((endpoint) => {
-    const cached = queryClient.getQueryData([endpoint]);
-    if (!cached) {
-      queryClient.prefetchQuery({
-        queryKey: [endpoint],
-        staleTime: 60000,
+  if (typeof requestIdleCallback !== 'undefined') {
+    requestIdleCallback(() => {
+      endpoints.forEach((endpoint) => {
+        const cached = queryClient.getQueryData([endpoint]);
+        if (!cached) {
+          queryClient.prefetchQuery({
+            queryKey: [endpoint],
+            staleTime: 60000,
+          });
+        }
       });
-    }
-  });
+    }, { timeout: 100 });
+  }
 }
