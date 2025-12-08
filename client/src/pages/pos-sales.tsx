@@ -134,7 +134,7 @@ export default function POSSales() {
   const total = subtotal + tax;
 
   const paidAmount = parseFloat(amountPaid || "0");
-  const remainingBalance = Math.max(0, total - paidAmount);
+  const remainingBalance = total - paidAmount;
 
   const createSaleMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -744,9 +744,11 @@ export default function POSSales() {
 
                   {paidAmount > 0 && (
                     <div className="flex justify-between text-sm pt-2 p-3 rounded-lg bg-slate-50">
-                      <span className="text-slate-600 font-medium">Balance Due</span>
-                      <span className={`font-bold font-mono tabular-nums ${remainingBalance > 0 ? "text-amber-600" : "text-emerald-600"}`}>
-                        Rs. {Math.round(remainingBalance).toLocaleString()}
+                      <span className="text-slate-600 font-medium">
+                        {remainingBalance < 0 ? "Credit (Overpaid)" : "Balance Due"}
+                      </span>
+                      <span className={`font-bold font-mono tabular-nums ${remainingBalance > 0 ? "text-amber-600" : remainingBalance < 0 ? "text-blue-600" : "text-emerald-600"}`}>
+                        {remainingBalance < 0 ? `Rs. ${Math.round(Math.abs(remainingBalance)).toLocaleString()}` : `Rs. ${Math.round(remainingBalance).toLocaleString()}`}
                       </span>
                     </div>
                   )}
