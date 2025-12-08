@@ -1652,17 +1652,33 @@ Thank you for your business!`
                                 Rs. {Math.round(payment.outstanding).toLocaleString()}
                               </p>
                             </div>
-                            <Button
-                              onClick={() => {
-                                setSelectedSaleId(payment.id)
-                                setPaymentDialogOpen(true)
-                              }}
-                              className="action-btn text-white border-0"
-                              data-testid={`button-pay-${payment.id}`}
-                            >
-                              <Wallet className="h-4 w-4 mr-2" />
-                              Pay
-                            </Button>
+                            <div className="flex gap-2">
+                              <Button
+                                variant="outline"
+                                onClick={() => {
+                                  setSelectedSaleId(payment.id)
+                                  setPaymentAmount("")
+                                  setPaymentDialogOpen(true)
+                                }}
+                                className="border-slate-200 dark:border-slate-600"
+                                data-testid={`button-pay-${payment.id}`}
+                              >
+                                <Wallet className="h-4 w-4 mr-2" />
+                                Pay
+                              </Button>
+                              <Button
+                                onClick={() => {
+                                  setSelectedSaleId(payment.id)
+                                  setPaymentAmount(String(Math.round(payment.outstanding)))
+                                  setPaymentDialogOpen(true)
+                                }}
+                                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                                data-testid={`button-pay-full-scheduled-${payment.id}`}
+                              >
+                                <CheckCircle className="h-4 w-4 mr-2" />
+                                Pay Full
+                              </Button>
+                            </div>
                           </div>
                         </div>
                       )
@@ -1760,15 +1776,29 @@ Thank you for your business!`
                                 </Button>
                               </Link>
                               <Button
+                                variant="outline"
                                 onClick={() => {
                                   setSelectedSaleId(sale.id)
+                                  setPaymentAmount("")
                                   setPaymentDialogOpen(true)
                                 }}
-                                className="action-btn text-white border-0"
+                                className="border-slate-200 dark:border-slate-600"
                                 data-testid={`button-receive-payment-${sale.id}`}
                               >
                                 <Wallet className="h-4 w-4 mr-2" />
                                 Pay
+                              </Button>
+                              <Button
+                                onClick={() => {
+                                  setSelectedSaleId(sale.id)
+                                  setPaymentAmount(String(Math.round(outstanding)))
+                                  setPaymentDialogOpen(true)
+                                }}
+                                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                                data-testid={`button-pay-full-${sale.id}`}
+                              >
+                                <CheckCircle className="h-4 w-4 mr-2" />
+                                Pay Full
                               </Button>
                             </div>
                           </div>
