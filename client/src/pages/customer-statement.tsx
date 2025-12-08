@@ -367,7 +367,7 @@ export default function CustomerStatement() {
       }
     })
 
-    // Then collect all payments
+    // Then collect all payments from payment_history (recovery payments)
     const paymentTransactions: Transaction[] = paymentHistory.map((payment) => ({
       id: `payment-${payment.id}`,
       date: safeParseDate(payment.createdAt),
@@ -383,6 +383,43 @@ export default function CustomerStatement() {
       notes: payment.notes || undefined,
       saleId: payment.saleId,
     }))
+
+    // Calculate initial payments (paid at POS, not in payment_history)
+    // For each sale: initial payment = amountPaid - sum of recovery payments for that sale
+    const initialPaymentTransactions: Transaction[] = allSalesWithItems
+      .filter((sale) => {
+        const paidAmt = safeParseFloat(sale.amountPaid)
+        // Get recovery payments for this sale from payment_history
+        const recoveryPayments = paymentHistory
+          .filter((p) => p.saleId === sale.id)
+          .reduce((sum, p) => sum + safeParseFloat(p.amount), 0)
+        // Initial payment is amountPaid minus recovery payments
+        const initialPayment = paidAmt - recoveryPayments
+        return initialPayment > 0
+      })
+      .map((sale) => {
+        const paidAmt = safeParseFloat(sale.amountPaid)
+        const recoveryPayments = paymentHistory
+          .filter((p) => p.saleId === sale.id)
+          .reduce((sum, p) => sum + safeParseFloat(p.amount), 0)
+        const initialPayment = paidAmt - recoveryPayments
+        
+        return {
+          id: `initial-payment-${sale.id}`,
+          date: safeParseDate(sale.createdAt), // Same date as the bill
+          type: "payment" as TransactionType,
+          description: sale.isManualBalance ? "Manual Balance Payment" : "Payment at POS",
+          reference: `PAY-${sale.id.slice(0, 6).toUpperCase()}`,
+          debit: 0,
+          credit: initialPayment,
+          balance: 0,
+          paid: 0,
+          totalAmount: 0,
+          outstanding: 0,
+          notes: undefined,
+          saleId: sale.id,
+        }
+      })
 
     // Collect all returns as transactions (refunds reduce balance)
     const returnTransactions: Transaction[] = customerReturns.map((ret) => {
@@ -416,7 +453,7 @@ export default function CustomerStatement() {
     })
 
     // Combine and sort by date and time (oldest first for balance calculation)
-    txns.push(...billTransactions, ...paymentTransactions, ...returnTransactions)
+    txns.push(...billTransactions, ...paymentTransactions, ...initialPaymentTransactions, ...returnTransactions)
     txns.sort((a, b) => {
       const dateA = safeParseDate(a.date)
       const dateB = safeParseDate(b.date)
