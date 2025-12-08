@@ -244,6 +244,7 @@ export const softwareLicenses = sqliteTable("software_licenses", {
   blockedReason: text("blocked_reason"), // Reason for blocking (e.g., "overdue billing")
   blockedAt: integer("blocked_at", { mode: "timestamp" }), // When the device was blocked
   blockedBy: text("blocked_by"), // Who blocked it (admin identifier)
+  autoBlockDate: text("auto_block_date"), // Date to automatically block (YYYY-MM-DD format)
   lastHeartbeat: integer("last_heartbeat", { mode: "timestamp" }), // Last time device checked in
   lastSyncTime: integer("last_sync_time", { mode: "timestamp" }), // Last successful sync
   ipAddress: text("ip_address"), // Last known IP address

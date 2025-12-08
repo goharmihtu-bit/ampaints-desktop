@@ -569,6 +569,12 @@ function createTables() {
       console.log("[Database] master_pin_salt column might already exist")
     }
 
+    try {
+      sqlite.exec("ALTER TABLE software_licenses ADD COLUMN auto_block_date TEXT")
+    } catch (e) {
+      console.log("[Database] auto_block_date column might already exist")
+    }
+
     console.log("[Database] Creating stock movement indexes...")
 
     try {

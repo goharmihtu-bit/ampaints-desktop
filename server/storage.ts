@@ -314,6 +314,8 @@ export interface IStorage {
   updateSoftwareLicense(deviceId: string, data: UpdateSoftwareLicense): Promise<SoftwareLicense | null>
   blockSoftwareLicense(deviceId: string, reason: string, blockedBy?: string): Promise<SoftwareLicense | null>
   unblockSoftwareLicense(deviceId: string): Promise<SoftwareLicense | null>
+  setAutoBlockDate(deviceId: string, autoBlockDate: string | null): Promise<SoftwareLicense | null>
+  checkAndApplyAutoBlocks(): Promise<{ blocked: string[] }>
   recordLicenseAudit(data: InsertLicenseAuditLog): Promise<LicenseAuditLog>
   getLicenseAuditLog(deviceId?: string): Promise<LicenseAuditLog[]>
 }
@@ -3813,6 +3815,54 @@ export class DatabaseStorage implements IStorage {
         .orderBy(desc(licenseAuditLog.createdAt))
     }
     return await db.select().from(licenseAuditLog).orderBy(desc(licenseAuditLog.createdAt))
+  }
+
+  async setAutoBlockDate(deviceId: string, autoBlockDate: string | null): Promise<SoftwareLicense | null> {
+    const existing = await this.getSoftwareLicense(deviceId)
+    if (!existing) return null
+
+    const [updated] = await db
+      .update(softwareLicenses)
+      .set({
+        autoBlockDate: autoBlockDate,
+        updatedAt: new Date(),
+      })
+      .where(eq(softwareLicenses.deviceId, deviceId))
+      .returning()
+
+    await this.recordLicenseAudit({
+      deviceId,
+      action: autoBlockDate ? "set_auto_block" : "clear_auto_block",
+      reason: autoBlockDate ? `Auto-block date set to ${autoBlockDate}` : "Auto-block date cleared",
+      performedBy: "admin",
+      previousStatus: existing.status,
+      newStatus: existing.status,
+    })
+
+    return updated
+  }
+
+  async checkAndApplyAutoBlocks(): Promise<{ blocked: string[] }> {
+    const today = new Date().toISOString().split('T')[0]
+    const licenses = await this.getSoftwareLicenses()
+    const blocked: string[] = []
+
+    for (const license of licenses) {
+      if (
+        license.status === "active" && 
+        license.autoBlockDate && 
+        license.autoBlockDate <= today
+      ) {
+        await this.blockSoftwareLicense(
+          license.deviceId, 
+          `Auto-blocked: License expired on ${license.autoBlockDate}`,
+          "auto_system"
+        )
+        blocked.push(license.deviceId)
+      }
+    }
+
+    return { blocked }
   }
 }
 

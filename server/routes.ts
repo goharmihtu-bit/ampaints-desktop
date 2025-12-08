@@ -3081,8 +3081,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const now = new Date()
       
+      // Check and apply any auto-blocks first (for all devices)
+      await storage.checkAndApplyAutoBlocks()
+      
       // Create or update the license record using client-provided deviceId
-      const license = await storage.createOrUpdateSoftwareLicense({
+      let license = await storage.createOrUpdateSoftwareLicense({
         deviceId: deviceId,
         deviceName: deviceName || `Device-${deviceId.substring(0, 6)}`,
         storeName: storeName || "Unknown Store",
@@ -3091,12 +3094,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         userAgent: req.headers["user-agent"] || null,
       })
 
+      // Re-fetch license to get any auto-block that was just applied
+      const updatedLicense = await storage.getSoftwareLicense(deviceId)
+      if (updatedLicense) {
+        license = updatedLicense
+      }
+
       res.json({
         deviceId: license.deviceId,
         status: license.status,
         isBlocked: license.status === "blocked",
         blockedReason: license.blockedReason,
         blockedAt: license.blockedAt,
+        autoBlockDate: license.autoBlockDate,
         message: license.status === "blocked" 
           ? `Software blocked: ${license.blockedReason || "Contact administrator"}` 
           : "License active",
@@ -3192,6 +3202,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error unblocking device:", error)
       res.status(500).json({ error: "Failed to unblock device" })
+    }
+  })
+
+  // Set auto-block date for a device (requires master PIN)
+  app.post("/api/license/set-auto-block", async (req, res) => {
+    try {
+      const { masterPin, deviceId, autoBlockDate } = req.body
+      
+      if (!verifyMasterPin(masterPin)) {
+        res.status(403).json({ error: "Invalid master PIN" })
+        return
+      }
+
+      if (!deviceId) {
+        res.status(400).json({ error: "Device ID is required" })
+        return
+      }
+
+      const license = await storage.setAutoBlockDate(deviceId, autoBlockDate || null)
+
+      if (!license) {
+        res.status(404).json({ error: "Device not found" })
+        return
+      }
+
+      res.json({
+        success: true,
+        message: autoBlockDate 
+          ? `Auto-block date set to ${autoBlockDate}` 
+          : "Auto-block date cleared",
+        device: license,
+      })
+    } catch (error) {
+      console.error("Error setting auto-block date:", error)
+      res.status(500).json({ error: "Failed to set auto-block date" })
     }
   })
 
