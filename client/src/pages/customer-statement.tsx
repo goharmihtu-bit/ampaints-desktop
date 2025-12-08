@@ -1793,10 +1793,10 @@ Thank you for your business!`
                     <Button
                       onClick={() => setClearAccountDialogOpen(true)}
                       className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                      data-testid="button-clear-full-account"
+                      data-testid="button-pay-full-account"
                     >
                       <CheckCircle className="h-4 w-4 mr-2" />
-                      Clear Full Account (Rs. {Math.round(stats.totalOutstanding).toLocaleString()})
+                      Pay Full (Rs. {Math.round(stats.totalOutstanding).toLocaleString()})
                     </Button>
                   )}
                 </div>
@@ -1889,18 +1889,6 @@ Thank you for your business!`
                               >
                                 <Wallet className="h-4 w-4 mr-2" />
                                 Pay
-                              </Button>
-                              <Button
-                                onClick={() => {
-                                  setSelectedSaleId(sale.id)
-                                  setPaymentAmount(String(Math.round(outstanding)))
-                                  setPaymentDialogOpen(true)
-                                }}
-                                className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                                data-testid={`button-pay-full-${sale.id}`}
-                              >
-                                <CheckCircle className="h-4 w-4 mr-2" />
-                                Pay Full
                               </Button>
                             </div>
                           </div>
@@ -2131,13 +2119,13 @@ Thank you for your business!`
         </DialogContent>
       </Dialog>
 
-      {/* Clear Full Account Dialog */}
+      {/* Pay Full Account Dialog */}
       <Dialog open={clearAccountDialogOpen} onOpenChange={setClearAccountDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-emerald-600">
               <CheckCircle className="h-5 w-5" />
-              Clear Full Account
+              Pay Full Account
             </DialogTitle>
             <DialogDescription>
               Pay all outstanding bills at once to clear the customer's account balance. 
@@ -2199,7 +2187,7 @@ Thank you for your business!`
               onClick={handleClearFullAccount}
               disabled={clearAccountProcessing || unpaidSales.length === 0}
               className="bg-emerald-600 hover:bg-emerald-700 text-white"
-              data-testid="button-confirm-clear-account"
+              data-testid="button-confirm-pay-full"
             >
               {clearAccountProcessing ? (
                 <>
@@ -2209,7 +2197,7 @@ Thank you for your business!`
               ) : (
                 <>
                   <CheckCircle className="h-4 w-4 mr-2" />
-                  Clear Account (Rs. {Math.round(stats.totalOutstanding).toLocaleString()})
+                  Pay Full (Rs. {Math.round(stats.totalOutstanding).toLocaleString()})
                 </>
               )}
             </Button>
