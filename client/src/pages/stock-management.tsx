@@ -1431,7 +1431,7 @@ export default function StockManagement() {
                     </div>
                   )}
 
-                  {/* Products Grid */}
+                  {/* Products Table */}
                   {filteredProducts.length === 0 ? (
                     <div className="text-center py-12">
                       <div className="p-4 bg-slate-100 rounded-2xl inline-block mb-4">
@@ -1452,104 +1452,105 @@ export default function StockManagement() {
                     </div>
                   ) : (
                   <>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {visibleProducts.map(product => {
-                      const productVariants = variantsData.filter(v => v.productId === product.id);
-                      
-                      const rates = productVariants.map(v => parseFloat(v.rate)).filter(r => !isNaN(r));
-                      const minRate = rates.length > 0 ? Math.min(...rates) : 0;
-                      const maxRate = rates.length > 0 ? Math.max(...rates) : 0;
-                      const priceRange = rates.length > 0 
-                        ? (minRate === maxRate 
-                          ? `Rs. ${minRate.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}` 
-                          : `Rs. ${minRate.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} - ${maxRate.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`)
-                        : "No variants";
-                      
-                      return (
-                        <Card 
-                          key={product.id} 
-                          className="rounded-2xl p-4 border border-slate-100 bg-slate-50 hover:shadow-lg hover:border-blue-200 transition-all cursor-pointer group"
-                          onClick={() => setViewingProduct(product)}
-                        >
-                          <CardContent className="p-0">
-                            <div className="flex items-start justify-between mb-3">
-                              <div className="flex items-center gap-3">
-                                <div className="p-2 bg-blue-100 rounded-xl">
-                                  <Package className="h-4 w-4 text-blue-600" />
-                                </div>
-                                <div>
-                                  <h3 className="font-semibold text-slate-900 group-hover:text-blue-600 transition-colors">
-                                    {product.productName}
-                                  </h3>
-                                  <p className="text-sm text-slate-500">{product.company}</p>
-                                </div>
-                              </div>
-                              <input
-                                type="checkbox"
-                                checked={selectedProducts.has(product.id)}
-                                onChange={(e) => {
-                                  e.stopPropagation();
-                                  const newSet = new Set(selectedProducts);
-                                  if (e.target.checked) {
-                                    newSet.add(product.id);
-                                  } else {
-                                    newSet.delete(product.id);
-                                  }
-                                  setSelectedProducts(newSet);
-                                }}
-                                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                              />
-                            </div>
-
-                            <div className="space-y-2">
-                              <div className="flex justify-between items-center text-sm">
-                                <span className="text-slate-500">Variants</span>
-                                <Badge variant="outline" className="bg-slate-100 text-slate-700 border-slate-200">
-                                  {productVariants.length} variants
-                                </Badge>
-                              </div>
-                              <div className="flex justify-between items-center text-sm">
-                                <span className="text-slate-500">Price Range</span>
-                                <span className="font-mono font-semibold text-blue-600">{priceRange}</span>
-                              </div>
-                              <div className="flex justify-between items-center text-sm">
-                                <span className="text-slate-500">Created</span>
-                                <span className="text-slate-400">{formatDateShort(product.createdAt)}</span>
-                              </div>
-                            </div>
-
-                            <div className="flex gap-2 mt-3">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="flex-1 border-slate-200 text-slate-700"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setViewingProduct(product);
-                                }}
-                              >
-                                <Eye className="h-4 w-4 mr-1" />
-                                View
-                              </Button>
-                              {canEditStock && (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="flex-1 border-slate-200 text-slate-700"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setEditingProduct(product);
+                  <div className="border rounded-lg overflow-hidden">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-slate-50">
+                          <TableHead className="w-10">
+                            <input
+                              type="checkbox"
+                              checked={selectedProducts.size === visibleProducts.length && visibleProducts.length > 0}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedProducts(new Set(visibleProducts.map(p => p.id)));
+                                } else {
+                                  setSelectedProducts(new Set());
+                                }
+                              }}
+                              className="h-4 w-4 rounded border-slate-300 text-blue-600"
+                            />
+                          </TableHead>
+                          <TableHead>Company</TableHead>
+                          <TableHead>Product Name</TableHead>
+                          <TableHead className="text-center">Variants</TableHead>
+                          <TableHead className="text-right">Price Range</TableHead>
+                          <TableHead>Created</TableHead>
+                          <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {visibleProducts.map(product => {
+                          const productVariants = variantsData.filter(v => v.productId === product.id);
+                          
+                          const rates = productVariants.map(v => parseFloat(v.rate)).filter(r => !isNaN(r));
+                          const minRate = rates.length > 0 ? Math.min(...rates) : 0;
+                          const maxRate = rates.length > 0 ? Math.max(...rates) : 0;
+                          const priceRange = rates.length > 0 
+                            ? (minRate === maxRate 
+                              ? `Rs. ${minRate.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}` 
+                              : `Rs. ${minRate.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} - ${maxRate.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`)
+                            : "No variants";
+                          
+                          return (
+                            <TableRow 
+                              key={product.id} 
+                              className="hover:bg-slate-50 cursor-pointer"
+                              onClick={() => setViewingProduct(product)}
+                            >
+                              <TableCell onClick={(e) => e.stopPropagation()}>
+                                <input
+                                  type="checkbox"
+                                  checked={selectedProducts.has(product.id)}
+                                  onChange={(e) => {
+                                    const newSet = new Set(selectedProducts);
+                                    if (e.target.checked) {
+                                      newSet.add(product.id);
+                                    } else {
+                                      newSet.delete(product.id);
+                                    }
+                                    setSelectedProducts(newSet);
                                   }}
-                                >
-                                  <Edit className="h-4 w-4 mr-1" />
-                                  Edit
-                                </Button>
-                              )}
-                            </div>
-                          </CardContent>
-                        </Card>
-                      );
-                    })}
+                                  className="h-4 w-4 rounded border-slate-300 text-blue-600"
+                                />
+                              </TableCell>
+                              <TableCell className="font-medium">{product.company}</TableCell>
+                              <TableCell>{product.productName}</TableCell>
+                              <TableCell className="text-center">
+                                <Badge variant="outline" className="bg-slate-100 text-slate-700 border-slate-200">
+                                  {productVariants.length}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-right font-mono font-semibold text-blue-600">
+                                {priceRange}
+                              </TableCell>
+                              <TableCell className="text-slate-500">
+                                {formatDateShort(product.createdAt)}
+                              </TableCell>
+                              <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                                <div className="flex gap-1 justify-end">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => setViewingProduct(product)}
+                                  >
+                                    <Eye className="h-4 w-4" />
+                                  </Button>
+                                  {canEditStock && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => setEditingProduct(product)}
+                                    >
+                                      <Edit className="h-4 w-4" />
+                                    </Button>
+                                  )}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
                   </div>
                   {/* Load More Button for Products */}
                   {filteredProducts.length > productsVisibleLimit && (
