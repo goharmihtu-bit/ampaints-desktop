@@ -1231,55 +1231,58 @@ export default function StockManagement() {
         </div>
       </div>
 
-      {/* Tabs - Clean Banking Style */}
-      <Tabs defaultValue="products" className="space-y-4">
-        <div className="bg-white rounded-xl p-1.5 border border-slate-100 shadow-sm overflow-x-auto">
-          <TabsList className="bg-transparent inline-flex w-auto min-w-full gap-1">
-            <TabsTrigger 
-              value="products" 
-              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-blue-600 data-[state=active]:text-white data-[state=active]:shadow-sm data-[state=inactive]:text-slate-500 data-[state=inactive]:bg-transparent rounded-lg px-3 py-2 text-sm font-medium transition-all"
-              data-testid="tab-products"
-            >
-              <Package className="h-4 w-4 mr-1.5" />
-              <span className="hidden sm:inline">Products</span>
-              <span className="sm:hidden">Prod</span>
-            </TabsTrigger>
-            <TabsTrigger 
-              value="variants" 
-              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-500 data-[state=active]:to-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-sm data-[state=inactive]:text-slate-500 data-[state=inactive]:bg-transparent rounded-lg px-3 py-2 text-sm font-medium transition-all"
-              data-testid="tab-variants"
-            >
-              <Layers className="h-4 w-4 mr-1.5" />
-              <span className="hidden sm:inline">Variants</span>
-              <span className="sm:hidden">Var</span>
-            </TabsTrigger>
-            <TabsTrigger 
-              value="colors" 
-              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-purple-500 data-[state=active]:to-purple-600 data-[state=active]:text-white data-[state=active]:shadow-sm data-[state=inactive]:text-slate-500 data-[state=inactive]:bg-transparent rounded-lg px-3 py-2 text-sm font-medium transition-all"
-              data-testid="tab-colors"
-            >
-              <Palette className="h-4 w-4 mr-1.5" />
-              <span className="hidden sm:inline">Colors</span>
-              <span className="sm:hidden">Col</span>
-            </TabsTrigger>
-          </TabsList>
-        </div>
+      {/* Tabs - Redesigned with integrated header */}
+      <Tabs defaultValue="products" className="space-y-0">
+        <Card className="rounded-xl border border-slate-100 bg-white shadow-sm overflow-hidden">
+          {/* Tab Navigation - Integrated Header */}
+          <div className="border-b border-slate-100">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 pb-0">
+              <TabsList className="bg-slate-100/80 p-1 rounded-lg h-auto w-full sm:w-auto">
+                <TabsTrigger 
+                  value="products" 
+                  className="flex-1 sm:flex-none data-[state=active]:bg-white data-[state=active]:text-blue-600 data-[state=active]:shadow-sm data-[state=inactive]:text-slate-500 rounded-md px-4 py-2 text-sm font-medium transition-all gap-2"
+                  data-testid="tab-products"
+                >
+                  <Package className="h-4 w-4" />
+                  Products
+                  <Badge variant="secondary" className="ml-1 bg-blue-100 text-blue-700 text-[10px] px-1.5 py-0">
+                    {products.length}
+                  </Badge>
+                </TabsTrigger>
+                <TabsTrigger 
+                  value="variants" 
+                  className="flex-1 sm:flex-none data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm data-[state=inactive]:text-slate-500 rounded-md px-4 py-2 text-sm font-medium transition-all gap-2"
+                  data-testid="tab-variants"
+                >
+                  <Layers className="h-4 w-4" />
+                  Variants
+                  <Badge variant="secondary" className="ml-1 bg-indigo-100 text-indigo-700 text-[10px] px-1.5 py-0">
+                    {variantsData.length}
+                  </Badge>
+                </TabsTrigger>
+                <TabsTrigger 
+                  value="colors" 
+                  className="flex-1 sm:flex-none data-[state=active]:bg-white data-[state=active]:text-purple-600 data-[state=active]:shadow-sm data-[state=inactive]:text-slate-500 rounded-md px-4 py-2 text-sm font-medium transition-all gap-2"
+                  data-testid="tab-colors"
+                >
+                  <Palette className="h-4 w-4" />
+                  Colors
+                  <Badge variant="secondary" className="ml-1 bg-purple-100 text-purple-700 text-[10px] px-1.5 py-0">
+                    {colorsData.length}
+                  </Badge>
+                </TabsTrigger>
+              </TabsList>
+            </div>
+            <div className="h-3"></div>
+          </div>
 
-        {/* Products Tab */}
-        <TabsContent value="products" className="space-y-4">
-          <Card className="rounded-xl border border-slate-100 bg-white shadow-sm overflow-hidden">
-            <div className="p-4 border-b border-slate-100 bg-gradient-to-r from-blue-50/80 to-transparent">
+          {/* Products Tab */}
+          <TabsContent value="products" className="m-0">
+            <div className="p-4 border-b border-slate-50 bg-gradient-to-r from-blue-50/50 to-transparent">
               <div className="flex flex-row items-center justify-between gap-4 flex-wrap">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-sm">
-                    <Package className="h-4 w-4 text-white" />
-                  </div>
-                  <div>
-                    <h2 className="text-base font-semibold text-slate-800">Products</h2>
-                    <p className="text-xs text-slate-500">
-                      <span className="font-semibold text-blue-600 tabular-nums">{products.length}</span> in catalog
-                    </p>
-                  </div>
+                <div className="flex items-center gap-2">
+                  <Package className="h-5 w-5 text-blue-600" />
+                  <h2 className="text-base font-semibold text-slate-800">Manage Products</h2>
                 </div>
                 <Dialog open={isProductDialogOpen} onOpenChange={setIsProductDialogOpen}>
                   <Button 
@@ -1569,24 +1572,15 @@ export default function StockManagement() {
                 </div>
               )}
             </div>
-          </Card>
-        </TabsContent>
+          </TabsContent>
 
-        {/* Variants Tab */}
-        <TabsContent value="variants" className="space-y-4">
-          <Card className="rounded-xl border border-slate-100 bg-white shadow-sm overflow-hidden">
-            <div className="p-4 border-b border-slate-100 bg-gradient-to-r from-indigo-50/80 to-transparent">
+          {/* Variants Tab */}
+          <TabsContent value="variants" className="m-0">
+            <div className="p-4 border-b border-slate-50 bg-gradient-to-r from-indigo-50/50 to-transparent">
               <div className="flex flex-row items-center justify-between gap-4 flex-wrap">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-lg shadow-sm">
-                    <Layers className="h-4 w-4 text-white" />
-                  </div>
-                  <div>
-                    <h2 className="text-base font-semibold text-slate-800">Variants</h2>
-                    <p className="text-xs text-slate-500">
-                      <span className="font-semibold text-indigo-600 tabular-nums">{variantsData.length}</span> product variants
-                    </p>
-                  </div>
+                <div className="flex items-center gap-2">
+                  <Layers className="h-5 w-5 text-indigo-600" />
+                  <h2 className="text-base font-semibold text-slate-800">Manage Variants</h2>
                 </div>
                 <Dialog open={isVariantDialogOpen} onOpenChange={setIsVariantDialogOpen}>
                   <Button 
@@ -1673,7 +1667,7 @@ export default function StockManagement() {
                 </Dialog>
               </div>
             </div>
-            <CardContent className="p-5">
+            <div className="p-5">
               {variantsLoading ? (
                 <div className="space-y-3">
                   {[1, 2, 3].map(i => (
@@ -1916,25 +1910,16 @@ export default function StockManagement() {
                 )}
                 </div>
               )}
-            </CardContent>
-          </Card>
-        </TabsContent>
+            </div>
+          </TabsContent>
 
-        {/* Colors Tab */}
-        <TabsContent value="colors" className="space-y-4">
-          <Card className="rounded-xl border border-slate-100 bg-white shadow-sm overflow-hidden">
-            <div className="p-4 border-b border-slate-100 bg-gradient-to-r from-purple-50/80 to-transparent">
+          {/* Colors Tab */}
+          <TabsContent value="colors" className="m-0">
+            <div className="p-4 border-b border-slate-50 bg-gradient-to-r from-purple-50/50 to-transparent">
               <div className="flex flex-row items-center justify-between gap-4 flex-wrap">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg shadow-sm">
-                    <Palette className="h-4 w-4 text-white" />
-                  </div>
-                  <div>
-                    <h2 className="text-base font-semibold text-slate-800">Colors & Inventory</h2>
-                    <p className="text-xs text-slate-500">
-                      <span className="font-semibold text-purple-600 tabular-nums">{colorsData.length}</span> color variants in stock
-                    </p>
-                  </div>
+                <div className="flex items-center gap-2">
+                  <Palette className="h-5 w-5 text-purple-600" />
+                  <h2 className="text-base font-semibold text-slate-800">Manage Colors & Inventory</h2>
                 </div>
                 <Dialog open={isColorDialogOpen} onOpenChange={setIsColorDialogOpen}>
                   <Button 
@@ -2034,7 +2019,7 @@ export default function StockManagement() {
                 </Dialog>
               </div>
             </div>
-            <CardContent className="p-5">
+            <div className="p-5">
               {colorsLoading ? (
                 <div className="space-y-3">
                   {[1, 2, 3].map(i => (
@@ -2272,9 +2257,9 @@ export default function StockManagement() {
                   )}
                 </div>
               )}
-            </CardContent>
-          </Card>
-        </TabsContent>
+            </div>
+          </TabsContent>
+        </Card>
       </Tabs>
 
       {/* Note: Stock In and Stock History are now available as separate pages via sidebar navigation */}
