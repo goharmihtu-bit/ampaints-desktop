@@ -728,7 +728,7 @@ export default function Audit() {
     if (!selectedDeviceId || !blockReason) {
       toast({
         title: "Missing Information",
-        description: "Please enter a reason for blocking.",
+        description: "Please enter a reason for pausing.",
         variant: "destructive",
       })
       return
@@ -749,16 +749,16 @@ export default function Audit() {
       if (!response.ok) {
         const data = await response.json()
         toast({
-          title: "Failed to Block",
-          description: data.error || "Could not block device",
+          title: "Action Failed",
+          description: data.error || "Could not pause license",
           variant: "destructive",
         })
         return
       }
       
       toast({
-        title: "Device Blocked",
-        description: "The device has been blocked successfully.",
+        title: "License Paused",
+        description: "The license has been paused. It can be reactivated anytime.",
       })
       
       setShowBlockDialog(false)
@@ -766,10 +766,10 @@ export default function Audit() {
       setSelectedDeviceId(null)
       refreshDevices()
     } catch (error) {
-      console.error("Error blocking device:", error)
+      console.error("Error pausing license:", error)
       toast({
         title: "Error",
-        description: "Failed to block device",
+        description: "Failed to pause license",
         variant: "destructive",
       })
     } finally {
@@ -792,24 +792,24 @@ export default function Audit() {
       if (!response.ok) {
         const data = await response.json()
         toast({
-          title: "Failed to Unblock",
-          description: data.error || "Could not unblock device",
+          title: "Activation Failed",
+          description: data.error || "Could not activate license",
           variant: "destructive",
         })
         return
       }
       
       toast({
-        title: "Device Unblocked",
-        description: "The device has been unblocked successfully.",
+        title: "License Activated",
+        description: "The license has been activated successfully.",
       })
       
       refreshDevices()
     } catch (error) {
-      console.error("Error unblocking device:", error)
+      console.error("Error activating license:", error)
       toast({
         title: "Error",
-        description: "Failed to unblock device",
+        description: "Failed to activate license",
         variant: "destructive",
       })
     } finally {
@@ -834,18 +834,18 @@ export default function Audit() {
       if (!response.ok) {
         const data = await response.json()
         toast({
-          title: "Failed to Set Auto-Block",
-          description: data.error || "Could not set auto-block date",
+          title: "Failed to Set Expiry",
+          description: data.error || "Could not set expiry date",
           variant: "destructive",
         })
         return
       }
       
       toast({
-        title: autoBlockDate ? "Auto-Block Date Set" : "Auto-Block Cleared",
+        title: autoBlockDate ? "Expiry Date Set" : "Expiry Date Cleared",
         description: autoBlockDate 
-          ? `Device will be blocked on ${autoBlockDate}` 
-          : "Auto-block date has been cleared",
+          ? `License will expire on ${autoBlockDate}` 
+          : "Expiry date has been removed",
       })
       
       setShowAutoBlockDialog(false)
@@ -853,10 +853,10 @@ export default function Audit() {
       setSelectedDeviceId(null)
       refreshDevices()
     } catch (error) {
-      console.error("Error setting auto-block date:", error)
+      console.error("Error setting expiry date:", error)
       toast({
         title: "Error",
-        description: "Failed to set auto-block date",
+        description: "Failed to set expiry date",
         variant: "destructive",
       })
     } finally {
@@ -2074,9 +2074,9 @@ export default function Audit() {
                                         <div className="flex items-center gap-2">
                                           <span className="font-medium truncate">{device.deviceName || device.deviceId}</span>
                                           {device.status === "blocked" ? (
-                                            <Badge variant="destructive" className="shrink-0">
+                                            <Badge variant="secondary" className="shrink-0 bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
                                               <Ban className="h-3 w-3 mr-1" />
-                                              Blocked
+                                              Paused
                                             </Badge>
                                           ) : (
                                             <Badge variant="secondary" className="shrink-0 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
@@ -2097,7 +2097,7 @@ export default function Audit() {
                                           {device.autoBlockDate && device.status !== "blocked" && (
                                             <p className="text-amber-600 dark:text-amber-400 flex items-center gap-1">
                                               <Calendar className="h-3 w-3" />
-                                              Auto-block on: {device.autoBlockDate}
+                                              Expires on: {device.autoBlockDate}
                                             </p>
                                           )}
                                         </div>
@@ -2106,13 +2106,13 @@ export default function Audit() {
                                         {device.status === "blocked" ? (
                                           <Button
                                             size="sm"
-                                            variant="outline"
+                                            variant="default"
                                             onClick={() => handleUnblockDevice(device.deviceId)}
                                             disabled={licenseLoading}
-                                            data-testid={`button-unblock-${device.deviceId}`}
+                                            data-testid={`button-activate-${device.deviceId}`}
                                           >
                                             <CheckCircle className="h-4 w-4 mr-1" />
-                                            Unblock
+                                            Activate
                                           </Button>
                                         ) : (
                                           <>
@@ -2128,20 +2128,21 @@ export default function Audit() {
                                               data-testid={`button-schedule-${device.deviceId}`}
                                             >
                                               <Calendar className="h-4 w-4 mr-1" />
-                                              {device.autoBlockDate ? "Edit" : "Schedule"}
+                                              {device.autoBlockDate ? "Edit" : "Set Expiry"}
                                             </Button>
                                             <Button
                                               size="sm"
-                                              variant="destructive"
+                                              variant="outline"
+                                              className="text-amber-600 border-amber-300 dark:text-amber-400 dark:border-amber-700"
                                               onClick={() => {
                                                 setSelectedDeviceId(device.deviceId)
                                                 setShowBlockDialog(true)
                                               }}
                                               disabled={licenseLoading}
-                                              data-testid={`button-block-${device.deviceId}`}
+                                              data-testid={`button-pause-${device.deviceId}`}
                                             >
                                               <Ban className="h-4 w-4 mr-1" />
-                                              Block
+                                              Pause
                                             </Button>
                                           </>
                                         )}
@@ -2161,24 +2162,33 @@ export default function Audit() {
                                   </h4>
                                 </div>
                                 <div className="divide-y max-h-64 overflow-auto">
-                                  {licenseAuditLog.slice(0, 10).map((log) => (
+                                  {licenseAuditLog.slice(0, 10).map((log) => {
+                                    const actionLabels: Record<string, string> = {
+                                      "block": "Paused",
+                                      "unblock": "Activated",
+                                      "set_auto_block": "Expiry Set",
+                                      "clear_auto_block": "Expiry Cleared"
+                                    }
+                                    const actionLabel = actionLabels[log.action] || log.action
+                                    const isPositiveAction = log.action === "unblock" || log.action === "clear_auto_block"
+                                    return (
                                     <div key={log.id} className="p-3 text-sm">
                                       <div className="flex items-center gap-2">
-                                        {log.action === "block" ? (
-                                          <Ban className="h-4 w-4 text-red-500" />
-                                        ) : (
+                                        {isPositiveAction ? (
                                           <CheckCircle className="h-4 w-4 text-green-500" />
+                                        ) : (
+                                          <Calendar className="h-4 w-4 text-amber-500" />
                                         )}
-                                        <span className="font-medium capitalize">{log.action}</span>
+                                        <span className="font-medium">{actionLabel}</span>
                                         <span className="text-muted-foreground">-</span>
                                         <span className="truncate">{log.deviceId}</span>
                                       </div>
                                       <div className="text-xs text-muted-foreground mt-1">
-                                        {log.reason && <p>Reason: {log.reason}</p>}
+                                        {log.reason && <p>Note: {log.reason}</p>}
                                         <p>{formatDateShort(new Date(log.createdAt))}</p>
                                       </div>
                                     </div>
-                                  ))}
+                                  )})}
                                 </div>
                               </div>
                             )}
@@ -2188,27 +2198,27 @@ export default function Audit() {
                     </Card>
                   </TabsContent>
 
-                  {/* Block Device Dialog */}
+                  {/* Pause License Dialog */}
                   <Dialog open={showBlockDialog} onOpenChange={setShowBlockDialog}>
                     <DialogContent>
                       <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
-                          <Ban className="h-5 w-5 text-red-500" />
-                          Block Device
+                          <Ban className="h-5 w-5 text-amber-500" />
+                          Pause License
                         </DialogTitle>
                         <DialogDescription>
-                          This will prevent the device from accessing the software until unblocked.
+                          This will temporarily pause the license until reactivated.
                         </DialogDescription>
                       </DialogHeader>
                       <div className="space-y-4 py-4">
                         <div className="space-y-2">
-                          <Label htmlFor="blockReason">Reason for blocking</Label>
+                          <Label htmlFor="blockReason">Reason for pausing</Label>
                           <Input
                             id="blockReason"
                             value={blockReason}
                             onChange={(e) => setBlockReason(e.target.value)}
-                            placeholder="e.g., Overdue billing, License expired"
-                            data-testid="input-block-reason"
+                            placeholder="e.g., Renewal pending, Subscription ended"
+                            data-testid="input-pause-reason"
                           />
                         </div>
                         <div className="flex justify-end gap-2">
@@ -2223,48 +2233,49 @@ export default function Audit() {
                             Cancel
                           </Button>
                           <Button
-                            variant="destructive"
+                            variant="default"
+                            className="bg-amber-500 hover:bg-amber-600"
                             onClick={handleBlockDevice}
                             disabled={licenseLoading || !blockReason}
-                            data-testid="button-confirm-block"
+                            data-testid="button-confirm-pause"
                           >
                             {licenseLoading ? (
                               <Loader2 className="h-4 w-4 animate-spin mr-2" />
                             ) : (
                               <Ban className="h-4 w-4 mr-2" />
                             )}
-                            Block Device
+                            Pause License
                           </Button>
                         </div>
                       </div>
                     </DialogContent>
                   </Dialog>
 
-                  {/* Auto-Block Date Dialog */}
+                  {/* License Expiry Dialog */}
                   <Dialog open={showAutoBlockDialog} onOpenChange={setShowAutoBlockDialog}>
                     <DialogContent>
                       <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
-                          <Calendar className="h-5 w-5 text-amber-500" />
-                          Schedule Auto-Block
+                          <Calendar className="h-5 w-5 text-primary" />
+                          Set License Expiry
                         </DialogTitle>
                         <DialogDescription>
-                          Set a date when this device will be automatically blocked.
+                          Set an expiry date for this license.
                         </DialogDescription>
                       </DialogHeader>
                       <div className="space-y-4 py-4">
                         <div className="space-y-2">
-                          <Label htmlFor="autoBlockDate">Auto-Block Date</Label>
+                          <Label htmlFor="autoBlockDate">Expiry Date</Label>
                           <Input
                             id="autoBlockDate"
                             type="date"
                             value={autoBlockDate}
                             onChange={(e) => setAutoBlockDate(e.target.value)}
                             min={new Date().toISOString().split('T')[0]}
-                            data-testid="input-auto-block-date"
+                            data-testid="input-expiry-date"
                           />
                           <p className="text-xs text-muted-foreground">
-                            The device will be blocked automatically on this date when it connects.
+                            The license will expire on this date and will need renewal.
                           </p>
                         </div>
                         <div className="flex justify-end gap-2">

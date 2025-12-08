@@ -1,4 +1,4 @@
-import { AlertTriangle, Lock, Phone, Mail } from "lucide-react"
+import { Clock, Phone, Smartphone } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 
@@ -10,24 +10,24 @@ interface LicenseBlockedScreenProps {
 
 export function LicenseBlockedScreen({ reason, deviceId, onRetry }: LicenseBlockedScreenProps) {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-red-50 via-orange-50 to-yellow-50 dark:from-red-950/20 dark:via-orange-950/20 dark:to-yellow-950/20 flex items-center justify-center p-4">
-      <Card className="max-w-lg w-full border-2 border-red-200 dark:border-red-800 shadow-2xl">
+    <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 dark:from-amber-950/20 dark:via-orange-950/20 dark:to-yellow-950/20 flex items-center justify-center p-4">
+      <Card className="max-w-lg w-full border-2 border-amber-200 dark:border-amber-800 shadow-2xl">
         <CardHeader className="text-center space-y-4 pb-2">
-          <div className="mx-auto w-20 h-20 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center">
-            <Lock className="h-10 w-10 text-red-600 dark:text-red-400" />
+          <div className="mx-auto w-20 h-20 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center">
+            <Clock className="h-10 w-10 text-amber-600 dark:text-amber-400" />
           </div>
-          <CardTitle className="text-2xl font-bold text-red-600 dark:text-red-400">
-            Software Access Blocked
+          <CardTitle className="text-2xl font-bold text-amber-600 dark:text-amber-400">
+            License Renewal Required
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-lg p-4">
+          <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
             <div className="flex items-start gap-3">
-              <AlertTriangle className="h-5 w-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+              <Clock className="h-5 w-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
               <div>
-                <p className="font-medium text-red-800 dark:text-red-200">Access Denied</p>
-                <p className="text-sm text-red-700 dark:text-red-300 mt-1">
-                  {reason || "Your software access has been temporarily suspended. Please contact the administrator."}
+                <p className="font-medium text-amber-800 dark:text-amber-200">Subscription Status</p>
+                <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">
+                  {reason || "Your subscription needs to be renewed. Please contact your service provider to continue using the software."}
                 </p>
               </div>
             </div>
@@ -35,7 +35,7 @@ export function LicenseBlockedScreen({ reason, deviceId, onRetry }: LicenseBlock
 
           <div className="space-y-3">
             <p className="text-sm text-slate-600 dark:text-slate-400 text-center">
-              If you believe this is an error, please contact your administrator with the following details:
+              To renew your subscription, please contact your provider with the following details:
             </p>
             
             <div className="bg-slate-100 dark:bg-slate-800 rounded-lg p-3">
@@ -46,24 +46,25 @@ export function LicenseBlockedScreen({ reason, deviceId, onRetry }: LicenseBlock
             </div>
           </div>
 
-          <div className="space-y-3 pt-2">
-            <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
-              <Phone className="h-4 w-4" />
-              <span>Contact your software provider</span>
-            </div>
-            <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
-              <Mail className="h-4 w-4" />
-              <span>Email support for assistance</span>
+          <div className="bg-gradient-to-r from-primary/5 to-primary/10 dark:from-primary/10 dark:to-primary/20 rounded-lg p-4 border border-primary/20">
+            <div className="text-center space-y-2">
+              <p className="text-sm font-medium text-foreground">RAYOUX INNOVATIONS PRIVATE LIMITED</p>
+              <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                <Phone className="h-4 w-4" />
+                <span>0300-1204190</span>
+              </div>
+              <p className="text-xs text-muted-foreground">CEO: AHSAN KAMRAN</p>
             </div>
           </div>
 
           <Button 
             onClick={onRetry} 
-            variant="outline" 
+            variant="default" 
             className="w-full"
             data-testid="button-retry-license"
           >
-            Check Again
+            <Smartphone className="h-4 w-4 mr-2" />
+            Check Subscription Status
           </Button>
         </CardContent>
       </Card>
