@@ -2464,19 +2464,18 @@ export class DatabaseStorage implements IStorage {
   // Dashboard Stats - FIXED: Return ExtendedSale[]
   async getDashboardStats() {
     const now = new Date()
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+    // Use UTC for consistent date comparison
+    const todayDateStr = now.toISOString().split('T')[0] // YYYY-MM-DD format
+    const monthStartStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
 
-    const todayStartTimestamp = Math.floor(todayStart.getTime() / 1000) * 1000
-    const monthStartTimestamp = Math.floor(monthStart.getTime() / 1000) * 1000
-
+    // Compare using SQLite date functions - createdAt stored as SECONDS (not milliseconds)
     const todaySalesData = await db
       .select({
         revenue: sql<number>`COALESCE(SUM(CAST(${sales.totalAmount} AS REAL)), 0)`,
         transactions: sql<number>`COUNT(*)`,
       })
       .from(sales)
-      .where(sql`${sales.createdAt} >= ${todayStartTimestamp}`)
+      .where(sql`DATE(${sales.createdAt}, 'unixepoch') = ${todayDateStr}`)
 
     const monthlySalesData = await db
       .select({
@@ -2484,7 +2483,7 @@ export class DatabaseStorage implements IStorage {
         transactions: sql<number>`COUNT(*)`,
       })
       .from(sales)
-      .where(sql`${sales.createdAt} >= ${monthStartTimestamp}`)
+      .where(sql`DATE(${sales.createdAt}, 'unixepoch') >= ${monthStartStr}`)
 
     const totalProducts = await db.select({ count: sql<number>`COUNT(*)` }).from(products)
     const totalVariants = await db.select({ count: sql<number>`COUNT(*)` }).from(variants)
@@ -2520,17 +2519,17 @@ export class DatabaseStorage implements IStorage {
 
     const thirtyDaysAgo = new Date(now)
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
-    const thirtyDaysAgoTimestamp = Math.floor(thirtyDaysAgo.getTime() / 1000) * 1000
+    const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split('T')[0]
 
     const dailySales = await db
       .select({
-        date: sql<string>`DATE(${sales.createdAt} / 1000, 'unixepoch')`,
+        date: sql<string>`DATE(${sales.createdAt}, 'unixepoch')`,
         revenue: sql<number>`COALESCE(SUM(CAST(${sales.totalAmount} AS REAL)), 0)`,
       })
       .from(sales)
-      .where(sql`${sales.createdAt} >= ${thirtyDaysAgoTimestamp}`)
-      .groupBy(sql`DATE(${sales.createdAt} / 1000, 'unixepoch')`)
-      .orderBy(sql`DATE(${sales.createdAt} / 1000, 'unixepoch')`)
+      .where(sql`DATE(${sales.createdAt}, 'unixepoch') >= ${thirtyDaysAgoStr}`)
+      .groupBy(sql`DATE(${sales.createdAt}, 'unixepoch')`)
+      .orderBy(sql`DATE(${sales.createdAt}, 'unixepoch')`)
 
     const topCustomersData = await db
       .select({
