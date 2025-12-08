@@ -133,6 +133,7 @@
     "appId": "com.ampaints.paintpulse",
     "productName": "PaintPulse",
     "copyright": "Copyright © 2025 AMPaints",
+    "publish": null,
     "directories": {
       "output": "release"
     },
