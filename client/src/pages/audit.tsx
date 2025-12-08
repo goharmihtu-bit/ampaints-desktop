@@ -397,6 +397,15 @@ export default function Audit() {
       
       if (response.ok) {
         setCloudConnectionStatus("success")
+        
+        // Save the URL to settings after successful connection
+        await authenticatedRequest("/api/cloud/save-settings", {
+          method: "POST",
+          body: JSON.stringify({ connectionUrl: cloudUrl, syncEnabled: true }),
+        })
+        
+        queryClient.invalidateQueries({ queryKey: ["/api/settings"] })
+        
         toast({
           title: "Connection Successful",
           description: response.message || "Connected to cloud database successfully.",
@@ -437,7 +446,7 @@ export default function Audit() {
         method: "POST",
       })
       
-      if (response.success) {
+      if (response.ok) {
         setLastExportCounts(response.counts || {})
         setLastSyncTime(new Date())
         if (!silent) {
@@ -484,7 +493,7 @@ export default function Audit() {
         method: "POST",
       })
       
-      if (response.success) {
+      if (response.ok) {
         setLastImportCounts(response.counts || {})
         setLastSyncTime(new Date())
         queryClient.invalidateQueries()
@@ -518,7 +527,7 @@ export default function Audit() {
         body: JSON.stringify({ enabled, interval: syncInterval }),
       })
       
-      if (response.success) {
+      if (response.ok) {
         setAutoSyncEnabled(enabled)
         toast({
           title: enabled ? "Auto-Sync Enabled" : "Auto-Sync Disabled",
