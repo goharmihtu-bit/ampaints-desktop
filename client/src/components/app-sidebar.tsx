@@ -57,6 +57,11 @@ const analyticsItems = [
     url: "/reports",
     icon: BarChart3,
   },
+  {
+    title: "Audit",
+    url: "/audit",
+    icon: ShieldCheck,
+  },
 ];
 
 const settingsItems = [
@@ -66,9 +71,9 @@ const settingsItems = [
     icon: TrendingUp,
   },
   {
-    title: "Admin",
-    url: "/admin",
-    icon: ShieldCheck,
+    title: "Settings",
+    url: "/settings",
+    icon: Settings,
   },
 ];
 
