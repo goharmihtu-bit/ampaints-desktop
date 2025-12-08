@@ -3,10 +3,6 @@
 import { useState, useMemo } from "react"
 import { useQuery, useMutation } from "@tanstack/react-query"
 import { queryClient, apiRequest } from "@/lib/queryClient"
-import { useDebounce } from "@/hooks/use-debounce"
-
-const VISIBLE_LIMIT_INITIAL = 50
-const VISIBLE_LIMIT_INCREMENT = 30
 import { useToast } from "@/hooks/use-toast"
 import { useDateFormat } from "@/hooks/use-date-format"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -15,7 +11,6 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Dialog,
   DialogContent,
@@ -32,29 +27,17 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import {
   Search,
   RotateCcw,
-  FileText,
   Package,
   Minus,
   Plus,
   Loader2,
-  Eye,
-  Download,
-  Phone,
-  DollarSign,
-  AlertTriangle,
   CheckCircle,
   Ban,
   Info,
+  Download,
 } from "lucide-react"
 import jsPDF from "jspdf"
 import type { SaleWithItems, ReturnWithItems, ColorWithVariantAndProduct, SaleItem } from "@shared/schema"
-
-interface ReturnStats {
-  totalReturns: number
-  totalRefunded: number
-  itemReturns: number
-  billReturns: number
-}
 
 interface QuickReturnForm {
   customerName: string
@@ -66,7 +49,7 @@ interface QuickReturnForm {
   restoreStock: boolean
 }
 
-interface SaleItemWithReturn extends SaleItem {
+interface SaleItemWithReturn extends Omit<SaleItem, 'quantityReturned'> {
   quantityReturned?: number
   color: ColorWithVariantAndProduct
 }
@@ -78,12 +61,7 @@ interface SaleWithItemsAndReturns extends Omit<SaleWithItems, "saleItems"> {
 export default function Returns() {
   const { toast } = useToast()
   const { formatDate, formatDateShort } = useDateFormat()
-  const [activeTab, setActiveTab] = useState("bill")
   const [searchPhone, setSearchPhone] = useState("")
-  const [searchQuery, setSearchQuery] = useState("")
-  const [visibleLimit, setVisibleLimit] = useState(VISIBLE_LIMIT_INITIAL)
-  
-  const debouncedSearchQuery = useDebounce(searchQuery, 300)
   const [selectedSale, setSelectedSale] = useState<SaleWithItemsAndReturns | null>(null)
   const [selectedReturn, setSelectedReturn] = useState<ReturnWithItems | null>(null)
   const [showReturnDialog, setShowReturnDialog] = useState(false)
@@ -120,28 +98,6 @@ export default function Returns() {
   const { data: colors = [], isLoading: colorsLoading } = useQuery<ColorWithVariantAndProduct[]>({
     queryKey: ["/api/colors"],
   })
-
-  const filteredReturns = useMemo(() => {
-    return returns.filter(
-      (ret) =>
-        ret.customerName.toLowerCase().includes(debouncedSearchQuery.toLowerCase()) ||
-        ret.customerPhone.includes(debouncedSearchQuery) ||
-        ret.id.toLowerCase().includes(debouncedSearchQuery),
-    )
-  }, [returns, debouncedSearchQuery])
-  
-  const visibleReturns = useMemo(() => {
-    return filteredReturns.slice(0, visibleLimit)
-  }, [filteredReturns, visibleLimit])
-
-  const stats: ReturnStats = useMemo(() => {
-    return {
-      totalReturns: returns.length,
-      totalRefunded: returns.reduce((sum, ret) => sum + Number.parseFloat(ret.totalRefund || "0"), 0),
-      itemReturns: returns.filter((ret) => ret.returnType === "item").length,
-      billReturns: returns.filter((ret) => ret.returnType === "full_bill").length,
-    }
-  }, [returns])
 
   const searchResults = useMemo(() => {
     if (!searchPhone.trim()) return []
@@ -545,19 +501,7 @@ export default function Returns() {
         <p className="text-muted-foreground">Process bill returns and quick item returns with stock restoration</p>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="glass-tabs-list grid w-full max-w-md grid-cols-2">
-          <TabsTrigger value="bill" className="glass-tab" data-testid="tab-bill-returns">
-            <FileText className="w-4 h-4 mr-2" />
-            Bill Returns
-          </TabsTrigger>
-          <TabsTrigger value="history" className="glass-tab" data-testid="tab-history">
-            <AlertTriangle className="w-4 h-4 mr-2" />
-            History
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="bill" className="space-y-4 mt-4">
+      <div className="space-y-4">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Search Bill Section */}
             <Card>
@@ -675,180 +619,7 @@ export default function Returns() {
               </CardContent>
             </Card>
           </div>
-        </TabsContent>
-
-        <TabsContent value="history" className="space-y-4 mt-4">
-          {/* Stats Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <Card>
-              <CardContent className="pt-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-blue-100">
-                    <RotateCcw className="h-5 w-5 text-blue-600" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Total Returns</p>
-                    <p className="text-2xl font-bold">{stats.totalReturns}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="pt-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-red-100">
-                    <DollarSign className="h-5 w-5 text-red-600" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Total Refunded</p>
-                    <p className="text-2xl font-bold">Rs.{Math.round(stats.totalRefunded).toLocaleString()}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="pt-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-orange-100">
-                    <Package className="h-5 w-5 text-orange-600" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Item Returns</p>
-                    <p className="text-2xl font-bold">{stats.itemReturns}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="pt-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-purple-100">
-                    <AlertTriangle className="h-5 w-5 text-purple-600" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Bill Returns</p>
-                    <p className="text-2xl font-bold">{stats.billReturns}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Search & Filter */}
-          <div className="flex gap-4">
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search by customer name, phone, or return ID..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => refetchReturns()}
-              disabled={returnsLoading}
-              title="Refresh returns data"
-            >
-              <RotateCcw className={`h-4 w-4 ${returnsLoading ? "animate-spin" : ""}`} />
-            </Button>
-          </div>
-
-          {/* Returns Table */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Return History</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Return ID</TableHead>
-                    <TableHead>Customer</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead className="text-right">Refund Amount</TableHead>
-                    <TableHead>Items</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredReturns.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
-                        No returns found
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    visibleReturns.map((ret) => (
-                      <TableRow key={ret.id}>
-                        <TableCell>{formatDateShort(ret.createdAt)}</TableCell>
-                        <TableCell className="font-mono font-semibold">#{ret.id.slice(0, 8).toUpperCase()}</TableCell>
-                        <TableCell>
-                          <div className="space-y-1">
-                            <p className="font-medium">{ret.customerName}</p>
-                            <p className="text-xs text-muted-foreground flex items-center gap-1">
-                              <Phone className="h-3 w-3" />
-                              {ret.customerPhone}
-                            </p>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={ret.returnType === "full_bill" ? "destructive" : "secondary"}
-                            className="capitalize"
-                          >
-                            {ret.returnType === "full_bill" ? "Full Bill" : "Item"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right font-semibold text-red-600">
-                          Rs.{Math.round(Number.parseFloat(ret.totalRefund || "0")).toLocaleString()}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{ret.returnItems.length} items</Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={ret.status === "completed" ? "default" : "secondary"} className="capitalize">
-                            {ret.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="space-x-2">
-                          <Button variant="outline" size="sm" onClick={() => handleViewDetails(ret)}>
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                          <Button variant="outline" size="sm" onClick={() => downloadReturnPDF(ret)}>
-                            <Download className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-              
-              {/* Load More Button */}
-              {filteredReturns.length > visibleLimit && (
-                <div className="flex justify-center pt-4">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setVisibleLimit(prev => prev + VISIBLE_LIMIT_INCREMENT)}
-                    data-testid="button-load-more-returns"
-                  >
-                    Load More ({filteredReturns.length - visibleLimit} remaining)
-                  </Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+      </div>
 
       {/* Process Return Dialog */}
       <Dialog open={showReturnDialog} onOpenChange={setShowReturnDialog}>
