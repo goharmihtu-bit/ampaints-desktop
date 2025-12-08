@@ -1918,7 +1918,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Apply sanitization to all data
-      const rawSales = purchaseHistory?.adjustedSales || []
+      // FIXED: Use originalSales instead of adjustedSales to prevent double-counting returns
+      // Returns are shown as separate transactions, so we don't want adjusted amounts in bill rows
+      const rawSales = purchaseHistory?.originalSales || []
       const sanitizedSales = rawSales.map(sanitizeSale).filter(Boolean)
       
       const rawPayments = paymentHistory || []
