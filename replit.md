@@ -62,14 +62,17 @@ None specified yet.
   - **License Status Check**: App checks license status on startup and periodically
   - **Blocked Screen**: Shows clear message when device is blocked with reason and contact info
   - **API Endpoints**: 
-    - `POST /api/license/check` - Check/register device license status
+    - `POST /api/license/check` - Check/register device license status (also applies scheduled auto-blocks)
     - `POST /api/license/devices` - Get all registered devices (requires master PIN in body)
     - `POST /api/license/block` - Block a device (requires master PIN in body)
     - `POST /api/license/unblock` - Unblock a device (requires master PIN in body)
     - `POST /api/license/audit` - Get license audit log (requires master PIN in body)
-  - **Admin UI**: Accessible via Audit page > Settings tab > Licenses sub-tab. Features master PIN verification, device list with status badges, block/unblock controls with reason input, and action history log.
-  - **Audit Trail**: All block/unblock actions logged with timestamps and reasons
-  - **Use Case**: Block devices with overdue billing until payment is received
+    - `POST /api/license/set-auto-block` - Schedule auto-block date for a device (requires master PIN in body)
+  - **Scheduled Auto-Block**: Set future date for automatic device blocking. When device connects on or after scheduled date, it is automatically blocked with "Auto-blocked: License expired" reason. UI shows amber "Auto-block on: YYYY-MM-DD" indicator and Schedule/Edit button for each active device.
+  - **Admin UI**: Accessible via Audit page > Settings tab > Licenses sub-tab. Features master PIN verification, device list with status badges, block/unblock controls with reason input, auto-block date scheduling, and action history log.
+  - **Audit Trail**: All block/unblock/set_auto_block/clear_auto_block actions logged with timestamps and reasons
+  - **Use Case**: Block devices with overdue billing until payment is received, or schedule future blocking for contract expirations
+  - **About Section**: Displays company information (RAYOUX INNOVATIONS PRIVATE LIMITED, CEO AHSAN KAMRAN, 0300-1204190) in System tab with branded styling
 - **Desktop Application**: Features include a maximized (not fullscreen) windowed desktop mode with saved size and position, and solutions for Windows SmartScreen warnings.
 
 ### System Design Choices
