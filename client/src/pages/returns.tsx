@@ -598,26 +598,6 @@ export default function Returns() {
               </CardContent>
             </Card>
 
-            {/* Quick Return Section */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Quick Item Return</CardTitle>
-                <CardDescription>Return individual items without searching for a specific bill</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <Button onClick={() => setShowQuickReturnDialog(true)} className="w-full" size="lg">
-                  <RotateCcw className="w-4 h-4 mr-2" />
-                  Open Quick Return Form
-                </Button>
-
-                <div className="text-sm text-muted-foreground space-y-2">
-                  <p>• Return individual items without bill reference</p>
-                  <p>• Automatic stock restoration</p>
-                  <p>• Customer refund processing</p>
-                  <p>• Complete return history tracking</p>
-                </div>
-              </CardContent>
-            </Card>
           </div>
       </div>
 
