@@ -185,6 +185,25 @@ export default function BillPrint() {
     return cleaned;
   };
 
+  // Calculate balance with returns - FIXED VERSION
+  const calculateBalance = () => {
+    if (!sale) return { total: 0, paid: 0, returns: 0, balance: 0 };
+    
+    const total = parseFloat(sale.totalAmount) || 0;
+    const paid = parseFloat(sale.amountPaid) || 0;
+    const returns = totalSaleReturns || 0;
+    
+    // Correct calculation: Balance = Total - Paid - Returns
+    const balance = Math.max(0, total - paid - returns);
+    
+    return {
+      total: Math.round(total),
+      paid: Math.round(paid),
+      returns: Math.round(returns),
+      balance: Math.round(balance)
+    };
+  };
+
   // Download Bill as PDF - Professional Design WITH RETURNS
   const downloadBillPDF = () => {
     if (!sale) return;
@@ -309,29 +328,31 @@ export default function BillPrint() {
     pdf.setFontSize(10);
     pdf.setFont('helvetica', 'normal');
     
-    // Subtotal
-    pdf.text('Subtotal:', summaryX, yPos);
-    pdf.text(`Rs. ${Math.round(parseFloat(sale.totalAmount)).toLocaleString()}`, valueX, yPos, { align: 'right' });
+    // Get calculated values
+    const { total, paid, returns, balance } = calculateBalance();
+    
+    // Subtotal (Total Amount)
+    pdf.text('Total:', summaryX, yPos);
+    pdf.text(`Rs. ${total.toLocaleString()}`, valueX, yPos, { align: 'right' });
+    yPos += 7;
+
+    // Amount Paid
+    pdf.setTextColor(34, 139, 34); // Green color for paid
+    pdf.text('Paid:', summaryX, yPos);
+    pdf.text(`Rs. ${paid.toLocaleString()}`, valueX, yPos, { align: 'right' });
     yPos += 7;
 
     // Total Returns (if any)
-    if (totalSaleReturns > 0) {
+    if (returns > 0) {
       pdf.setTextColor(255, 140, 0); // Orange color for returns
       pdf.text('Returns:', summaryX, yPos);
-      pdf.text(`- Rs. ${Math.round(totalSaleReturns).toLocaleString()}`, valueX, yPos, { align: 'right' });
+      pdf.text(`- Rs. ${returns.toLocaleString()}`, valueX, yPos, { align: 'right' });
       yPos += 7;
-      pdf.setTextColor(0, 0, 0);
     }
 
-    // Amount Paid
-    pdf.setTextColor(34, 139, 34);
-    pdf.text('Amount Paid:', summaryX, yPos);
-    pdf.text(`Rs. ${Math.round(parseFloat(sale.amountPaid)).toLocaleString()}`, valueX, yPos, { align: 'right' });
-    yPos += 7;
+    pdf.setTextColor(0, 0, 0);
 
-    // Calculate outstanding with returns deducted
-    const outstanding = Math.max(0, parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid) - totalSaleReturns);
-
+    // Calculate balance due
     pdf.setFillColor(102, 126, 234);
     pdf.roundedRect(summaryX - 5, yPos - 4, pageWidth - summaryX + 5 - margin + 5, 12, 2, 2, 'F');
 
@@ -339,18 +360,24 @@ export default function BillPrint() {
     pdf.setFontSize(12);
     pdf.setFont('helvetica', 'bold');
     
-    if (outstanding > 0) {
+    if (balance > 0) {
       pdf.text('BALANCE DUE:', summaryX, yPos + 4);
-      pdf.text(`Rs. ${Math.round(outstanding).toLocaleString()}`, valueX, yPos + 4, { align: 'right' });
-      if (totalSaleReturns > 0) {
+      pdf.text(`Rs. ${balance.toLocaleString()}`, valueX, yPos + 4, { align: 'right' });
+      if (returns > 0) {
         pdf.setFontSize(7);
         pdf.setFont('helvetica', 'normal');
         pdf.setTextColor(255, 255, 255, 0.8);
-        pdf.text(`(Returns: Rs. ${Math.round(totalSaleReturns).toLocaleString()} deducted)`, summaryX, yPos + 9);
+        pdf.text(`(Returns: Rs. ${returns.toLocaleString()} deducted)`, summaryX, yPos + 9);
       }
     } else {
       pdf.text('STATUS:', summaryX, yPos + 4);
       pdf.text('PAID IN FULL', valueX, yPos + 4, { align: 'right' });
+      if (returns > 0) {
+        pdf.setFontSize(7);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(255, 255, 255, 0.8);
+        pdf.text(`(Returns: Rs. ${returns.toLocaleString()} adjusted)`, summaryX, yPos + 9);
+      }
     }
 
     yPos += 25;
@@ -496,29 +523,31 @@ export default function BillPrint() {
     pdf.setFontSize(10);
     pdf.setFont('helvetica', 'normal');
     
-    // Subtotal
-    pdf.text('Subtotal:', summaryX, yPos);
-    pdf.text(`Rs. ${Math.round(parseFloat(sale.totalAmount)).toLocaleString()}`, valueX, yPos, { align: 'right' });
+    // Get calculated values
+    const { total, paid, returns, balance } = calculateBalance();
+    
+    // Subtotal (Total Amount)
+    pdf.text('Total:', summaryX, yPos);
+    pdf.text(`Rs. ${total.toLocaleString()}`, valueX, yPos, { align: 'right' });
+    yPos += 7;
+
+    // Amount Paid
+    pdf.setTextColor(34, 139, 34); // Green color for paid
+    pdf.text('Paid:', summaryX, yPos);
+    pdf.text(`Rs. ${paid.toLocaleString()}`, valueX, yPos, { align: 'right' });
     yPos += 7;
 
     // Total Returns (if any)
-    if (totalSaleReturns > 0) {
+    if (returns > 0) {
       pdf.setTextColor(255, 140, 0); // Orange color for returns
       pdf.text('Returns:', summaryX, yPos);
-      pdf.text(`- Rs. ${Math.round(totalSaleReturns).toLocaleString()}`, valueX, yPos, { align: 'right' });
+      pdf.text(`- Rs. ${returns.toLocaleString()}`, valueX, yPos, { align: 'right' });
       yPos += 7;
-      pdf.setTextColor(0, 0, 0);
     }
 
-    // Amount Paid
-    pdf.setTextColor(34, 139, 34);
-    pdf.text('Amount Paid:', summaryX, yPos);
-    pdf.text(`Rs. ${Math.round(parseFloat(sale.amountPaid)).toLocaleString()}`, valueX, yPos, { align: 'right' });
-    yPos += 7;
+    pdf.setTextColor(0, 0, 0);
 
-    // Calculate outstanding with returns deducted
-    const outstanding = Math.max(0, parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid) - totalSaleReturns);
-
+    // Calculate balance due
     pdf.setFillColor(102, 126, 234);
     pdf.roundedRect(summaryX - 5, yPos - 4, pageWidth - summaryX + 5 - margin + 5, 12, 2, 2, 'F');
 
@@ -526,18 +555,24 @@ export default function BillPrint() {
     pdf.setFontSize(12);
     pdf.setFont('helvetica', 'bold');
     
-    if (outstanding > 0) {
+    if (balance > 0) {
       pdf.text('BALANCE DUE:', summaryX, yPos + 4);
-      pdf.text(`Rs. ${Math.round(outstanding).toLocaleString()}`, valueX, yPos + 4, { align: 'right' });
-      if (totalSaleReturns > 0) {
+      pdf.text(`Rs. ${balance.toLocaleString()}`, valueX, yPos + 4, { align: 'right' });
+      if (returns > 0) {
         pdf.setFontSize(7);
         pdf.setFont('helvetica', 'normal');
         pdf.setTextColor(255, 255, 255, 0.8);
-        pdf.text(`(Returns: Rs. ${Math.round(totalSaleReturns).toLocaleString()} deducted)`, summaryX, yPos + 9);
+        pdf.text(`(Returns: Rs. ${returns.toLocaleString()} deducted)`, summaryX, yPos + 9);
       }
     } else {
       pdf.text('STATUS:', summaryX, yPos + 4);
       pdf.text('PAID IN FULL', valueX, yPos + 4, { align: 'right' });
+      if (returns > 0) {
+        pdf.setFontSize(7);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(255, 255, 255, 0.8);
+        pdf.text(`(Returns: Rs. ${returns.toLocaleString()} adjusted)`, summaryX, yPos + 9);
+      }
     }
 
     yPos += 25;
@@ -621,19 +656,19 @@ export default function BillPrint() {
     }
 
     // Fallback: Text message with WhatsApp link
-    const outstanding = Math.max(0, parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid) - totalSaleReturns);
+    const { total, paid, returns, balance } = calculateBalance();
     const itemsList = sale.saleItems.map(item => 
       `${item.color.variant.product.productName} x${item.quantity} Rs.${Math.round(parseFloat(item.subtotal))}`
     ).join('\n');
 
-    let message = `*${receiptSettings.businessName}*\n*Bill #${sale.id.slice(0, 8).toUpperCase()}*\n\n${sale.customerName}\n\n*Items:*\n${itemsList}\n\n*Total:* Rs.${Math.round(parseFloat(sale.totalAmount)).toLocaleString()}\n`;
+    let message = `*${receiptSettings.businessName}*\n*Bill #${sale.id.slice(0, 8).toUpperCase()}*\n\n${sale.customerName}\n\n*Items:*\n${itemsList}\n\n*Total:* Rs.${total.toLocaleString()}\n`;
+    message += `*Paid:* Rs.${paid.toLocaleString()}\n`;
     
-    if (totalSaleReturns > 0) {
-      message += `*Returns:* Rs.${Math.round(totalSaleReturns).toLocaleString()}\n`;
+    if (returns > 0) {
+      message += `*Returns:* Rs.${returns.toLocaleString()}\n`;
     }
     
-    message += `*Paid:* Rs.${Math.round(parseFloat(sale.amountPaid)).toLocaleString()}\n`;
-    message += outstanding > 0 ? `*Due:* Rs.${Math.round(outstanding).toLocaleString()}` : '*Status: PAID*';
+    message += balance > 0 ? `*Balance:* Rs.${balance.toLocaleString()}` : '*Status: PAID*';
     message += `\n\n${receiptSettings.thankYou}`;
 
     const encodedMessage = encodeURIComponent(message);
@@ -846,9 +881,9 @@ export default function BillPrint() {
   if (isLoading) return <div className="p-6"><Skeleton className="h-96 w-full max-w-2xl mx-auto" /></div>;
   if (!sale) return <div className="p-6 text-center text-muted-foreground">Bill not found</div>;
 
-  // Calculate outstanding with returns deducted
-  const outstanding = Math.max(0, parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid) - totalSaleReturns);
-  const isPaid = outstanding <= 0;
+  // Calculate values using the helper function
+  const { total, paid, returns, balance } = calculateBalance();
+  const isPaid = balance <= 0;
   const originalOutstanding = parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid);
 
   // Helper: One Line Product Name
@@ -1010,26 +1045,15 @@ export default function BillPrint() {
             </div>
 
             <div className="border-t pt-4 space-y-2 text-lg">
+              {/* Total */}
               <div className="flex justify-between font-bold">
-                <span>Total : </span>
-                <span>{Math.round(parseFloat(sale.totalAmount))}</span>
+                <span>Total:</span>
+                <span>Rs. {total}</span>
               </div>
               
-              {/* Returns Section */}
-              {totalSaleReturns > 0 && (
-                <div className="flex justify-between text-amber-600">
-                  <span className="flex items-center gap-2">
-                    Returns
-                    <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-700 text-xs">
-                      -{Math.round(totalSaleReturns)}
-                    </Badge>
-                  </span>
-                  <span>- {Math.round(totalSaleReturns)}</span>
-                </div>
-              )}
-              
-              <div className="flex justify-between items-center">
-                <span>Paid : </span>
+              {/* Paid */}
+              <div className="flex justify-between items-center text-green-600">
+                <span>Paid:</span>
                 {editMode ? (
                   <Input
                     type="number"
@@ -1041,32 +1065,51 @@ export default function BillPrint() {
                     data-testid="input-edit-paid-amount"
                   />
                 ) : (
-                  <span>{Math.round(parseFloat(sale.amountPaid))}</span>
+                  <span>Rs. {paid}</span>
                 )}
               </div>
               
-              {!isPaid && (
-                <div className="flex justify-between text-red-600 font-bold">
-                  <span>Balance : </span>
-                  <span>{Math.round(outstanding)}</span>
+              {/* Returns (if any) */}
+              {returns > 0 && (
+                <div className="flex justify-between text-amber-600">
+                  <span className="flex items-center gap-2">
+                    Returns
+                    <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-700 text-xs">
+                      -{returns}
+                    </Badge>
+                  </span>
+                  <span>- Rs. {returns}</span>
                 </div>
               )}
               
-              {/* Original Outstanding (if returns exist) */}
-              {totalSaleReturns > 0 && originalOutstanding > 0 && (
-                <div className="flex justify-between text-slate-500 text-sm mt-2 pt-2 border-t border-slate-200">
-                  <span>Original Balance (before returns):</span>
-                  <span>Rs. {Math.round(originalOutstanding)}</span>
-                </div>
-              )}
+              {/* Balance */}
+              <div className="flex justify-between text-red-600 font-bold border-t pt-2 mt-2">
+                <span>Balance:</span>
+                <span>Rs. {balance}</span>
+              </div>
               
-              <div className="flex justify-between">
-                <span>Status : </span>
+              {/* Status */}
+              <div className="flex justify-between mt-4 pt-4 border-t">
+                <span>Status:</span>
                 <Badge variant={isPaid ? "default" : "secondary"}>
                   {isPaid ? "PAID" : "PENDING"}
-                  {totalSaleReturns > 0 && ` (Rs. ${Math.round(totalSaleReturns)} returns)`}
+                  {returns > 0 && ` (Rs. ${returns} returns)`}
                 </Badge>
               </div>
+              
+              {/* Calculation Breakdown (for debugging) */}
+              {returns > 0 && (
+                <div className="mt-4 p-3 bg-gray-50 rounded-md text-sm">
+                  <p className="font-medium text-gray-700 mb-1">Calculation Breakdown:</p>
+                  <div className="grid grid-cols-2 gap-1 text-gray-600">
+                    <span>Total:</span><span>Rs. {total}</span>
+                    <span>Paid:</span><span>Rs. {paid}</span>
+                    <span>Returns:</span><span>- Rs. {returns}</span>
+                    <span className="font-bold">Balance:</span>
+                    <span className="font-bold">Rs. {balance} (Total {total} - Paid {paid} - Returns {returns})</span>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="text-center border-t pt-4">
