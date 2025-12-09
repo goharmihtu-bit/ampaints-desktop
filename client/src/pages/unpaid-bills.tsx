@@ -108,8 +108,9 @@ export default function UnpaidBills() {
   const debouncedSearch = useDebounce(searchQuery, 300)
   const [visibleLimit, setVisibleLimit] = useState(VISIBLE_LIMIT_INITIAL)
   const [sortBy, setSortBy] = useState<"oldest" | "newest" | "highest" | "lowest">("highest")
-  const [showAllBills, setShowAllBills] = useState(false)
-  const [paymentFilter, setPaymentFilter] = useState<"all" | "paid" | "unpaid">("unpaid")
+  // Default: Show all bills and all payment statuses
+  const [showAllBills, setShowAllBills] = useState(true)
+  const [paymentFilter, setPaymentFilter] = useState<"all" | "paid" | "unpaid">("all")
 
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false)
   const [selectedCustomer, setSelectedCustomer] = useState<ConsolidatedCustomer | null>(null)
@@ -268,8 +269,10 @@ export default function UnpaidBills() {
 
     // Filter by payment status
     if (!showAllBills) {
+      // When "Show all bills" is OFF, only show unpaid
       filtered = filtered.filter(c => c.totalOutstanding > 0)
     } else if (paymentFilter !== "all") {
+      // When "Show all bills" is ON, apply payment filter
       if (paymentFilter === "paid") {
         filtered = filtered.filter(c => c.totalOutstanding <= 0)
       } else if (paymentFilter === "unpaid") {
@@ -526,18 +529,17 @@ export default function UnpaidBills() {
           />
         </div>
         
-        {showAllBills && (
-          <Select value={paymentFilter} onValueChange={(v: "all" | "paid" | "unpaid") => setPaymentFilter(v)}>
-            <SelectTrigger className="w-full sm:w-48" data-testid="select-payment-filter">
-              <SelectValue placeholder="Filter by payment" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Bills</SelectItem>
-              <SelectItem value="paid">Paid Only</SelectItem>
-              <SelectItem value="unpaid">Unpaid Only</SelectItem>
-            </SelectContent>
-          </Select>
-        )}
+        {/* Always show payment filter, default to "all" */}
+        <Select value={paymentFilter} onValueChange={(v: "all" | "paid" | "unpaid") => setPaymentFilter(v)}>
+          <SelectTrigger className="w-full sm:w-48" data-testid="select-payment-filter">
+            <SelectValue placeholder="Filter by payment" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Bills</SelectItem>
+            <SelectItem value="paid">Paid Only</SelectItem>
+            <SelectItem value="unpaid">Unpaid Only</SelectItem>
+          </SelectContent>
+        </Select>
 
         <Select value={sortBy} onValueChange={(v: any) => setSortBy(v)}>
           <SelectTrigger className="w-full sm:w-48" data-testid="select-sort">
@@ -634,6 +636,11 @@ export default function UnpaidBills() {
                         {customer.isFullyPaid && (
                           <Badge variant="outline" className="text-xs text-emerald-600 border-emerald-200">
                             Paid
+                          </Badge>
+                        )}
+                        {customer.paymentStatus === 'partial' && customer.totalOutstanding > 0 && (
+                          <Badge variant="outline" className="text-xs text-amber-600 border-amber-200">
+                            Partial
                           </Badge>
                         )}
                       </div>

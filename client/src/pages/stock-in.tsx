@@ -60,7 +60,7 @@ export default function StockIn() {
         stockInDate: data.stockInDate,
       });
     },
-    onSuccess: (response) => {
+    onSuccess: (response, variables) => { // FIXED: Added variables parameter
       queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
       queryClient.invalidateQueries({ queryKey: ["/api/stock-in/history"] });
       setIsDialogOpen(false);
@@ -73,7 +73,7 @@ export default function StockIn() {
       });
       toast({
         title: "Stock Added Successfully",
-        description: response.message || `${data.quantity} units added to stock`,
+        description: response.message || `${variables.quantity} units added to stock`, // FIXED: Use variables instead of data
       });
     },
     onError: (error: any) => {
