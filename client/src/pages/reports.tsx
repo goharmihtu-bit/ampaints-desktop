@@ -88,12 +88,7 @@ export default function Reports() {
   
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
 
-  // Initialize with today's date
-  useEffect(() => {
-    const today = new Date().toISOString().split('T')[0];
-    setDateFrom(today);
-    setDateTo(today);
-  }, []);
+  // No default date filter - show all data by default
 
   const { data: allSalesRaw = [], isLoading: salesLoading } = useQuery<Sale[]>({
     queryKey: ["/api/sales"],
@@ -837,54 +832,59 @@ export default function Reports() {
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-          <TabsList className="grid w-full grid-cols-6 h-auto p-1 bg-slate-100 dark:bg-zinc-800 rounded-xl">
+          <TabsList className="grid w-full grid-cols-6 h-auto p-1.5 bg-slate-100 dark:bg-zinc-800 rounded-xl">
             <TabsTrigger 
               value="overview" 
               data-testid="tab-overview"
-              className="rounded-lg py-2 text-xs font-medium data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-900 data-[state=active]:shadow-sm"
+              className="rounded-lg py-2.5 text-xs font-medium data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-900 data-[state=active]:shadow-sm"
             >
-              <PieChart className="h-3.5 w-3.5 mr-1.5" />
+              <PieChart className="h-4 w-4 mr-1.5" />
               Overview
             </TabsTrigger>
             <TabsTrigger 
               value="transactions" 
               data-testid="tab-transactions"
-              className="rounded-lg py-2 text-xs font-medium data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-900 data-[state=active]:shadow-sm"
+              className="rounded-lg py-2.5 text-xs font-medium data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-900 data-[state=active]:shadow-sm"
             >
-              <Activity className="h-3.5 w-3.5 mr-1.5" />
+              <Activity className="h-4 w-4 mr-1.5" />
               All
+              <Badge variant="secondary" className="ml-1.5 h-5 text-[10px] px-1.5 bg-slate-200 dark:bg-zinc-700">{unifiedTransactions.length}</Badge>
             </TabsTrigger>
             <TabsTrigger 
               value="all-sales" 
               data-testid="tab-all-sales"
-              className="rounded-lg py-2 text-xs font-medium data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-900 data-[state=active]:shadow-sm"
+              className="rounded-lg py-2.5 text-xs font-medium data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-900 data-[state=active]:shadow-sm"
             >
-              <Receipt className="h-3.5 w-3.5 mr-1.5" />
+              <Receipt className="h-4 w-4 mr-1.5" />
               Bills
+              <Badge variant="secondary" className="ml-1.5 h-5 text-[10px] px-1.5 bg-slate-200 dark:bg-zinc-700">{filteredSales.length}</Badge>
             </TabsTrigger>
             <TabsTrigger 
               value="recovery-payments" 
               data-testid="tab-recovery-payments"
-              className="rounded-lg py-2 text-xs font-medium data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-900 data-[state=active]:shadow-sm"
+              className="rounded-lg py-2.5 text-xs font-medium data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-900 data-[state=active]:shadow-sm"
             >
-              <Wallet className="h-3.5 w-3.5 mr-1.5" />
+              <Wallet className="h-4 w-4 mr-1.5" />
               Payments
+              <Badge variant="secondary" className="ml-1.5 h-5 text-[10px] px-1.5 bg-slate-200 dark:bg-zinc-700">{filteredPayments.length}</Badge>
             </TabsTrigger>
             <TabsTrigger 
               value="returns" 
               data-testid="tab-returns"
-              className="rounded-lg py-2 text-xs font-medium data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-900 data-[state=active]:shadow-sm"
+              className="rounded-lg py-2.5 text-xs font-medium data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-900 data-[state=active]:shadow-sm"
             >
-              <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
+              <RotateCcw className="h-4 w-4 mr-1.5" />
               Returns
+              <Badge variant="secondary" className="ml-1.5 h-5 text-[10px] px-1.5 bg-slate-200 dark:bg-zinc-700">{filteredReturns.length}</Badge>
             </TabsTrigger>
             <TabsTrigger 
               value="unpaid-bills" 
               data-testid="tab-unpaid-bills"
-              className="rounded-lg py-2 text-xs font-medium data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-900 data-[state=active]:shadow-sm"
+              className="rounded-lg py-2.5 text-xs font-medium data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-900 data-[state=active]:shadow-sm"
             >
-              <CreditCard className="h-3.5 w-3.5 mr-1.5" />
+              <CreditCard className="h-4 w-4 mr-1.5" />
               Unpaid
+              <Badge variant="secondary" className="ml-1.5 h-5 text-[10px] px-1.5 bg-slate-200 dark:bg-zinc-700">{unpaidSales.length}</Badge>
             </TabsTrigger>
           </TabsList>
 
