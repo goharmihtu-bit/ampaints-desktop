@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useMemo, useEffect } from "react"
+import { useState, useMemo, useEffect, useCallback, useRef } from "react"
 import { useQuery, useMutation } from "@tanstack/react-query"
 import { useDebounce } from "@/hooks/use-debounce"
 
@@ -179,6 +179,57 @@ function useAuditApiRequest() {
   return { authenticatedRequest, auditToken, setAuditToken }
 }
 
+// Custom hook for silent background sync
+function useBackgroundSync(options: {
+  enabled: boolean
+  interval: number
+  onSync: () => Promise<void>
+}) {
+  const { enabled, interval, onSync } = options
+  const [isSyncing, setIsSyncing] = useState(false)
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null)
+  const syncRef = useRef<NodeJS.Timeout | null>(null)
+
+  const performSync = useCallback(async () => {
+    if (isSyncing) return
+    
+    try {
+      setIsSyncing(true)
+      await onSync()
+      setLastSyncTime(new Date())
+    } catch (error) {
+      console.error('Background sync failed:', error)
+    } finally {
+      setIsSyncing(false)
+    }
+  }, [isSyncing, onSync])
+
+  useEffect(() => {
+    if (!enabled) {
+      if (syncRef.current) {
+        clearInterval(syncRef.current)
+        syncRef.current = null
+      }
+      return
+    }
+
+    // Initial sync
+    performSync()
+
+    // Set up interval
+    syncRef.current = setInterval(performSync, interval)
+
+    return () => {
+      if (syncRef.current) {
+        clearInterval(syncRef.current)
+        syncRef.current = null
+      }
+    }
+  }, [enabled, interval, performSync])
+
+  return { isSyncing, lastSyncTime }
+}
+
 export default function Audit() {
   const { formatDateShort } = useDateFormat()
   const { receiptSettings } = useReceiptSettings()
@@ -225,7 +276,7 @@ export default function Audit() {
   const [showAutoBlockDialog, setShowAutoBlockDialog] = useState(false)
   const [autoBlockDate, setAutoBlockDate] = useState("")
 
-  // Cloud Sync State
+  // Cloud Sync State - Optimized for silent operation
   const [cloudUrl, setCloudUrl] = useState("")
   const [showCloudUrl, setShowCloudUrl] = useState(false)
   const [cloudConnectionStatus, setCloudConnectionStatus] = useState<"idle" | "testing" | "success" | "error">("idle")
@@ -236,37 +287,59 @@ export default function Audit() {
   const [syncInterval, setSyncInterval] = useState(5)
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null)
   const [pendingChanges, setPendingChanges] = useState(0)
+  
+  // Ref for tracking mounted state
+  const isMountedRef = useRef(true)
+  
+  // Optimized sync function ref
+  const syncFunctionRef = useRef<{
+    handleExportToCloud: (silent: boolean) => Promise<void>
+    handleImportFromCloud: () => Promise<void>
+  }>({
+    handleExportToCloud: async () => {},
+    handleImportFromCloud: async () => {}
+  })
 
   const { data: hasPin } = useQuery<{ hasPin: boolean; isDefault?: boolean }>({
     queryKey: ["/api/audit/has-pin"],
     enabled: !isVerified,
+    refetchOnWindowFocus: false // Important: page focus pe refetch nahi hoga
   })
 
   const { data: colors = [], isLoading: colorsLoading } = useQuery<ColorWithVariantAndProduct[]>({
     queryKey: ["/api/colors"],
     enabled: isVerified,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    refetchOnWindowFocus: false
   })
 
   const { data: products = [] } = useQuery<Product[]>({
     queryKey: ["/api/products"],
     enabled: isVerified,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false
   })
-
 
   const { data: allSales = [], isLoading: salesLoading } = useQuery<Sale[]>({
     queryKey: ["/api/sales"],
     enabled: isVerified,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false
   })
 
   const { data: paymentHistory = [], isLoading: paymentsLoading } = useQuery<PaymentHistoryWithSale[]>({
     queryKey: ["/api/payment-history"],
     enabled: isVerified,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false
   })
 
-  // Unpaid bills query - simplified version
+  // Unpaid bills query - optimized
   const { data: unpaidBills = [], isLoading: unpaidLoading } = useQuery<Sale[]>({
     queryKey: ["/api/audit/unpaid-bills"],
     enabled: isVerified,
+    staleTime: 2 * 60 * 1000, // 2 minutes
+    refetchOnWindowFocus: false,
     queryFn: async () => {
       try {
         const response = await authenticatedRequest("/api/audit/unpaid-bills")
@@ -278,21 +351,39 @@ export default function Audit() {
     },
   })
 
-  // Payments query - simplified version
+  // Payments query - optimized
   const { data: auditPayments = [], isLoading: auditPaymentsLoading } = useQuery<PaymentHistoryWithSale[]>({
     queryKey: ["/api/payment-history"],
     enabled: isVerified,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false
   })
 
-  // Returns query - simplified version
+  // Returns query - optimized
   const { data: auditReturns = [], isLoading: returnsLoading } = useQuery<Return[]>({
     queryKey: ["/api/returns"],
     enabled: isVerified,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false
   })
 
+  // App Settings query - optimized for silent operation
   const { data: appSettings } = useQuery<AppSettings>({
     queryKey: ["/api/settings"],
     enabled: isVerified,
+    staleTime: 10 * 60 * 1000, // 10 minutes
+    refetchOnWindowFocus: false, // CRITICAL: page focus pe refetch nahi hoga
+    refetchOnMount: false, // Mount pe bhi refetch nahi hoga
+    gcTime: 30 * 60 * 1000, // 30 minutes cache
+  })
+
+  // Silent background sync hook
+  const { isSyncing: backgroundSyncing, lastSyncTime: backgroundLastSync } = useBackgroundSync({
+    enabled: autoSyncEnabled && cloudConnectionStatus === "success",
+    interval: syncInterval * 1000,
+    onSync: async () => {
+      await syncFunctionRef.current.handleExportToCloud(true)
+    }
   })
 
   const updatePermissionsMutation = useMutation({
@@ -304,7 +395,17 @@ export default function Audit() {
       return response
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/settings"] })
+      // Silent update - no immediate refetch
+      queryClient.setQueryData(["/api/settings"], (old: AppSettings) => ({
+        ...old,
+        ...updatePermissionsMutation.variables
+      }))
+      
+      // Delayed refetch
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ["/api/settings"] })
+      }, 5000)
+      
       toast({
         title: "Permissions Updated",
         description: "Access control settings have been saved.",
@@ -319,9 +420,9 @@ export default function Audit() {
     },
   })
 
-  const handlePermissionChange = (key: keyof AppSettings, value: boolean) => {
+  const handlePermissionChange = useCallback((key: keyof AppSettings, value: boolean) => {
     updatePermissionsMutation.mutate({ [key]: value })
-  }
+  }, [updatePermissionsMutation])
 
   const verifyPinMutation = useMutation({
     mutationFn: async (pin: string) => {
@@ -377,7 +478,10 @@ export default function Audit() {
       setNewPin("")
       setConfirmPin("")
       setIsDefaultPin(false)
-      queryClient.invalidateQueries({ queryKey: ["/api/audit/has-pin"] })
+      // Silent cache update
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ["/api/audit/has-pin"] })
+      }, 1000)
     },
     onError: (error: Error) => {
       toast({
@@ -388,8 +492,8 @@ export default function Audit() {
     },
   })
 
-  // Cloud Sync Functions - Using Real Backend API
-  const handleTestConnection = async () => {
+  // Cloud Sync Functions - Optimized for silent operation
+  const handleTestConnection = useCallback(async () => {
     if (!cloudUrl.trim()) {
       toast({
         title: "Connection URL Required",
@@ -419,13 +523,16 @@ export default function Audit() {
       if (response.ok) {
         setCloudConnectionStatus("success")
         
-        // Save the URL to settings after successful connection
+        // Save the URL to settings - silent update
         await authenticatedRequest("/api/cloud/save-settings", {
           method: "POST",
           body: JSON.stringify({ connectionUrl: cloudUrl, syncEnabled: true }),
         })
         
-        queryClient.invalidateQueries({ queryKey: ["/api/settings"] })
+        // Delayed cache update
+        setTimeout(() => {
+          queryClient.invalidateQueries({ queryKey: ["/api/settings"] })
+        }, 2000)
         
         toast({
           title: "Connection Successful",
@@ -447,34 +554,42 @@ export default function Audit() {
         variant: "destructive",
       })
     }
-  }
+  }, [cloudUrl, authenticatedRequest, toast, queryClient])
 
-  const handleExportToCloud = async (silent = false) => {
-    if (!cloudUrl.trim()) {
-      if (!silent) {
-        toast({
-          title: "Connection URL Required",
-          description: "Please enter and save a PostgreSQL connection URL first.",
-          variant: "destructive",
-        })
-      }
-      return
-    }
+  // Optimized export function with silent mode
+  const handleExportToCloud = useCallback(async (silent = false) => {
+    if (!cloudUrl.trim() || cloudSyncStatus !== "idle") return
 
+    // Silent mode check
     if (!silent) setCloudSyncStatus("exporting")
+    
     try {
       const response = await authenticatedRequest("/api/cloud/export", {
         method: "POST",
       })
       
       if (response.ok) {
-        setLastExportCounts(response.counts || {})
-        setLastSyncTime(new Date())
+        // Minimal state updates for silent mode
+        if (isMountedRef.current) {
+          setLastExportCounts(response.counts || {})
+          setLastSyncTime(new Date())
+        }
+        
+        // Silent mode mein toast nahi dikhayenge
         if (!silent) {
           toast({
             title: "Export Complete",
             description: response.message || "Data exported to cloud successfully.",
           })
+        }
+        
+        // Silent cache updates
+        if (silent) {
+          // Direct cache update without refetch
+          queryClient.setQueryData(["/api/settings"], (old: any) => ({
+            ...old,
+            lastCloudSync: new Date().toISOString()
+          }))
         }
       } else {
         if (!silent) {
@@ -494,11 +609,13 @@ export default function Audit() {
         })
       }
     } finally {
-      if (!silent) setCloudSyncStatus("idle")
+      if (!silent && isMountedRef.current) {
+        setCloudSyncStatus("idle")
+      }
     }
-  }
+  }, [cloudUrl, cloudSyncStatus, authenticatedRequest, toast, queryClient])
 
-  const handleImportFromCloud = async () => {
+  const handleImportFromCloud = useCallback(async () => {
     if (!cloudUrl.trim()) {
       toast({
         title: "Connection URL Required",
@@ -517,7 +634,12 @@ export default function Audit() {
       if (response.ok) {
         setLastImportCounts(response.counts || {})
         setLastSyncTime(new Date())
-        queryClient.invalidateQueries()
+        
+        // Delayed query updates - bina immediate refetch ke
+        setTimeout(() => {
+          queryClient.invalidateQueries()
+        }, 3000)
+        
         toast({
           title: "Import Complete",
           description: response.message || "Data imported from cloud successfully.",
@@ -538,10 +660,10 @@ export default function Audit() {
     } finally {
       setCloudSyncStatus("idle")
     }
-  }
+  }, [cloudUrl, authenticatedRequest, toast, queryClient])
 
-  // Auto-sync functions
-  const toggleAutoSync = async (enabled: boolean) => {
+  // Auto-sync functions - optimized
+  const toggleAutoSync = useCallback(async (enabled: boolean) => {
     try {
       const response = await authenticatedRequest("/api/cloud/auto-sync", {
         method: "POST",
@@ -550,6 +672,13 @@ export default function Audit() {
       
       if (response.ok) {
         setAutoSyncEnabled(enabled)
+        
+        // Silent cache update
+        queryClient.setQueryData(["/api/settings"], (old: any) => ({
+          ...old,
+          cloudSyncEnabled: enabled
+        }))
+        
         toast({
           title: enabled ? "Auto-Sync Enabled" : "Auto-Sync Disabled",
           description: enabled 
@@ -570,7 +699,24 @@ export default function Audit() {
         variant: "destructive",
       })
     }
-  }
+  }, [syncInterval, authenticatedRequest, toast, queryClient])
+
+  // Update sync function ref
+  useEffect(() => {
+    syncFunctionRef.current = {
+      handleExportToCloud,
+      handleImportFromCloud
+    }
+  }, [handleExportToCloud, handleImportFromCloud])
+
+  // Mount/Unmount effect
+  useEffect(() => {
+    isMountedRef.current = true
+    
+    return () => {
+      isMountedRef.current = false
+    }
+  }, [])
 
   useEffect(() => {
     const storedToken = sessionStorage.getItem("auditToken")
@@ -583,16 +729,37 @@ export default function Audit() {
     }
   }, [])
 
-  // Initialize cloud URL from settings when they load
+  // Initialize cloud URL from settings when they load - silent initialization
   useEffect(() => {
     if (appSettings?.cloudDatabaseUrl && !cloudUrl) {
       setCloudUrl(appSettings.cloudDatabaseUrl)
       if (appSettings.cloudSyncEnabled) {
         setCloudConnectionStatus("success")
         setAutoSyncEnabled(true)
+        setSyncInterval(appSettings.cloudSyncInterval || 5)
       }
     }
-  }, [appSettings?.cloudDatabaseUrl, appSettings?.cloudSyncEnabled])
+  }, [appSettings?.cloudDatabaseUrl, appSettings?.cloudSyncEnabled, appSettings?.cloudSyncInterval])
+
+  // Auto-sync effect - optimized
+  useEffect(() => {
+    if (!autoSyncEnabled || cloudConnectionStatus !== "success") return
+    
+    // Background sync already handled by useBackgroundSync hook
+    // Yeh effect sirf UI updates ke liye
+    const syncIndicator = setInterval(() => {
+      if (isMountedRef.current) {
+        // Only update last sync time if background sync is active
+        if (backgroundSyncing) {
+          setLastSyncTime(new Date())
+        }
+      }
+    }, syncInterval * 1000)
+    
+    return () => {
+      clearInterval(syncIndicator)
+    }
+  }, [autoSyncEnabled, cloudConnectionStatus, syncInterval, backgroundSyncing])
 
   const handlePinInput = (index: number, value: string) => {
     if (!/^\d*$/.test(value)) return
@@ -1802,18 +1969,25 @@ export default function Audit() {
                     </Card>
                   </TabsContent>
 
-                  {/* CLOUD SYNC TAB */}
+                  {/* CLOUD SYNC TAB - OPTIMIZED FOR SILENT OPERATION */}
                   <TabsContent value="cloud" className="space-y-6">
                     <Card>
                       <CardHeader>
                         <CardTitle className="flex items-center gap-2">
                           <Cloud className="h-5 w-5 text-blue-500" />
                           Cloud Database Sync
+                          {backgroundSyncing && (
+                            <Badge variant="outline" className="ml-2 bg-green-50 text-green-700 border-green-200">
+                              <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse mr-1" />
+                              Syncing...
+                            </Badge>
+                          )}
                         </CardTitle>
                       </CardHeader>
                       <CardContent className="space-y-6">
                         <div className="text-sm text-muted-foreground" id="cloud-description">
                           Connect to a cloud PostgreSQL database (Neon, Supabase) to sync your data across multiple devices.
+                          Auto-sync runs silently in background.
                         </div>
 
                         <div className="space-y-4">
@@ -1888,11 +2062,11 @@ export default function Audit() {
                                   : "Test Connection"}
                           </Button>
 
-                          {/* Real-Time Sync Settings */}
+                          {/* Real-Time Sync Settings - Optimized */}
                           <div className="border-t pt-4">
                             <h4 className="font-medium mb-3 flex items-center gap-2">
                               <RefreshCw className="h-4 w-4" />
-                              Real-Time Sync
+                              Background Sync Settings
                             </h4>
 
                             <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
@@ -1903,11 +2077,11 @@ export default function Audit() {
                                   ) : (
                                     <WifiOff className="h-4 w-4 text-gray-500" />
                                   )}
-                                  Real-Time Cloud Sync
+                                  Background Cloud Sync
                                 </Label>
                                 <p className="text-xs text-muted-foreground">
                                   {autoSyncEnabled
-                                    ? `Auto-syncing every ${syncInterval} seconds`
+                                    ? `Auto-syncing every ${syncInterval} seconds (silent)`
                                     : "Manual sync only"}
                                 </p>
                               </div>
@@ -1916,6 +2090,26 @@ export default function Audit() {
                                 onCheckedChange={toggleAutoSync}
                               />
                             </div>
+                            
+                            {autoSyncEnabled && (
+                              <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                                <div className="flex items-center justify-between">
+                                  <Label className="text-sm">Sync Interval (seconds)</Label>
+                                  <Select value={syncInterval.toString()} onValueChange={(v) => setSyncInterval(Number(v))}>
+                                    <SelectTrigger className="w-32">
+                                      <SelectValue placeholder="Select interval" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="5">5 seconds</SelectItem>
+                                      <SelectItem value="10">10 seconds</SelectItem>
+                                      <SelectItem value="30">30 seconds</SelectItem>
+                                      <SelectItem value="60">1 minute</SelectItem>
+                                      <SelectItem value="300">5 minutes</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              </div>
+                            )}
                           </div>
 
                           <div className="border-t pt-4">
@@ -1968,7 +2162,7 @@ export default function Audit() {
                             </div>
                           </div>
 
-                          {/* Sync Status Section */}
+                          {/* Sync Status Section - Optimized */}
                           <div className="border-t pt-4">
                             <h4 className="font-medium mb-3 flex items-center gap-2">
                               <Activity className="h-4 w-4" />
@@ -2001,7 +2195,7 @@ export default function Audit() {
                                 <div className="flex items-center gap-2 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
                                   <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse" />
                                   <span className="text-sm text-green-700 dark:text-green-300">
-                                    Sync Active - Auto-syncing every {syncInterval}s
+                                    Background Sync Active - Auto-syncing every {syncInterval}s
                                   </span>
                                 </div>
                               )}
@@ -2450,7 +2644,7 @@ export default function Audit() {
                               </span>
                             </div>
                             <p className="text-xs text-muted-foreground">
-                              {cloudConnectionStatus === "success" ? "Cloud sync enabled" : "Manual sync only"}
+                              {cloudConnectionStatus === "success" ? "Background sync enabled" : "Manual sync only"}
                             </p>
                           </div>
                         </div>
@@ -2462,10 +2656,14 @@ export default function Audit() {
                               variant="outline"
                               className="flex items-center gap-2 bg-transparent"
                               onClick={() => {
-                                queryClient.invalidateQueries()
+                                // Silent refresh with delayed cache update
+                                setTimeout(() => {
+                                  queryClient.invalidateQueries()
+                                }, 3000)
+                                
                                 toast({
-                                  title: "Data Refreshed",
-                                  description: "All data has been refreshed.",
+                                  title: "Data Refresh Scheduled",
+                                  description: "Data will be refreshed in background.",
                                 })
                               }}
                             >

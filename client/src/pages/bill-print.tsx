@@ -31,6 +31,18 @@ import {
 } from "@/components/ui/dropdown-menu";
 import ThermalReceipt from "@/components/thermal-receipt";
 
+type ReturnRecord = {
+  id: string;
+  saleId: string;
+  customerName: string;
+  customerPhone: string;
+  totalRefund: string;
+  createdAt: string;
+  status: string;
+  refundMethod?: string;
+  notes?: string;
+};
+
 export default function BillPrint() {
   const { formatDateShort } = useDateFormat();
   const { receiptSettings } = useReceiptSettings();
@@ -61,6 +73,47 @@ export default function BillPrint() {
     queryKey: ["/api/colors"],
     enabled: addItemDialogOpen,
   });
+
+  // Fetch returns for this sale
+  const { data: saleReturns = [] } = useQuery<ReturnRecord[]>({
+    queryKey: ["/api/returns/sale", saleId],
+    enabled: !!saleId,
+  });
+
+  // Calculate total returns amount for this sale
+  const totalReturnsAmount = useMemo(() => {
+    if (!saleReturns.length) return 0;
+    
+    return saleReturns.reduce((total, ret) => {
+      // Only count returns that are completed/approved
+      if (ret.status === "completed" || !ret.status) {
+        return total + parseFloat(ret.totalRefund || "0");
+      }
+      return total;
+    }, 0);
+  }, [saleReturns]);
+
+  // Calculate adjusted totals including returns
+  const adjustedTotals = useMemo(() => {
+    if (!sale) return null;
+
+    const originalTotal = parseFloat(sale.totalAmount);
+    const originalPaid = parseFloat(sale.amountPaid);
+    
+    const netTotal = originalTotal - totalReturnsAmount;
+    const outstanding = netTotal - originalPaid;
+    const isPaid = outstanding <= 0;
+
+    return {
+      originalTotal,
+      originalPaid,
+      totalReturnsAmount,
+      netTotal,
+      outstanding,
+      isPaid,
+      hasReturns: totalReturnsAmount > 0
+    };
+  }, [sale, totalReturnsAmount]);
 
   // Delete Bill - IMPROVED VERSION
   const deleteSale = async () => {
@@ -169,9 +222,9 @@ export default function BillPrint() {
     return cleaned;
   };
 
-  // Download Bill as PDF - Professional Design
+  // Download Bill as PDF - Professional Design with Returns Adjustment
   const downloadBillPDF = () => {
-    if (!sale) return;
+    if (!sale || !adjustedTotals) return;
 
     const pdf = new jsPDF({
       orientation: 'portrait',
@@ -292,16 +345,28 @@ export default function BillPrint() {
 
     pdf.setFontSize(10);
     pdf.setFont('helvetica', 'normal');
-    pdf.text('Subtotal:', summaryX, yPos);
-    pdf.text(`Rs. ${Math.round(parseFloat(sale.totalAmount)).toLocaleString()}`, valueX, yPos, { align: 'right' });
+    pdf.text('Original Total:', summaryX, yPos);
+    pdf.text(`Rs. ${Math.round(adjustedTotals.originalTotal).toLocaleString()}`, valueX, yPos, { align: 'right' });
     yPos += 7;
+
+    // Show returns adjustment if applicable
+    if (adjustedTotals.hasReturns) {
+      pdf.setTextColor(255, 0, 0);
+      pdf.text('Returns Adjustment:', summaryX, yPos);
+      pdf.text(`- Rs. ${Math.round(adjustedTotals.totalReturnsAmount).toLocaleString()}`, valueX, yPos, { align: 'right' });
+      yPos += 7;
+      
+      pdf.setTextColor(0, 0, 0);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Net Total:', summaryX, yPos);
+      pdf.text(`Rs. ${Math.round(adjustedTotals.netTotal).toLocaleString()}`, valueX, yPos, { align: 'right' });
+      yPos += 7;
+    }
 
     pdf.setTextColor(34, 139, 34);
     pdf.text('Amount Paid:', summaryX, yPos);
-    pdf.text(`Rs. ${Math.round(parseFloat(sale.amountPaid)).toLocaleString()}`, valueX, yPos, { align: 'right' });
+    pdf.text(`Rs. ${Math.round(adjustedTotals.originalPaid).toLocaleString()}`, valueX, yPos, { align: 'right' });
     yPos += 7;
-
-    const outstanding = parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid);
 
     pdf.setFillColor(102, 126, 234);
     pdf.roundedRect(summaryX - 5, yPos - 4, pageWidth - summaryX + 5 - margin + 5, 12, 2, 2, 'F');
@@ -310,9 +375,9 @@ export default function BillPrint() {
     pdf.setFontSize(12);
     pdf.setFont('helvetica', 'bold');
     
-    if (outstanding > 0) {
+    if (adjustedTotals.outstanding > 0) {
       pdf.text('BALANCE DUE:', summaryX, yPos + 4);
-      pdf.text(`Rs. ${Math.round(outstanding).toLocaleString()}`, valueX, yPos + 4, { align: 'right' });
+      pdf.text(`Rs. ${Math.round(adjustedTotals.outstanding).toLocaleString()}`, valueX, yPos + 4, { align: 'right' });
     } else {
       pdf.text('STATUS:', summaryX, yPos + 4);
       pdf.text('PAID IN FULL', valueX, yPos + 4, { align: 'right' });
@@ -339,7 +404,7 @@ export default function BillPrint() {
 
   // Generate Bill PDF as Blob for sharing
   const generateBillPDFBlob = (): Blob | null => {
-    if (!sale) return null;
+    if (!sale || !adjustedTotals) return null;
 
     const pdf = new jsPDF({
       orientation: 'portrait',
@@ -460,16 +525,28 @@ export default function BillPrint() {
 
     pdf.setFontSize(10);
     pdf.setFont('helvetica', 'normal');
-    pdf.text('Subtotal:', summaryX, yPos);
-    pdf.text(`Rs. ${Math.round(parseFloat(sale.totalAmount)).toLocaleString()}`, valueX, yPos, { align: 'right' });
+    pdf.text('Original Total:', summaryX, yPos);
+    pdf.text(`Rs. ${Math.round(adjustedTotals.originalTotal).toLocaleString()}`, valueX, yPos, { align: 'right' });
     yPos += 7;
+
+    // Show returns adjustment if applicable
+    if (adjustedTotals.hasReturns) {
+      pdf.setTextColor(255, 0, 0);
+      pdf.text('Returns Adjustment:', summaryX, yPos);
+      pdf.text(`- Rs. ${Math.round(adjustedTotals.totalReturnsAmount).toLocaleString()}`, valueX, yPos, { align: 'right' });
+      yPos += 7;
+      
+      pdf.setTextColor(0, 0, 0);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Net Total:', summaryX, yPos);
+      pdf.text(`Rs. ${Math.round(adjustedTotals.netTotal).toLocaleString()}`, valueX, yPos, { align: 'right' });
+      yPos += 7;
+    }
 
     pdf.setTextColor(34, 139, 34);
     pdf.text('Amount Paid:', summaryX, yPos);
-    pdf.text(`Rs. ${Math.round(parseFloat(sale.amountPaid)).toLocaleString()}`, valueX, yPos, { align: 'right' });
+    pdf.text(`Rs. ${Math.round(adjustedTotals.originalPaid).toLocaleString()}`, valueX, yPos, { align: 'right' });
     yPos += 7;
-
-    const outstanding = parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid);
 
     pdf.setFillColor(102, 126, 234);
     pdf.roundedRect(summaryX - 5, yPos - 4, pageWidth - summaryX + 5 - margin + 5, 12, 2, 2, 'F');
@@ -478,9 +555,9 @@ export default function BillPrint() {
     pdf.setFontSize(12);
     pdf.setFont('helvetica', 'bold');
     
-    if (outstanding > 0) {
+    if (adjustedTotals.outstanding > 0) {
       pdf.text('BALANCE DUE:', summaryX, yPos + 4);
-      pdf.text(`Rs. ${Math.round(outstanding).toLocaleString()}`, valueX, yPos + 4, { align: 'right' });
+      pdf.text(`Rs. ${Math.round(adjustedTotals.outstanding).toLocaleString()}`, valueX, yPos + 4, { align: 'right' });
     } else {
       pdf.text('STATUS:', summaryX, yPos + 4);
       pdf.text('PAID IN FULL', valueX, yPos + 4, { align: 'right' });
@@ -502,7 +579,7 @@ export default function BillPrint() {
 
   // Share Bill via WhatsApp - WITH PDF FILE SUPPORT
   const shareToWhatsApp = async () => {
-    if (!sale) return;
+    if (!sale || !adjustedTotals) return;
 
     const whatsappPhone = formatPhoneForWhatsApp(sale.customerPhone);
     
@@ -531,7 +608,7 @@ export default function BillPrint() {
           fileName: fileName,
           pdfData: await pdfBlob.arrayBuffer(),
           businessName: receiptSettings.businessName,
-          totalAmount: Math.round(parseFloat(sale.totalAmount)),
+          totalAmount: Math.round(adjustedTotals.netTotal),
           customerName: sale.customerName,
         });
         toast({
@@ -567,12 +644,26 @@ export default function BillPrint() {
     }
 
     // Fallback: Text message with WhatsApp link
-    const outstanding = parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid);
     const itemsList = sale.saleItems.map(item => 
       `${item.color.variant.product.productName} x${item.quantity} Rs.${Math.round(parseFloat(item.subtotal))}`
     ).join('\n');
 
-    const message = `*${receiptSettings.businessName}*\n*Bill #${sale.id.slice(0, 8).toUpperCase()}*\n\n${sale.customerName}\n\n*Items:*\n${itemsList}\n\n*Total:* Rs.${Math.round(parseFloat(sale.totalAmount)).toLocaleString()}\n*Paid:* Rs.${Math.round(parseFloat(sale.amountPaid)).toLocaleString()}\n${outstanding > 0 ? `*Due:* Rs.${Math.round(outstanding).toLocaleString()}` : '*Status: PAID*'}\n\n${receiptSettings.thankYou}`;
+    let message = `*${receiptSettings.businessName}*\n*Bill #${sale.id.slice(0, 8).toUpperCase()}*\n\n${sale.customerName}\n\n*Items:*\n${itemsList}\n\n`;
+
+    if (adjustedTotals.hasReturns) {
+      message += `*Original Total:* Rs.${Math.round(adjustedTotals.originalTotal).toLocaleString()}\n`;
+      message += `*Returns Adjustment:* -Rs.${Math.round(adjustedTotals.totalReturnsAmount).toLocaleString()}\n`;
+      message += `*Net Total:* Rs.${Math.round(adjustedTotals.netTotal).toLocaleString()}\n`;
+    } else {
+      message += `*Total:* Rs.${Math.round(adjustedTotals.netTotal).toLocaleString()}\n`;
+    }
+
+    message += `*Paid:* Rs.${Math.round(adjustedTotals.originalPaid).toLocaleString()}\n`;
+    message += adjustedTotals.outstanding > 0 ? 
+      `*Due:* Rs.${Math.round(adjustedTotals.outstanding).toLocaleString()}\n` : 
+      '*Status: PAID*\n';
+    
+    message += `\n${receiptSettings.thankYou}`;
 
     const encodedMessage = encodeURIComponent(message);
     window.open(`https://wa.me/${whatsappPhone}?text=${encodedMessage}`, '_blank');
@@ -784,8 +875,7 @@ export default function BillPrint() {
   if (isLoading) return <div className="p-6"><Skeleton className="h-96 w-full max-w-2xl mx-auto" /></div>;
   if (!sale) return <div className="p-6 text-center text-muted-foreground">Bill not found</div>;
 
-  const outstanding = parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid);
-  const isPaid = sale.paymentStatus === "paid";
+  const isPaid = adjustedTotals ? adjustedTotals.isPaid : false;
 
   // Helper: One Line Product Name
   const getProductLine = (item: any) => {
@@ -815,6 +905,10 @@ export default function BillPrint() {
             <Button onClick={printThermal} className="font-medium" data-testid="button-print-receipt">
               <Receipt className="h-4 w-4 mr-2" />
               Print
+            </Button>
+            <Button onClick={shareToWhatsApp} variant="outline" data-testid="button-share-whatsapp">
+              <MessageCircle className="h-4 w-4 mr-2" />
+              Share
             </Button>
 
             <div className="flex gap-2">
@@ -870,6 +964,39 @@ export default function BillPrint() {
               <div><span className="text-muted-foreground">Date:</span> <strong>{formatDateShort(sale.createdAt)}</strong></div>
               <div><span className="text-muted-foreground">Time:</span> <strong>{new Date(sale.createdAt).toLocaleTimeString()}</strong></div>
             </div>
+
+            {/* Returns Information Banner */}
+            {adjustedTotals?.hasReturns && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                <div className="flex items-start gap-3">
+                  <div className="bg-amber-100 p-2 rounded-full">
+                    <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="font-medium text-amber-800">Returns Applied to This Bill</h3>
+                    <p className="text-sm text-amber-700 mt-1">
+                      Total returns: Rs. {Math.round(adjustedTotals.totalReturnsAmount).toLocaleString()}
+                    </p>
+                    <div className="mt-2 space-y-1 text-sm">
+                      <div className="flex justify-between">
+                        <span>Original Bill Total:</span>
+                        <span className="font-medium">Rs. {Math.round(adjustedTotals.originalTotal).toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between text-red-600">
+                        <span>Less: Returns:</span>
+                        <span className="font-medium">- Rs. {Math.round(adjustedTotals.totalReturnsAmount).toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between font-bold border-t pt-1">
+                        <span>Net Total:</span>
+                        <span>Rs. {Math.round(adjustedTotals.netTotal).toLocaleString()}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="border-t pt-4">
               <h2 className="font-semibold mb-3 flex justify-between items-center">
@@ -946,12 +1073,30 @@ export default function BillPrint() {
             </div>
 
             <div className="border-t pt-4 space-y-2 text-lg">
-              <div className="flex justify-between font-bold">
-                <span>Total : </span>
-                <span>{Math.round(parseFloat(sale.totalAmount))}</span>
+              {/* Original Total (only show if there are returns) */}
+              {adjustedTotals?.hasReturns && (
+                <div className="flex justify-between text-sm text-gray-600">
+                  <span>Original Total:</span>
+                  <span>Rs. {Math.round(adjustedTotals.originalTotal)}</span>
+                </div>
+              )}
+
+              {/* Returns Adjustment (only show if there are returns) */}
+              {adjustedTotals?.hasReturns && (
+                <div className="flex justify-between text-sm text-red-600">
+                  <span>Less: Returns:</span>
+                  <span>- Rs. {Math.round(adjustedTotals.totalReturnsAmount)}</span>
+                </div>
+              )}
+
+              {/* Net Total */}
+              <div className="flex justify-between font-bold border-t pt-2">
+                <span>{adjustedTotals?.hasReturns ? "Net Total:" : "Total:"}</span>
+                <span>Rs. {adjustedTotals ? Math.round(adjustedTotals.netTotal) : Math.round(parseFloat(sale.totalAmount))}</span>
               </div>
+
               <div className="flex justify-between items-center">
-                <span>Paid : </span>
+                <span>Paid:</span>
                 {editMode ? (
                   <Input
                     type="number"
@@ -963,19 +1108,22 @@ export default function BillPrint() {
                     data-testid="input-edit-paid-amount"
                   />
                 ) : (
-                  <span>{Math.round(parseFloat(sale.amountPaid))}</span>
+                  <span>Rs. {Math.round(parseFloat(sale.amountPaid))}</span>
                 )}
               </div>
-              {!isPaid && (
+              
+              {/* Balance */}
+              {adjustedTotals && adjustedTotals.outstanding > 0 && (
                 <div className="flex justify-between text-red-600 font-bold">
-                  <span>Balance : </span>
-                  <span>{Math.round(outstanding)}</span>
+                  <span>Balance:</span>
+                  <span>Rs. {Math.round(adjustedTotals.outstanding)}</span>
                 </div>
               )}
+              
               <div className="flex justify-between">
-                <span>Status : </span>
+                <span>Status:</span>
                 <Badge variant={isPaid ? "default" : "secondary"}>
-                  {sale.paymentStatus.toUpperCase()}
+                  {isPaid ? "PAID" : "PENDING"}
                 </Badge>
               </div>
             </div>
@@ -986,8 +1134,13 @@ export default function BillPrint() {
         </Card>
       </div>
 
-      {/* PRINT ONLY: Thermal Receipt */}
-      <ThermalReceipt sale={sale} receiptSettings={receiptSettings} />
+      {/* PRINT ONLY: Thermal Receipt - Updated to show returns */}
+      <ThermalReceipt 
+        sale={sale} 
+        receiptSettings={receiptSettings} 
+        totalReturnsAmount={totalReturnsAmount}
+        netTotal={adjustedTotals?.netTotal}
+      />
 
       {/* Delete Bill Dialog */}
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>

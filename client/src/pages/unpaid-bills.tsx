@@ -33,6 +33,9 @@ import {
   Users,
   ArrowUpRight,
   ChevronDown,
+  CheckCircle,
+  XCircle,
+  Filter,
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { usePermissions } from "@/hooks/use-permissions"
@@ -41,6 +44,8 @@ import type { Sale } from "@shared/schema"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useDateFormat } from "@/hooks/use-date-format"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Switch } from "@/components/ui/switch"
 
 const VISIBLE_LIMIT_INITIAL = 30
 const VISIBLE_LIMIT_INCREMENT = 20
@@ -69,6 +74,8 @@ type ConsolidatedCustomer = {
   totalOutstanding: number
   oldestBillDate: Date
   daysOverdue: number
+  isFullyPaid: boolean
+  paymentStatus: 'paid' | 'partial' | 'unpaid'
 }
 
 type ReturnRecord = {
@@ -101,6 +108,8 @@ export default function UnpaidBills() {
   const debouncedSearch = useDebounce(searchQuery, 300)
   const [visibleLimit, setVisibleLimit] = useState(VISIBLE_LIMIT_INITIAL)
   const [sortBy, setSortBy] = useState<"oldest" | "newest" | "highest" | "lowest">("highest")
+  const [showAllBills, setShowAllBills] = useState(false)
+  const [paymentFilter, setPaymentFilter] = useState<"all" | "paid" | "unpaid">("unpaid")
 
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false)
   const [selectedCustomer, setSelectedCustomer] = useState<ConsolidatedCustomer | null>(null)
@@ -232,6 +241,8 @@ export default function UnpaidBills() {
           totalOutstanding: 0,
           oldestBillDate: new Date(sale.createdAt),
           daysOverdue: 0,
+          isFullyPaid: false,
+          paymentStatus: 'unpaid'
         })
       }
     })
@@ -244,14 +255,29 @@ export default function UnpaidBills() {
       customer.daysOverdue = Math.floor(
         (Date.now() - customer.oldestBillDate.getTime()) / (1000 * 60 * 60 * 24)
       )
+      customer.isFullyPaid = customer.totalOutstanding <= 0
+      customer.paymentStatus = customer.totalOutstanding <= 0 ? 'paid' : 
+                               customer.totalPaid > 0 ? 'partial' : 'unpaid'
     })
 
-    return Array.from(customerMap.values()).filter((c) => c.totalOutstanding > 0)
+    return Array.from(customerMap.values())
   }, [allSales, allReturns])
 
   const filteredCustomers = useMemo(() => {
     let filtered = consolidatedCustomers
 
+    // Filter by payment status
+    if (!showAllBills) {
+      filtered = filtered.filter(c => c.totalOutstanding > 0)
+    } else if (paymentFilter !== "all") {
+      if (paymentFilter === "paid") {
+        filtered = filtered.filter(c => c.totalOutstanding <= 0)
+      } else if (paymentFilter === "unpaid") {
+        filtered = filtered.filter(c => c.totalOutstanding > 0)
+      }
+    }
+
+    // Filter by search query
     if (debouncedSearch) {
       const search = debouncedSearch.toLowerCase()
       filtered = filtered.filter(
@@ -261,6 +287,7 @@ export default function UnpaidBills() {
       )
     }
 
+    // Sort
     filtered.sort((a, b) => {
       switch (sortBy) {
         case "highest":
@@ -277,19 +304,22 @@ export default function UnpaidBills() {
     })
 
     return filtered
-  }, [consolidatedCustomers, debouncedSearch, sortBy])
+  }, [consolidatedCustomers, debouncedSearch, sortBy, showAllBills, paymentFilter])
 
   const visibleCustomers = filteredCustomers.slice(0, visibleLimit)
 
   const totals = useMemo(() => {
-    return consolidatedCustomers.reduce(
-      (acc, c) => ({
-        totalOutstanding: acc.totalOutstanding + c.totalOutstanding,
-        totalCustomers: acc.totalCustomers + 1,
-        overdueCount: acc.overdueCount + (c.daysOverdue > 30 ? 1 : 0),
-      }),
-      { totalOutstanding: 0, totalCustomers: 0, overdueCount: 0 }
-    )
+    const allCustomers = consolidatedCustomers
+    const unpaidCustomers = allCustomers.filter(c => c.totalOutstanding > 0)
+    
+    return {
+      totalOutstanding: unpaidCustomers.reduce((sum, c) => sum + c.totalOutstanding, 0),
+      totalCustomers: allCustomers.length,
+      unpaidCustomers: unpaidCustomers.length,
+      overdueCount: unpaidCustomers.filter(c => c.daysOverdue > 30).length,
+      totalPaid: allCustomers.reduce((sum, c) => sum + c.totalPaid, 0),
+      totalAmount: allCustomers.reduce((sum, c) => sum + c.totalAmount, 0),
+    }
   }, [consolidatedCustomers])
 
   const openPaymentDialog = (customer: ConsolidatedCustomer, e: React.MouseEvent) => {
@@ -383,26 +413,39 @@ export default function UnpaidBills() {
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground" data-testid="text-page-title">
-            Unpaid Bills
+            {showAllBills ? "All Bills" : "Unpaid Bills"}
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Track and manage customer balances
+            {showAllBills ? "View all customer bills and payments" : "Track and manage customer balances"}
           </p>
         </div>
-        {canEditSales && (
-          <Button
-            onClick={() => setManualBalanceDialogOpen(true)}
-            className="gap-2"
-            data-testid="button-add-balance"
-          >
-            <Plus className="h-4 w-4" />
-            Add Balance
-          </Button>
-        )}
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <Switch
+              checked={showAllBills}
+              onCheckedChange={setShowAllBills}
+              id="show-all-bills"
+              data-testid="switch-show-all-bills"
+            />
+            <Label htmlFor="show-all-bills" className="text-sm cursor-pointer">
+              Show all bills
+            </Label>
+          </div>
+          {canEditSales && (
+            <Button
+              onClick={() => setManualBalanceDialogOpen(true)}
+              className="gap-2"
+              data-testid="button-add-balance"
+            >
+              <Plus className="h-4 w-4" />
+              Add Balance
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
@@ -426,9 +469,27 @@ export default function UnpaidBills() {
                 <Users className="h-5 w-5 text-blue-600 dark:text-blue-400" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Customers with Balance</p>
+                <p className="text-sm text-muted-foreground">
+                  {showAllBills ? "Total Customers" : "Customers with Balance"}
+                </p>
                 <p className="text-xl font-bold text-foreground font-mono" data-testid="text-total-customers">
-                  {totals.totalCustomers}
+                  {showAllBills ? totals.totalCustomers : totals.unpaidCustomers}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-emerald-100 dark:bg-emerald-900/30">
+                <CheckCircle className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Total Collected</p>
+                <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400 font-mono" data-testid="text-total-paid">
+                  Rs. {Math.round(totals.totalPaid).toLocaleString()}
                 </p>
               </div>
             </div>
@@ -452,7 +513,7 @@ export default function UnpaidBills() {
         </Card>
       </div>
 
-      {/* Search and Sort */}
+      {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -464,6 +525,20 @@ export default function UnpaidBills() {
             data-testid="input-search"
           />
         </div>
+        
+        {showAllBills && (
+          <Select value={paymentFilter} onValueChange={(v: "all" | "paid" | "unpaid") => setPaymentFilter(v)}>
+            <SelectTrigger className="w-full sm:w-48" data-testid="select-payment-filter">
+              <SelectValue placeholder="Filter by payment" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Bills</SelectItem>
+              <SelectItem value="paid">Paid Only</SelectItem>
+              <SelectItem value="unpaid">Unpaid Only</SelectItem>
+            </SelectContent>
+          </Select>
+        )}
+
         <Select value={sortBy} onValueChange={(v: any) => setSortBy(v)}>
           <SelectTrigger className="w-full sm:w-48" data-testid="select-sort">
             <SelectValue placeholder="Sort by" />
@@ -478,8 +553,16 @@ export default function UnpaidBills() {
       </div>
 
       {/* Results Count */}
-      <div className="text-sm text-muted-foreground">
-        Showing {visibleCustomers.length} of {filteredCustomers.length} customers
+      <div className="flex items-center justify-between text-sm text-muted-foreground">
+        <div>
+          Showing {visibleCustomers.length} of {filteredCustomers.length} customers
+        </div>
+        <div className="flex items-center gap-2">
+          <Filter className="h-4 w-4" />
+          <span className="font-medium">
+            Total Bills: Rs. {Math.round(totals.totalAmount).toLocaleString()}
+          </span>
+        </div>
       </div>
 
       {/* Customer List */}
@@ -502,10 +585,12 @@ export default function UnpaidBills() {
               <CreditCard className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
             </div>
             <h3 className="text-lg font-semibold text-foreground mb-2">
-              {searchQuery ? "No customers found" : "All payments received"}
+              {searchQuery ? "No customers found" : 
+               showAllBills ? "No bills found" : "All payments received"}
             </h3>
             <p className="text-muted-foreground">
-              {searchQuery ? "Try a different search term" : "No unpaid bills to display"}
+              {searchQuery ? "Try a different search term" : 
+               showAllBills ? "There are no bills to display" : "No unpaid bills to display"}
             </p>
           </CardContent>
         </Card>
@@ -514,7 +599,9 @@ export default function UnpaidBills() {
           {visibleCustomers.map((customer) => (
             <Card
               key={customer.customerPhone}
-              className="cursor-pointer transition-shadow hover:shadow-md"
+              className={`cursor-pointer transition-shadow hover:shadow-md ${
+                customer.isFullyPaid ? 'border-emerald-200 dark:border-emerald-900/50' : ''
+              }`}
               onClick={() => setLocation(`/customer/${encodeURIComponent(customer.customerPhone)}`)}
               data-testid={`card-customer-${customer.customerPhone}`}
             >
@@ -523,20 +610,33 @@ export default function UnpaidBills() {
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-3 min-w-0">
                     <div className={`p-2 rounded-lg flex-shrink-0 ${
-                      customer.daysOverdue > 30 
-                        ? "bg-red-100 dark:bg-red-900/30" 
-                        : "bg-blue-100 dark:bg-blue-900/30"
+                      customer.isFullyPaid 
+                        ? "bg-emerald-100 dark:bg-emerald-900/30" 
+                        : customer.daysOverdue > 30 
+                          ? "bg-red-100 dark:bg-red-900/30" 
+                          : "bg-blue-100 dark:bg-blue-900/30"
                     }`}>
-                      <User className={`h-4 w-4 ${
-                        customer.daysOverdue > 30 
-                          ? "text-red-600 dark:text-red-400" 
-                          : "text-blue-600 dark:text-blue-400"
-                      }`} />
+                      {customer.isFullyPaid ? (
+                        <CheckCircle className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                      ) : (
+                        <User className={`h-4 w-4 ${
+                          customer.daysOverdue > 30 
+                            ? "text-red-600 dark:text-red-400" 
+                            : "text-blue-600 dark:text-blue-400"
+                        }`} />
+                      )}
                     </div>
                     <div className="min-w-0">
-                      <h3 className="font-semibold text-foreground truncate">
-                        {customer.customerName}
-                      </h3>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-semibold text-foreground truncate">
+                          {customer.customerName}
+                        </h3>
+                        {customer.isFullyPaid && (
+                          <Badge variant="outline" className="text-xs text-emerald-600 border-emerald-200">
+                            Paid
+                          </Badge>
+                        )}
+                      </div>
                       <p className="text-sm text-muted-foreground font-mono flex items-center gap-1">
                         <Phone className="h-3 w-3 flex-shrink-0" />
                         {customer.customerPhone}
@@ -549,7 +649,7 @@ export default function UnpaidBills() {
                         {customer.bills.length} bills
                       </Badge>
                     )}
-                    {customer.daysOverdue > 30 && (
+                    {!customer.isFullyPaid && customer.daysOverdue > 30 && (
                       <Badge variant="destructive" className="text-xs">
                         {customer.daysOverdue}d
                       </Badge>
@@ -558,7 +658,11 @@ export default function UnpaidBills() {
                 </div>
 
                 {/* Amount Summary */}
-                <div className="bg-muted/50 rounded-lg p-3 space-y-2 mb-3">
+                <div className={`rounded-lg p-3 space-y-2 mb-3 ${
+                  customer.isFullyPaid 
+                    ? "bg-emerald-50 dark:bg-emerald-900/20" 
+                    : "bg-muted/50"
+                }`}>
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Total Bills</span>
                     <span className="font-mono font-medium">
@@ -567,7 +671,11 @@ export default function UnpaidBills() {
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Paid</span>
-                    <span className="font-mono font-medium text-emerald-600 dark:text-emerald-400">
+                    <span className={`font-mono font-medium ${
+                      customer.isFullyPaid 
+                        ? "text-emerald-600 dark:text-emerald-400" 
+                        : "text-emerald-600 dark:text-emerald-400"
+                    }`}>
                       Rs. {Math.round(customer.totalPaid).toLocaleString()}
                     </span>
                   </div>
@@ -580,16 +688,31 @@ export default function UnpaidBills() {
                     </div>
                   )}
                   <div className="flex justify-between pt-2 border-t border-border">
-                    <span className="font-medium">Balance Due</span>
-                    <span className="font-mono font-bold text-red-600 dark:text-red-400">
-                      Rs. {Math.round(customer.totalOutstanding).toLocaleString()}
+                    <span className="font-medium">
+                      {customer.isFullyPaid ? "Balance Status" : "Balance Due"}
+                    </span>
+                    <span className={`font-mono font-bold ${
+                      customer.isFullyPaid 
+                        ? "text-emerald-600 dark:text-emerald-400" 
+                        : "text-red-600 dark:text-red-400"
+                    }`}>
+                      {customer.isFullyPaid ? (
+                        "Fully Paid"
+                      ) : (
+                        `Rs. ${Math.round(customer.totalOutstanding).toLocaleString()}`
+                      )}
                     </span>
                   </div>
+                  {customer.isFullyPaid && (
+                    <div className="text-xs text-emerald-600 dark:text-emerald-400 text-center pt-1">
+                      Paid on {formatDateShort(customer.oldestBillDate)}
+                    </div>
+                  )}
                 </div>
 
                 {/* Actions */}
                 <div className="flex gap-2">
-                  {canEditPayment && (
+                  {canEditPayment && !customer.isFullyPaid && (
                     <Button
                       size="sm"
                       className="flex-1 gap-1"
@@ -603,7 +726,7 @@ export default function UnpaidBills() {
                   <Button
                     size="sm"
                     variant="outline"
-                    className={canEditPayment ? "gap-1" : "flex-1 gap-1"}
+                    className={`gap-1 ${!canEditPayment || customer.isFullyPaid ? "flex-1" : ""}`}
                     onClick={(e) => {
                       e.stopPropagation()
                       setLocation(`/customer/${encodeURIComponent(customer.customerPhone)}`)
@@ -611,7 +734,7 @@ export default function UnpaidBills() {
                     data-testid={`button-view-${customer.customerPhone}`}
                   >
                     <ArrowUpRight className="h-4 w-4" />
-                    {!canEditPayment && "View Details"}
+                    View Details
                   </Button>
                 </div>
               </CardContent>

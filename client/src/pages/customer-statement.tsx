@@ -87,6 +87,7 @@ interface Transaction {
   status?: string
   saleId?: string
   items?: SaleItemDisplay[]
+  billReturns?: number // Returns specific to this bill
 }
 
 // Utility function to safely parse numbers
@@ -368,10 +369,34 @@ export default function CustomerStatement() {
     }
   }
 
-  const paidSales = useMemo(() => allSales.filter((s) => s.paymentStatus === "paid"), [allSales])
-  const unpaidSales = useMemo(() => allSales.filter((s) => s.paymentStatus !== "paid"), [allSales])
-
   const customerName = allSales[0]?.customerName || "Customer"
+
+  // Calculate returns per sale
+  const getSaleReturns = (saleId: string): number => {
+    return customerReturns
+      .filter(ret => ret.saleId === saleId)
+      .reduce((sum, ret) => sum + safeParseFloat(ret.totalRefund), 0)
+  }
+
+  const paidSales = useMemo(() => {
+    return allSales.filter((s) => {
+      const total = safeParseFloat(s.totalAmount)
+      const paid = safeParseFloat(s.amountPaid)
+      const returns = getSaleReturns(s.id)
+      // Sale is paid if total - paid - returns <= 0
+      return roundNumber(total - paid - returns) <= 0
+    })
+  }, [allSales, customerReturns])
+
+  const unpaidSales = useMemo(() => {
+    return allSales.filter((s) => {
+      const total = safeParseFloat(s.totalAmount)
+      const paid = safeParseFloat(s.amountPaid)
+      const returns = getSaleReturns(s.id)
+      // Sale is unpaid if total - paid - returns > 0
+      return roundNumber(total - paid - returns) > 0
+    })
+  }, [allSales, customerReturns])
 
   // Corrected and improved stats calculations - INCLUDING return credits and credit balances
   const stats = useMemo(() => {
@@ -425,7 +450,14 @@ export default function CustomerStatement() {
 
       const totalAmt = roundNumber(safeParseFloat(sale.totalAmount))
       const paidAmt = roundNumber(safeParseFloat(sale.amountPaid))
-      const outstandingAmt = roundNumber(Math.max(0, totalAmt - paidAmt))
+      
+      // Calculate returns for this specific bill
+      const billReturns = roundNumber(customerReturns
+        .filter(ret => ret.saleId === sale.id)
+        .reduce((sum, ret) => sum + safeParseFloat(ret.totalRefund), 0))
+      
+      // Outstanding = Bill amount - Payments - Returns for this bill
+      const outstandingAmt = roundNumber(Math.max(0, totalAmt - paidAmt - billReturns))
       
       // Calculate initial payment (paid at POS, not via recovery)
       // Initial payment = amountPaid - sum of recovery payments for this sale
@@ -439,7 +471,9 @@ export default function CustomerStatement() {
         id: `bill-${sale.id}`,
         date: safeParseDate(sale.createdAt),
         type: sale.isManualBalance ? "cash_loan" : "bill",
-        description: sale.isManualBalance ? "Manual Balance" : `Bill #${sale.id.slice(0, 8)}`,
+        description: sale.isManualBalance 
+          ? "Manual Balance" 
+          : `Bill #${sale.id.slice(0, 8)}${billReturns > 0 ? ` (Return: Rs. ${Math.round(billReturns).toLocaleString()})` : ''}`,
         reference: sale.id.slice(0, 8).toUpperCase(),
         debit: totalAmt,
         credit: initialPayment, // Include initial payment as credit in same row
@@ -452,6 +486,7 @@ export default function CustomerStatement() {
         status: sale.paymentStatus,
         saleId: sale.id,
         items: saleItems.length > 0 ? saleItems : undefined,
+        billReturns: billReturns // Store returns for this bill
       }
     })
 
@@ -543,17 +578,24 @@ export default function CustomerStatement() {
     const now = new Date()
     return unpaidSales
       .filter((s) => s.dueDate)
-      .map((s) => ({
-        ...s,
-        dueDate: safeParseDate(s.dueDate!),
-        outstanding: safeParseFloat(s.totalAmount) - safeParseFloat(s.amountPaid),
-      }))
+      .map((s) => {
+        const total = safeParseFloat(s.totalAmount)
+        const paid = safeParseFloat(s.amountPaid)
+        const returns = getSaleReturns(s.id)
+        const outstanding = roundNumber(total - paid - returns)
+        
+        return {
+          ...s,
+          dueDate: safeParseDate(s.dueDate!),
+          outstanding: Math.max(0, outstanding),
+        }
+      })
       .sort((a, b) => {
         const dateA = safeParseDate(a.dueDate)
         const dateB = safeParseDate(b.dueDate)
         return dateA.getTime() - dateB.getTime()
       })
-  }, [unpaidSales])
+  }, [unpaidSales, customerReturns])
 
   const getDueDateStatus = (dueDate: Date | null) => {
     if (!dueDate) return "none"
@@ -644,8 +686,9 @@ export default function CustomerStatement() {
   }
 
   const selectedSale = selectedSaleId ? allSales.find((s) => s.id === selectedSaleId) : null
+  const selectedSaleReturns = selectedSale ? getSaleReturns(selectedSale.id) : 0
   const selectedSaleOutstanding = selectedSale
-    ? safeParseFloat(selectedSale.totalAmount) - safeParseFloat(selectedSale.amountPaid)
+    ? Math.max(0, roundNumber(safeParseFloat(selectedSale.totalAmount) - safeParseFloat(selectedSale.amountPaid) - selectedSaleReturns))
     : 0
 
   const generateBankStatement = async () => {
@@ -723,7 +766,8 @@ export default function CustomerStatement() {
     const summaryData = [
       ["Total Bills:", stats.totalBills.toString(), "Total Purchases:", `Rs. ${stats.totalPurchases.toLocaleString()}`],
       ["Paid Bills:", stats.paidBills.toString(), "Total Paid:", `Rs. ${stats.totalPaid.toLocaleString()}`],
-      ["Unpaid Bills:", stats.unpaidBills.toString(), balanceLabel, balanceValue],
+      ["Unpaid Bills:", stats.unpaidBills.toString(), "Total Returns:", `Rs. ${stats.totalReturnCredits.toLocaleString()}`],
+      ["Total Returns:", stats.totalReturns.toString(), balanceLabel, balanceValue],
     ]
 
     pdf.setFontSize(9)
@@ -1126,6 +1170,7 @@ ${receiptSettings.businessName}
 Total Bills: ${stats.totalBills}
 Total Purchases: Rs. ${stats.totalPurchases.toLocaleString()}
 Total Paid: Rs. ${stats.totalPaid.toLocaleString()}
+Total Returns: Rs. ${stats.totalReturnCredits.toLocaleString()}
 
 *${balanceLabel}: Rs. ${Math.round(displayBalance).toLocaleString()}*
 
@@ -1351,8 +1396,40 @@ Thank you for your business!`
           </div>
         </div>
 
+        {/* Returns Summary Card */}
+        {stats.totalReturnCredits > 0 && (
+          <div className="mb-6">
+            <Card className="border-0 shadow-lg bg-orange-50/50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800 rounded-xl">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center">
+                      <Package className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-orange-800 dark:text-orange-300">Total Returns</p>
+                      <p className="text-xs text-orange-600/80 dark:text-orange-400/80">
+                        {stats.totalReturns} return{stats.totalReturns !== 1 ? 's' : ''} processed
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-medium text-orange-600 dark:text-orange-400">Return Credits</p>
+                    <p className="text-2xl font-bold text-orange-700 dark:text-orange-300">
+                      Rs. {Math.round(stats.totalReturnCredits).toLocaleString()}
+                    </p>
+                    <p className="text-xs text-orange-600/70 dark:text-orange-400/70">
+                      Deducted from outstanding balance
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
         <Tabs defaultValue="transactions" className="w-full">
-          <TabsList className="grid w-full grid-cols-4 mb-6 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+          <TabsList className="grid w-full grid-cols-5 mb-6 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
             <TabsTrigger 
               value="transactions" 
               className="flex items-center gap-2 rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 data-[state=active]:shadow-sm" 
@@ -1384,6 +1461,14 @@ Thank you for your business!`
             >
               <CalendarClock className="h-4 w-4" />
               <span className="hidden sm:inline">Due</span> ({scheduledPayments.length})
+            </TabsTrigger>
+            <TabsTrigger 
+              value="returns" 
+              className="flex items-center gap-2 rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 data-[state=active]:shadow-sm"
+              data-testid="tab-returns"
+            >
+              <Package className="h-4 w-4" />
+              <span className="hidden sm:inline">Returns</span> ({customerReturns.length})
             </TabsTrigger>
           </TabsList>
 
@@ -1625,57 +1710,178 @@ Thank you for your business!`
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {paidSales.map((sale) => (
-                      <div
-                        key={sale.id}
-                        className="p-4 rounded-xl border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800/50 flex flex-col md:flex-row md:items-center md:justify-between gap-4 hover:shadow-md transition-shadow"
-                        data-testid={`card-paid-${sale.id}`}
-                      >
-                        <div className="flex items-center gap-4">
-                          <div
-                            className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                              sale.isManualBalance 
-                                ? "bg-amber-50 dark:bg-amber-900/20" 
-                                : "bg-emerald-50 dark:bg-emerald-900/20"
-                            }`}
-                          >
-                            {sale.isManualBalance ? (
-                              <Landmark className="h-5 w-5 text-amber-600 dark:text-amber-400" />
-                            ) : (
-                              <CheckCircle className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                    {paidSales.map((sale) => {
+                      const saleReturns = getSaleReturns(sale.id)
+                      const total = safeParseFloat(sale.totalAmount)
+                      const paid = safeParseFloat(sale.amountPaid)
+                      const outstanding = roundNumber(total - paid - saleReturns)
+                      
+                      return (
+                        <div
+                          key={sale.id}
+                          className="p-4 rounded-xl border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800/50 flex flex-col md:flex-row md:items-center md:justify-between gap-4 hover:shadow-md transition-shadow"
+                          data-testid={`card-paid-${sale.id}`}
+                        >
+                          <div className="flex items-center gap-4">
+                            <div
+                              className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                                sale.isManualBalance 
+                                  ? "bg-amber-50 dark:bg-amber-900/20" 
+                                  : "bg-emerald-50 dark:bg-emerald-900/20"
+                              }`}
+                            >
+                              {sale.isManualBalance ? (
+                                <Landmark className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                              ) : (
+                                <CheckCircle className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                              )}
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="font-semibold text-slate-800 dark:text-white">
+                                  {sale.isManualBalance ? "Manual Balance" : `Bill #${sale.id.slice(0, 8)}`}
+                                </p>
+                                <Badge variant="outline" className="border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+                                  PAID
+                                </Badge>
+                                {saleReturns > 0 && (
+                                  <Badge variant="outline" className="border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
+                                    Return: Rs. {Math.round(saleReturns).toLocaleString()}
+                                  </Badge>
+                                )}
+                              </div>
+                              <p className="text-sm text-slate-500 dark:text-slate-400 font-mono mt-0.5">{formatDateShort(sale.createdAt)}</p>
+                              {sale.notes && <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 italic">{sale.notes}</p>}
+                              {saleReturns > 0 && (
+                                <p className="text-xs text-orange-600 dark:text-orange-400 mt-1">
+                                  Returns deducted: Rs. {Math.round(saleReturns).toLocaleString()}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-4">
+                            <div className="text-right">
+                              <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide">Amount</p>
+                              <p className="text-xl font-bold text-slate-800 dark:text-white font-mono">
+                                Rs. {Math.round(safeParseFloat(sale.totalAmount)).toLocaleString()}
+                              </p>
+                              <div className="text-sm text-emerald-600 dark:text-emerald-400 font-medium font-mono">
+                                <div>Paid: Rs. {Math.round(safeParseFloat(sale.amountPaid)).toLocaleString()}</div>
+                                {saleReturns > 0 && (
+                                  <div className="text-orange-600 dark:text-orange-400">
+                                    Returns: Rs. {Math.round(saleReturns).toLocaleString()}
+                                  </div>
+                                )}
+                                <div className="font-bold mt-1">
+                                  Balance: Rs. {Math.round(outstanding).toLocaleString()}
+                                </div>
+                              </div>
+                            </div>
+                            <Link href={`/bill/${sale.id}?from=customer`}>
+                              <Button size="icon" variant="outline" className="border-slate-200 dark:border-slate-600" data-testid={`button-view-paid-${sale.id}`}>
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                            </Link>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="returns">
+            <Card className="border-0 shadow-lg bg-white dark:bg-slate-800/50 rounded-xl overflow-hidden">
+              <CardHeader className="pb-4 border-b border-slate-100 dark:border-slate-700">
+                <CardTitle className="flex items-center gap-3 text-lg">
+                  <div className="w-8 h-8 rounded-lg bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center">
+                    <Package className="h-4 w-4 text-orange-600 dark:text-orange-400" />
+                  </div>
+                  Return History
+                  {customerReturns.length > 0 && (
+                    <Badge variant="outline" className="ml-2 border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
+                      Total: Rs. {Math.round(stats.totalReturnCredits).toLocaleString()}
+                    </Badge>
+                  )}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-4">
+                {customerReturns.length === 0 ? (
+                  <div className="text-center py-16 text-slate-400">
+                    <Package className="h-12 w-12 mx-auto mb-4 opacity-30" />
+                    <p>No returns recorded</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {customerReturns.map((ret) => {
+                      const refundAmount = safeParseFloat(ret.totalRefund)
+                      const returnItems = ret.returnItems?.map((item: any) => ({
+                        productName: item.color?.variant?.product?.productName || "Product",
+                        variantName: item.color?.variant?.packingSize || "Variant",
+                        colorName: item.color?.colorName || "Color",
+                        colorCode: item.color?.colorCode || "",
+                        quantity: item.quantity,
+                        rate: safeParseFloat(item.rate),
+                        subtotal: safeParseFloat(item.subtotal),
+                      })) || []
+
+                      return (
+                        <div
+                          key={ret.id}
+                          className="p-4 rounded-xl border border-orange-200 bg-orange-50/30 dark:border-orange-800 dark:bg-orange-900/20 flex flex-col md:flex-row md:items-center md:justify-between gap-4 hover:shadow-md transition-shadow"
+                          data-testid={`card-return-${ret.id}`}
+                        >
+                          <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 rounded-xl bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center">
+                              <Package className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="font-semibold text-slate-800 dark:text-white">
+                                  Return {ret.returnType === "full_bill" ? "(Full Bill)" : "(Items)"}
+                                </p>
+                                <Badge variant="outline" className="border-orange-300 bg-orange-100 text-orange-700 dark:border-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
+                                  REFUND
+                                </Badge>
+                              </div>
+                              <p className="text-sm text-slate-500 dark:text-slate-400 font-mono mt-0.5">
+                                {formatDateShort(ret.createdAt)}
+                              </p>
+                              {ret.reason && (
+                                <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
+                                  <span className="font-medium">Reason:</span> {ret.reason}
+                                </p>
+                              )}
+                              {returnItems.length > 0 && (
+                                <p className="text-xs text-orange-600 dark:text-orange-400 mt-1">
+                                  {returnItems.length} item{returnItems.length > 1 ? 's' : ''} returned
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-4">
+                            <div className="text-right">
+                              <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide">Refund Amount</p>
+                              <p className="text-xl font-bold text-orange-600 dark:text-orange-400 font-mono">
+                                Rs. {Math.round(refundAmount).toLocaleString()}
+                              </p>
+                              <p className="text-xs text-orange-600/80 dark:text-orange-400/80 mt-0.5">
+                                Deducted from bill balance
+                              </p>
+                            </div>
+                            {ret.saleId && (
+                              <Link href={`/bill/${ret.saleId}?from=customer`}>
+                                <Button size="icon" variant="outline" className="border-orange-300 dark:border-orange-600">
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                              </Link>
                             )}
                           </div>
-                          <div>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <p className="font-semibold text-slate-800 dark:text-white">
-                                {sale.isManualBalance ? "Manual Balance" : `Bill #${sale.id.slice(0, 8)}`}
-                              </p>
-                              <Badge variant="outline" className="border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
-                                PAID
-                              </Badge>
-                            </div>
-                            <p className="text-sm text-slate-500 dark:text-slate-400 font-mono mt-0.5">{formatDateShort(sale.createdAt)}</p>
-                            {sale.notes && <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 italic">{sale.notes}</p>}
-                          </div>
                         </div>
-                        <div className="flex items-center gap-4">
-                          <div className="text-right">
-                            <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide">Amount</p>
-                            <p className="text-xl font-bold text-slate-800 dark:text-white font-mono">
-                              Rs. {Math.round(safeParseFloat(sale.totalAmount)).toLocaleString()}
-                            </p>
-                            <p className="text-sm text-emerald-600 dark:text-emerald-400 font-medium font-mono">
-                              Paid: Rs. {Math.round(safeParseFloat(sale.amountPaid)).toLocaleString()}
-                            </p>
-                          </div>
-                          <Link href={`/bill/${sale.id}?from=customer`}>
-                            <Button size="icon" variant="outline" className="border-slate-200 dark:border-slate-600" data-testid={`button-view-paid-${sale.id}`}>
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                          </Link>
-                        </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 )}
               </CardContent>
@@ -1836,8 +2042,11 @@ Thank you for your business!`
                 ) : (
                   <div className="space-y-3">
                     {unpaidSales.map((sale) => {
-                      const outstanding = safeParseFloat(sale.totalAmount) - safeParseFloat(sale.amountPaid)
-                      const paidPercent = (safeParseFloat(sale.amountPaid) / safeParseFloat(sale.totalAmount)) * 100
+                      const saleReturns = getSaleReturns(sale.id)
+                      const total = safeParseFloat(sale.totalAmount)
+                      const paid = safeParseFloat(sale.amountPaid)
+                      const outstanding = roundNumber(total - paid - saleReturns)
+                      const paidPercent = (paid / total) * 100
                       return (
                         <div
                           key={sale.id}
@@ -1873,12 +2082,22 @@ Thank you for your business!`
                                 >
                                   {sale.paymentStatus.toUpperCase()}
                                 </Badge>
+                                {saleReturns > 0 && (
+                                  <Badge variant="outline" className="border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
+                                    Return: Rs. {Math.round(saleReturns).toLocaleString()}
+                                  </Badge>
+                                )}
                               </div>
                               <p className="text-sm text-slate-500 dark:text-slate-400 font-mono mt-0.5">
                                 {formatDateShort(sale.createdAt)}
                                 {sale.dueDate && <span className="text-slate-400 dark:text-slate-500"> | Due: {formatDateShort(sale.dueDate)}</span>}
                               </p>
                               {sale.notes && <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 italic">{sale.notes}</p>}
+                              {saleReturns > 0 && (
+                                <p className="text-xs text-orange-600 dark:text-orange-400 mt-1">
+                                  Returns deducted: Rs. {Math.round(saleReturns).toLocaleString()}
+                                </p>
+                              )}
                               <div className="w-40 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full mt-2 overflow-hidden">
                                 <div
                                   className="h-full bg-emerald-500 dark:bg-emerald-400 transition-all"
@@ -1886,7 +2105,7 @@ Thank you for your business!`
                                 />
                               </div>
                               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-mono">
-                                Rs. {Math.round(safeParseFloat(sale.amountPaid)).toLocaleString()} / Rs. {Math.round(safeParseFloat(sale.totalAmount)).toLocaleString()}
+                                Rs. {Math.round(paid).toLocaleString()} / Rs. {Math.round(total).toLocaleString()}
                               </p>
                             </div>
                           </div>
@@ -1896,6 +2115,11 @@ Thank you for your business!`
                               <p className="text-2xl font-bold text-rose-600 dark:text-rose-400 font-mono">
                                 Rs. {Math.round(outstanding).toLocaleString()}
                               </p>
+                              {saleReturns > 0 && (
+                                <p className="text-xs text-orange-600 dark:text-orange-400 mt-0.5">
+                                  (Incl. Rs. {Math.round(saleReturns).toLocaleString()} returns)
+                                </p>
+                              )}
                             </div>
                             <div className="flex gap-2">
                               <Link href={`/bill/${sale.id}?from=customer`}>
@@ -1938,6 +2162,11 @@ Thank you for your business!`
             </DialogTitle>
             <DialogDescription>
               Outstanding: Rs. {Math.round(selectedSaleOutstanding).toLocaleString()}
+              {selectedSaleReturns > 0 && (
+                <span className="text-orange-600 ml-2">
+                  (Returns: Rs. {Math.round(selectedSaleReturns).toLocaleString()} deducted)
+                </span>
+              )}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -2170,6 +2399,12 @@ Thank you for your business!`
                 <Badge variant="outline" className="border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-700 dark:bg-rose-900/30 dark:text-rose-400">
                   {unpaidSales.length} bill{unpaidSales.length > 1 ? "s" : ""}
                 </Badge>
+              </div>
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-sm text-slate-500 dark:text-slate-400">Total Returns</span>
+                <span className="font-semibold text-orange-600 dark:text-orange-400">
+                  Rs. {Math.round(stats.totalReturnCredits).toLocaleString()}
+                </span>
               </div>
               <div className="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-slate-600">
                 <span className="text-sm font-medium text-slate-600 dark:text-slate-300">Total Outstanding</span>
