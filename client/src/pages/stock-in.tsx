@@ -26,7 +26,7 @@ import { Textarea } from "@/components/ui/textarea";
 
 const stockInFormSchema = z.object({
   colorId: z.string().min(1, "Color is required"),
-  quantity: z.string().min(1, "Quantity is required"),
+  quantity: z.coerce.number().min(1, "Quantity must be at least 1"),
   notes: z.string().optional(),
   stockInDate: z.string().min(1, "Date is required").regex(/^\d{2}-\d{2}-\d{4}$/, "Date must be in DD-MM-YYYY format"),
 });
@@ -45,7 +45,7 @@ export default function StockIn() {
     resolver: zodResolver(stockInFormSchema),
     defaultValues: {
       colorId: "",
-      quantity: "",
+      quantity: 0,
       notes: "",
       stockInDate: formatDateToDDMMYYYY(new Date()),
     },
@@ -53,28 +53,34 @@ export default function StockIn() {
 
   const stockInMutation = useMutation({
     mutationFn: async (data: z.infer<typeof stockInFormSchema>) => {
-      return apiRequest("POST", "/api/stock-in", {
-        colorId: data.colorId,
-        quantity: parseInt(data.quantity),
+      // Use the correct API endpoint
+      return apiRequest("POST", `/api/colors/${data.colorId}/stock-in`, {
+        quantity: data.quantity,
         notes: data.notes || "",
         stockInDate: data.stockInDate,
       });
     },
-    onSuccess: () => {
+    onSuccess: (response) => {
       queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
       queryClient.invalidateQueries({ queryKey: ["/api/stock-in/history"] });
       setIsDialogOpen(false);
       setSelectedColor(null);
-      stockInForm.reset({ stockInDate: formatDateToDDMMYYYY(new Date()) });
+      stockInForm.reset({ 
+        colorId: "",
+        quantity: 0,
+        notes: "",
+        stockInDate: formatDateToDDMMYYYY(new Date()) 
+      });
       toast({
-        title: "Stock Added",
-        description: "Stock has been added successfully",
+        title: "Stock Added Successfully",
+        description: response.message || `${data.quantity} units added to stock`,
       });
     },
     onError: (error: any) => {
+      console.error("Stock in error:", error);
       toast({
-        title: "Error",
-        description: error.message || "Failed to add stock",
+        title: "Error Adding Stock",
+        description: error.message || "Failed to add stock. Please try again.",
         variant: "destructive",
       });
     },
@@ -98,6 +104,54 @@ export default function StockIn() {
     if (quantity === 0) return <Badge variant="destructive">Out</Badge>;
     if (quantity <= 5) return <Badge className="bg-amber-500 text-white">Low</Badge>;
     return <Badge className="bg-emerald-500 text-white">In Stock</Badge>;
+  };
+
+  // Helper to validate date format
+  const isValidDDMMYYYY = (dateStr: string): boolean => {
+    const pattern = /^\d{2}-\d{2}-\d{4}$/;
+    if (!pattern.test(dateStr)) return false;
+    
+    const [day, month, year] = dateStr.split("-").map(Number);
+    const date = new Date(year, month - 1, day);
+    return date.getDate() === day && date.getMonth() === month - 1 && date.getFullYear() === year;
+  };
+
+  const handleSubmit = async (data: z.infer<typeof stockInFormSchema>) => {
+    try {
+      // Validate date format
+      if (!isValidDDMMYYYY(data.stockInDate)) {
+        toast({
+          title: "Invalid Date",
+          description: "Please enter a valid date in DD-MM-YYYY format",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Validate quantity
+      if (data.quantity <= 0) {
+        toast({
+          title: "Invalid Quantity",
+          description: "Quantity must be greater than 0",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Check if color exists
+      if (!selectedColor) {
+        toast({
+          title: "No Color Selected",
+          description: "Please select a color to add stock to",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      await stockInMutation.mutateAsync(data);
+    } catch (error) {
+      console.error("Stock in submission error:", error);
+    }
   };
 
   return (
@@ -169,7 +223,7 @@ export default function StockIn() {
                       className="rounded-2xl p-4 border border-slate-100 bg-slate-50 hover:shadow-lg hover:border-emerald-200 transition-all cursor-pointer group"
                       onClick={() => {
                         stockInForm.setValue("colorId", color.id);
-                        stockInForm.setValue("quantity", "");
+                        stockInForm.setValue("quantity", 0);
                         stockInForm.setValue("notes", "");
                         stockInForm.setValue("stockInDate", formatDateToDDMMYYYY(new Date()));
                         setSelectedColor(color);
@@ -237,7 +291,12 @@ export default function StockIn() {
         if (!open) {
           setSelectedColor(null);
           setSearchQuery("");
-          stockInForm.reset({ stockInDate: formatDateToDDMMYYYY(new Date()) });
+          stockInForm.reset({ 
+            colorId: "",
+            quantity: 0,
+            notes: "",
+            stockInDate: formatDateToDDMMYYYY(new Date()) 
+          });
         }
       }}>
         <DialogContent className="bg-white border border-slate-200 max-w-3xl max-h-[85vh] overflow-y-auto">
@@ -276,6 +335,8 @@ export default function StockIn() {
                       onClick={() => {
                         setSelectedColor(color);
                         stockInForm.setValue("colorId", color.id);
+                        stockInForm.setValue("quantity", 0);
+                        stockInForm.setValue("notes", "");
                         stockInForm.setValue("stockInDate", formatDateToDDMMYYYY(new Date()));
                       }}
                       data-testid={`dialog-color-${color.id}`}
@@ -309,7 +370,7 @@ export default function StockIn() {
             </div>
           ) : (
             <Form {...stockInForm}>
-              <form onSubmit={stockInForm.handleSubmit((data) => stockInMutation.mutate(data))} className="space-y-4">
+              <form onSubmit={stockInForm.handleSubmit(handleSubmit)} className="space-y-4">
                 <div className="space-y-2">
                   <Label className="text-slate-600">Selected Color</Label>
                   <div className="bg-white rounded-xl p-4 border border-slate-200">
@@ -342,7 +403,10 @@ export default function StockIn() {
                         type="button"
                         variant="outline"
                         size="sm"
-                        onClick={() => setSelectedColor(null)}
+                        onClick={() => {
+                          setSelectedColor(null);
+                          stockInForm.setValue("colorId", "");
+                        }}
                         className="border-slate-200"
                       >
                         Change
@@ -351,66 +415,75 @@ export default function StockIn() {
                   </div>
                 </div>
 
-                <FormField control={stockInForm.control} name="quantity" render={({ field }) => {
-                  const quantityValue = parseInt(field.value) || 0;
-                  const currentStock = selectedColor.stockQuantity;
-                  const newStock = currentStock + quantityValue;
-                  const hasDeficit = currentStock < 0;
-                  const deficitAmount = hasDeficit ? Math.abs(currentStock) : 0;
+                <FormField 
+                  control={stockInForm.control} 
+                  name="quantity" 
+                  render={({ field }) => {
+                    const quantityValue = Number(field.value) || 0;
+                    const currentStock = selectedColor.stockQuantity;
+                    const newStock = currentStock + quantityValue;
+                    const hasDeficit = currentStock < 0;
+                    const deficitAmount = hasDeficit ? Math.abs(currentStock) : 0;
 
-                  return (
-                    <FormItem>
-                      <FormLabel>Quantity to Add</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          min="1"
-                          step="1"
-                          placeholder="0"
-                          {...field}
-                          className="border-slate-200"
-                          data-testid="input-stock-quantity"
-                        />
-                      </FormControl>
-                      <FormMessage />
+                    return (
+                      <FormItem>
+                        <FormLabel>Quantity to Add</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            min="1"
+                            step="1"
+                            placeholder="Enter quantity"
+                            {...field}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              const numValue = value === "" ? 0 : parseInt(value, 10);
+                              field.onChange(isNaN(numValue) ? 0 : numValue);
+                            }}
+                            className="border-slate-200"
+                            data-testid="input-stock-quantity"
+                          />
+                        </FormControl>
+                        <FormMessage />
 
-                      {quantityValue > 0 && (
-                        <div className="mt-3 p-3 rounded-lg bg-slate-50 border border-slate-200 space-y-2">
-                          <div className="text-sm font-medium text-slate-700">Stock Calculation Preview</div>
-                          <div className="grid grid-cols-3 gap-2 text-sm">
-                            <div className="text-center p-2 rounded bg-white border border-slate-100">
-                              <div className={`font-bold tabular-nums ${hasDeficit ? "text-red-600" : "text-slate-700"}`}>
-                                {currentStock}
+                        {quantityValue > 0 && (
+                          <div className="mt-3 p-3 rounded-lg bg-slate-50 border border-slate-200 space-y-2">
+                            <div className="text-sm font-medium text-slate-700">Stock Calculation Preview</div>
+                            <div className="grid grid-cols-3 gap-2 text-sm">
+                              <div className="text-center p-2 rounded bg-white border border-slate-100">
+                                <div className={`font-bold tabular-nums ${hasDeficit ? "text-red-600" : "text-slate-700"}`}>
+                                  {currentStock}
+                                </div>
+                                <div className="text-xs text-slate-500">Previous</div>
                               </div>
-                              <div className="text-xs text-slate-500">Previous</div>
+                              <div className="text-center p-2 rounded bg-emerald-50 border border-emerald-100">
+                                <div className="font-bold text-emerald-600 tabular-nums">+{quantityValue}</div>
+                                <div className="text-xs text-slate-500">Adding</div>
+                              </div>
+                              <div className="text-center p-2 rounded bg-blue-50 border border-blue-100">
+                                <div className="font-bold text-blue-600 tabular-nums">{newStock}</div>
+                                <div className="text-xs text-slate-500">New Stock</div>
+                              </div>
                             </div>
-                            <div className="text-center p-2 rounded bg-emerald-50 border border-emerald-100">
-                              <div className="font-bold text-emerald-600 tabular-nums">+{quantityValue}</div>
-                              <div className="text-xs text-slate-500">Adding</div>
-                            </div>
-                            <div className="text-center p-2 rounded bg-blue-50 border border-blue-100">
-                              <div className="font-bold text-blue-600 tabular-nums">{newStock}</div>
-                              <div className="text-xs text-slate-500">New Stock</div>
-                            </div>
+
+                            {hasDeficit && (
+                              <div className="flex items-start gap-2 p-2 rounded bg-amber-50 border border-amber-200 text-amber-800 text-xs">
+                                <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                                <div>
+                                  <span className="font-semibold">Deficit Alert:</span> This item has a stock deficit of {deficitAmount} units (from previous sales).
+                                  {quantityValue >= deficitAmount
+                                    ? ` Adding ${quantityValue} will first cover the deficit, then add ${quantityValue - deficitAmount} to available stock.`
+                                    : ` Adding ${quantityValue} will reduce the deficit to ${deficitAmount - quantityValue} units.`
+                                  }
+                                </div>
+                              </div>
+                            )}
                           </div>
-
-                          {hasDeficit && (
-                            <div className="flex items-start gap-2 p-2 rounded bg-amber-50 border border-amber-200 text-amber-800 text-xs">
-                              <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
-                              <div>
-                                <span className="font-semibold">Deficit Alert:</span> This item has a stock deficit of {deficitAmount} units (from previous sales).
-                                {quantityValue >= deficitAmount
-                                  ? ` Adding ${quantityValue} will first cover the deficit, then add ${quantityValue - deficitAmount} to available stock.`
-                                  : ` Adding ${quantityValue} will reduce the deficit to ${deficitAmount - quantityValue} units.`
-                                }
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </FormItem>
-                  );
-                }} />
+                        )}
+                      </FormItem>
+                    );
+                  }} 
+                />
 
                 <FormField control={stockInForm.control} name="stockInDate" render={({ field }) => (
                   <FormItem>
@@ -421,7 +494,8 @@ export default function StockIn() {
                         {...field}
                         onChange={(e) => {
                           const value = e.target.value;
-                          if (/^\d{0,2}-?\d{0,2}-?\d{0,4}$/.test(value)) {
+                          // Allow only numbers and dashes in DD-MM-YYYY format
+                          if (/^[\d-]*$/.test(value) && value.length <= 10) {
                             field.onChange(value);
                           }
                         }}
@@ -430,6 +504,9 @@ export default function StockIn() {
                       />
                     </FormControl>
                     <FormMessage />
+                    <p className="text-xs text-slate-500 mt-1">
+                      Current date: {formatDateToDDMMYYYY(new Date())}
+                    </p>
                   </FormItem>
                 )} />
 
@@ -455,7 +532,12 @@ export default function StockIn() {
                     onClick={() => {
                       setSelectedColor(null);
                       setSearchQuery("");
-                      stockInForm.reset({ stockInDate: formatDateToDDMMYYYY(new Date()) });
+                      stockInForm.reset({ 
+                        colorId: "",
+                        quantity: 0,
+                        notes: "",
+                        stockInDate: formatDateToDDMMYYYY(new Date()) 
+                      });
                     }}
                     className="border-slate-200"
                   >
@@ -463,11 +545,11 @@ export default function StockIn() {
                   </Button>
                   <Button
                     type="submit"
-                    disabled={stockInMutation.isPending}
+                    disabled={stockInMutation.isPending || !selectedColor}
                     className="bg-gradient-to-r from-blue-500 to-purple-600 text-white"
                     data-testid="button-submit-stock"
                   >
-                    {stockInMutation.isPending ? "Adding..." : "Add Stock"}
+                    {stockInMutation.isPending ? "Adding Stock..." : "Add Stock"}
                   </Button>
                 </div>
               </form>
