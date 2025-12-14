@@ -180,7 +180,7 @@ function hashPin(pin: string, salt: string): string {
   return crypto.pbkdf2Sync(pin, salt, 100000, 64, "sha512").toString("hex")
 }
 
-// Helper function to get Neon SQL client only (removed Supabase support)
+// FIXED: Helper function to get Neon SQL client
 async function getNeonSqlClient(connectionUrl: string) {
   const { neon } = await import("@neondatabase/serverless")
   
@@ -209,8 +209,179 @@ async function getNeonSqlClient(connectionUrl: string) {
   
   console.log('[Neon] Connecting with URL:', cleanUrl.replace(/:[^:@]*@/, ':****@'))
   
-  const sql = neon(cleanUrl)
-  return { sql, type: "neon" }
+  // Return the query function directly
+  return neon(cleanUrl)
+}
+
+// FIXED: Create tables for Neon with proper data types and better error handling
+async function createNeonTables(sql: any) {
+  try {
+    console.log('[Neon] Creating tables if not exist...')
+    
+    // Check if tables already exist first
+    const checkQuery = `
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'products'
+      ) as products_exist
+    `
+    const checkResult = await sql(checkQuery)
+    
+    if (checkResult[0]?.products_exist) {
+      console.log('[Neon] Tables already exist, skipping creation')
+      return true
+    }
+    
+    console.log('[Neon] Creating tables...')
+    
+    // Create tables one by one without transaction
+    // Products table
+    await sql(`
+      CREATE TABLE IF NOT EXISTS products (
+        id TEXT PRIMARY KEY,
+        company TEXT NOT NULL,
+        product_name TEXT NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      )
+    `)
+    console.log('[Neon] Created products table')
+    
+    // Variants table
+    await sql(`
+      CREATE TABLE IF NOT EXISTS variants (
+        id TEXT PRIMARY KEY,
+        product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+        packing_size TEXT NOT NULL,
+        rate TEXT NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      )
+    `)
+    console.log('[Neon] Created variants table')
+    
+    // Colors table
+    await sql(`
+      CREATE TABLE IF NOT EXISTS colors (
+        id TEXT PRIMARY KEY,
+        variant_id TEXT NOT NULL REFERENCES variants(id) ON DELETE CASCADE,
+        color_name TEXT NOT NULL,
+        color_code TEXT NOT NULL,
+        stock_quantity INTEGER DEFAULT 0,
+        rate_override TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      )
+    `)
+    console.log('[Neon] Created colors table')
+    
+    // Sales table
+    await sql(`
+      CREATE TABLE IF NOT EXISTS sales (
+        id TEXT PRIMARY KEY,
+        customer_name TEXT NOT NULL,
+        customer_phone TEXT NOT NULL,
+        total_amount TEXT NOT NULL,
+        amount_paid TEXT DEFAULT '0',
+        payment_status TEXT DEFAULT 'unpaid',
+        due_date TIMESTAMP WITH TIME ZONE,
+        is_manual_balance BOOLEAN DEFAULT FALSE,
+        notes TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      )
+    `)
+    console.log('[Neon] Created sales table')
+    
+    // Sale items table
+    await sql(`
+      CREATE TABLE IF NOT EXISTS sale_items (
+        id TEXT PRIMARY KEY,
+        sale_id TEXT NOT NULL REFERENCES sales(id) ON DELETE CASCADE,
+        color_id TEXT NOT NULL,
+        quantity INTEGER NOT NULL,
+        rate TEXT NOT NULL,
+        subtotal TEXT NOT NULL
+      )
+    `)
+    console.log('[Neon] Created sale_items table')
+    
+    // Stock history table
+    await sql(`
+      CREATE TABLE IF NOT EXISTS stock_in_history (
+        id TEXT PRIMARY KEY,
+        color_id TEXT NOT NULL,
+        quantity INTEGER NOT NULL,
+        previous_stock INTEGER NOT NULL,
+        new_stock INTEGER NOT NULL,
+        stock_in_date TEXT NOT NULL,
+        notes TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      )
+    `)
+    console.log('[Neon] Created stock_in_history table')
+    
+    // Payment history table
+    await sql(`
+      CREATE TABLE IF NOT EXISTS payment_history (
+        id TEXT PRIMARY KEY,
+        sale_id TEXT NOT NULL,
+        customer_phone TEXT NOT NULL,
+        amount TEXT NOT NULL,
+        previous_balance TEXT NOT NULL,
+        new_balance TEXT NOT NULL,
+        payment_method TEXT DEFAULT 'cash',
+        notes TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      )
+    `)
+    console.log('[Neon] Created payment_history table')
+    
+    // Returns table
+    await sql(`
+      CREATE TABLE IF NOT EXISTS returns (
+        id TEXT PRIMARY KEY,
+        sale_id TEXT,
+        customer_name TEXT NOT NULL,
+        customer_phone TEXT NOT NULL,
+        return_type TEXT DEFAULT 'item',
+        total_refund TEXT DEFAULT '0',
+        reason TEXT,
+        status TEXT DEFAULT 'completed',
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      )
+    `)
+    console.log('[Neon] Created returns table')
+    
+    // Return items table
+    await sql(`
+      CREATE TABLE IF NOT EXISTS return_items (
+        id TEXT PRIMARY KEY,
+        return_id TEXT NOT NULL REFERENCES returns(id) ON DELETE CASCADE,
+        color_id TEXT NOT NULL,
+        sale_item_id TEXT,
+        quantity INTEGER NOT NULL,
+        rate TEXT NOT NULL,
+        subtotal TEXT NOT NULL,
+        stock_restored BOOLEAN DEFAULT TRUE
+      )
+    `)
+    console.log('[Neon] Created return_items table')
+    
+    console.log('[Neon] Tables created/verified successfully')
+    return true
+  } catch (error: any) {
+    console.error('[Neon] Error creating tables:', error)
+    
+    // Provide more detailed error message
+    let errorMessage = 'Failed to create tables in Neon'
+    if (error.message?.includes('permission denied')) {
+      errorMessage = 'Permission denied. Check if the user has CREATE TABLE privileges.'
+    } else if (error.message?.includes('does not exist')) {
+      errorMessage = 'Database or schema does not exist.'
+    } else if (error.message?.includes('SSL')) {
+      errorMessage = 'SSL connection error. Try adding ?sslmode=require to connection URL.'
+    }
+    
+    throw new Error(`${errorMessage}: ${error.message || error}`)
+  }
 }
 
 // Middleware to verify audit token
@@ -249,192 +420,6 @@ setInterval(
   60 * 60 * 1000,
 ) // Run every hour
 
-// FIXED: Create tables for Neon with proper data types and better error handling
-async function createNeonTables(sql: any) {
-  let tx: any;
-  try {
-    console.log('[Neon] Creating tables if not exist...')
-    
-    // Start transaction
-    tx = await sql.begin()
-    
-    // Check if tables already exist first
-    const checkQuery = `
-      SELECT EXISTS (
-        SELECT FROM information_schema.tables 
-        WHERE table_schema = 'public' 
-        AND table_name = 'products'
-      ) as products_exist
-    `
-    const checkResult = await tx.unsafe(checkQuery)
-    
-    if (checkResult[0]?.products_exist) {
-      console.log('[Neon] Tables already exist, skipping creation')
-      await tx.commit()
-      return true
-    }
-    
-    console.log('[Neon] Creating tables...')
-    
-    // Products table
-    await tx.unsafe(`
-      CREATE TABLE IF NOT EXISTS products (
-        id TEXT PRIMARY KEY,
-        company TEXT NOT NULL,
-        product_name TEXT NOT NULL,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-      )
-    `)
-    console.log('[Neon] Created products table')
-    
-    // Variants table
-    await tx.unsafe(`
-      CREATE TABLE IF NOT EXISTS variants (
-        id TEXT PRIMARY KEY,
-        product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-        packing_size TEXT NOT NULL,
-        rate TEXT NOT NULL,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-      )
-    `)
-    console.log('[Neon] Created variants table')
-    
-    // Colors table
-    await tx.unsafe(`
-      CREATE TABLE IF NOT EXISTS colors (
-        id TEXT PRIMARY KEY,
-        variant_id TEXT NOT NULL REFERENCES variants(id) ON DELETE CASCADE,
-        color_name TEXT NOT NULL,
-        color_code TEXT NOT NULL,
-        stock_quantity INTEGER DEFAULT 0,
-        rate_override TEXT,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-      )
-    `)
-    console.log('[Neon] Created colors table')
-    
-    // Sales table
-    await tx.unsafe(`
-      CREATE TABLE IF NOT EXISTS sales (
-        id TEXT PRIMARY KEY,
-        customer_name TEXT NOT NULL,
-        customer_phone TEXT NOT NULL,
-        total_amount TEXT NOT NULL,
-        amount_paid TEXT DEFAULT '0',
-        payment_status TEXT DEFAULT 'unpaid',
-        due_date TIMESTAMP WITH TIME ZONE,
-        is_manual_balance BOOLEAN DEFAULT FALSE,
-        notes TEXT,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-      )
-    `)
-    console.log('[Neon] Created sales table')
-    
-    // Sale items table
-    await tx.unsafe(`
-      CREATE TABLE IF NOT EXISTS sale_items (
-        id TEXT PRIMARY KEY,
-        sale_id TEXT NOT NULL REFERENCES sales(id) ON DELETE CASCADE,
-        color_id TEXT NOT NULL,
-        quantity INTEGER NOT NULL,
-        rate TEXT NOT NULL,
-        subtotal TEXT NOT NULL
-      )
-    `)
-    console.log('[Neon] Created sale_items table')
-    
-    // Stock history table
-    await tx.unsafe(`
-      CREATE TABLE IF NOT EXISTS stock_in_history (
-        id TEXT PRIMARY KEY,
-        color_id TEXT NOT NULL,
-        quantity INTEGER NOT NULL,
-        previous_stock INTEGER NOT NULL,
-        new_stock INTEGER NOT NULL,
-        stock_in_date TEXT NOT NULL,
-        notes TEXT,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-      )
-    `)
-    console.log('[Neon] Created stock_in_history table')
-    
-    // Payment history table
-    await tx.unsafe(`
-      CREATE TABLE IF NOT EXISTS payment_history (
-        id TEXT PRIMARY KEY,
-        sale_id TEXT NOT NULL,
-        customer_phone TEXT NOT NULL,
-        amount TEXT NOT NULL,
-        previous_balance TEXT NOT NULL,
-        new_balance TEXT NOT NULL,
-        payment_method TEXT DEFAULT 'cash',
-        notes TEXT,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-      )
-    `)
-    console.log('[Neon] Created payment_history table')
-    
-    // Returns table
-    await tx.unsafe(`
-      CREATE TABLE IF NOT EXISTS returns (
-        id TEXT PRIMARY KEY,
-        sale_id TEXT,
-        customer_name TEXT NOT NULL,
-        customer_phone TEXT NOT NULL,
-        return_type TEXT DEFAULT 'item',
-        total_refund TEXT DEFAULT '0',
-        reason TEXT,
-        status TEXT DEFAULT 'completed',
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-      )
-    `)
-    console.log('[Neon] Created returns table')
-    
-    // Return items table
-    await tx.unsafe(`
-      CREATE TABLE IF NOT EXISTS return_items (
-        id TEXT PRIMARY KEY,
-        return_id TEXT NOT NULL REFERENCES returns(id) ON DELETE CASCADE,
-        color_id TEXT NOT NULL,
-        sale_item_id TEXT,
-        quantity INTEGER NOT NULL,
-        rate TEXT NOT NULL,
-        subtotal TEXT NOT NULL,
-        stock_restored BOOLEAN DEFAULT TRUE
-      )
-    `)
-    console.log('[Neon] Created return_items table')
-    
-    await tx.commit()
-    
-    console.log('[Neon] Tables created/verified successfully')
-    return true
-  } catch (error: any) {
-    console.error('[Neon] Error creating tables:', error)
-    
-    // Rollback transaction if it exists
-    if (tx) {
-      try {
-        await tx.rollback()
-      } catch (rollbackError) {
-        console.error('[Neon] Error rolling back transaction:', rollbackError)
-      }
-    }
-    
-    // Provide more detailed error message
-    let errorMessage = 'Failed to create tables in Neon'
-    if (error.message?.includes('permission denied')) {
-      errorMessage = 'Permission denied. Check if the user has CREATE TABLE privileges.'
-    } else if (error.message?.includes('does not exist')) {
-      errorMessage = 'Database or schema does not exist.'
-    } else if (error.message?.includes('SSL')) {
-      errorMessage = 'SSL connection error. Try adding ?sslmode=require to connection URL.'
-    }
-    
-    throw new Error(`${errorMessage}: ${error.message || error}`)
-  }
-}
-
 // FIXED: Neon-specific export function - NO AUTO REFRESH
 async function exportToNeonData() {
   try {
@@ -446,7 +431,7 @@ async function exportToNeonData() {
     console.log(`[Neon Export] Starting export...`)
 
     // Get connection
-    const { sql } = await getNeonSqlClient(settings.cloudDatabaseUrl)
+    const sql = await getNeonSqlClient(settings.cloudDatabaseUrl)
 
     // Step 1: Create tables if they don't exist
     console.log('[Neon Export] Checking/creating tables...')
@@ -481,120 +466,117 @@ async function exportToNeonData() {
       returnItems: 0,
     }
 
-    // Step 3: Export data using transactions
+    // Step 3: Export data using individual queries (no transaction)
     console.log('[Neon Export] Exporting data to Neon...')
-    await sql.begin(async (tx: any) => {
-      // Clear existing data first (optional, but ensures clean sync)
-      console.log('[Neon Export] Clearing existing data...')
-      await tx.unsafe(`TRUNCATE TABLE 
-        return_items, 
-        returns, 
-        payment_history, 
-        stock_in_history, 
-        sale_items, 
-        sales, 
-        colors, 
-        variants, 
-        products 
-        RESTART IDENTITY CASCADE`)
-      
-      // Export products
-      console.log(`[Neon Export] Exporting ${products.length} products...`)
-      for (const p of products) {
-        await tx.unsafe(`
-          INSERT INTO products (id, company, product_name, created_at)
-          VALUES ($1, $2, $3, $4)
-        `, [p.id, p.company, p.productName, p.createdAt])
-        exportedCounts.products++
-      }
+    
+    // Clear existing data first (optional, but ensures clean sync)
+    console.log('[Neon Export] Clearing existing data...')
+    await sql(`TRUNCATE TABLE 
+      return_items, 
+      returns, 
+      payment_history, 
+      stock_in_history, 
+      sale_items, 
+      sales, 
+      colors, 
+      variants, 
+      products 
+      RESTART IDENTITY CASCADE`)
+    
+    // Export products
+    console.log(`[Neon Export] Exporting ${products.length} products...`)
+    for (const p of products) {
+      await sql(`
+        INSERT INTO products (id, company, product_name, created_at)
+        VALUES ($1, $2, $3, $4)
+      `, [p.id, p.company, p.productName, p.createdAt])
+      exportedCounts.products++
+    }
 
-      // Export variants
-      console.log(`[Neon Export] Exporting ${variants.length} variants...`)
-      for (const v of variants) {
-        await tx.unsafe(`
-          INSERT INTO variants (id, product_id, packing_size, rate, created_at)
-          VALUES ($1, $2, $3, $4, $5)
-        `, [v.id, v.productId, v.packingSize, v.rate, v.createdAt])
-        exportedCounts.variants++
-      }
+    // Export variants
+    console.log(`[Neon Export] Exporting ${variants.length} variants...`)
+    for (const v of variants) {
+      await sql(`
+        INSERT INTO variants (id, product_id, packing_size, rate, created_at)
+        VALUES ($1, $2, $3, $4, $5)
+      `, [v.id, v.productId, v.packingSize, v.rate, v.createdAt])
+      exportedCounts.variants++
+    }
 
-      // Export colors
-      console.log(`[Neon Export] Exporting ${colorsData.length} colors...`)
-      for (const c of colorsData) {
-        await tx.unsafe(`
-          INSERT INTO colors (id, variant_id, color_name, color_code, stock_quantity, rate_override, created_at)
-          VALUES ($1, $2, $3, $4, $5, $6, $7)
-        `, [c.id, c.variantId, c.colorName, c.colorCode, c.stockQuantity, c.rateOverride, c.createdAt])
-        exportedCounts.colors++
-      }
+    // Export colors
+    console.log(`[Neon Export] Exporting ${colorsData.length} colors...`)
+    for (const c of colorsData) {
+      await sql(`
+        INSERT INTO colors (id, variant_id, color_name, color_code, stock_quantity, rate_override, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `, [c.id, c.variantId, c.colorName, c.colorCode, c.stockQuantity, c.rateOverride, c.createdAt])
+      exportedCounts.colors++
+    }
 
-      // Export sales
-      console.log(`[Neon Export] Exporting ${sales.length} sales...`)
-      for (const s of sales) {
-        await tx.unsafe(`
-          INSERT INTO sales (id, customer_name, customer_phone, total_amount, amount_paid, payment_status, due_date, is_manual_balance, notes, created_at)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-        `, [s.id, s.customerName, s.customerPhone, s.totalAmount, s.amountPaid, s.paymentStatus || "unpaid", s.dueDate, s.isManualBalance, s.notes, s.createdAt])
-        exportedCounts.sales++
-      }
+    // Export sales
+    console.log(`[Neon Export] Exporting ${sales.length} sales...`)
+    for (const s of sales) {
+      await sql(`
+        INSERT INTO sales (id, customer_name, customer_phone, total_amount, amount_paid, payment_status, due_date, is_manual_balance, notes, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      `, [s.id, s.customerName, s.customerPhone, s.totalAmount, s.amountPaid, s.paymentStatus || "unpaid", s.dueDate, s.isManualBalance, s.notes, s.createdAt])
+      exportedCounts.sales++
+    }
 
-      // Export sale items
-      console.log(`[Neon Export] Exporting ${saleItems.length} sale items...`)
-      for (const si of saleItems) {
-        await tx.unsafe(`
-          INSERT INTO sale_items (id, sale_id, color_id, quantity, rate, subtotal)
-          VALUES ($1, $2, $3, $4, $5, $6)
-        `, [si.id, si.saleId, si.colorId, si.quantity, si.rate, si.subtotal])
-        exportedCounts.saleItems++
-      }
+    // Export sale items
+    console.log(`[Neon Export] Exporting ${saleItems.length} sale items...`)
+    for (const si of saleItems) {
+      await sql(`
+        INSERT INTO sale_items (id, sale_id, color_id, quantity, rate, subtotal)
+        VALUES ($1, $2, $3, $4, $5, $6)
+      `, [si.id, si.saleId, si.colorId, si.quantity, si.rate, si.subtotal])
+      exportedCounts.saleItems++
+    }
 
-      // Export stock history
-      console.log(`[Neon Export] Exporting ${stockInHistory.length} stock history records...`)
-      for (const sih of stockInHistory) {
-        await tx.unsafe(`
-          INSERT INTO stock_in_history (id, color_id, quantity, previous_stock, new_stock, stock_in_date, notes, created_at)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        `, [sih.id, sih.colorId, sih.quantity, sih.previousStock, sih.newStock, sih.stockInDate, sih.notes, sih.createdAt])
-        exportedCounts.stockInHistory++
-      }
+    // Export stock history
+    console.log(`[Neon Export] Exporting ${stockInHistory.length} stock history records...`)
+    for (const sih of stockInHistory) {
+      await sql(`
+        INSERT INTO stock_in_history (id, color_id, quantity, previous_stock, new_stock, stock_in_date, notes, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `, [sih.id, sih.colorId, sih.quantity, sih.previousStock, sih.newStock, sih.stockInDate, sih.notes, sih.createdAt])
+      exportedCounts.stockInHistory++
+    }
 
-      // Export payment history
-      console.log(`[Neon Export] Exporting ${paymentHistory.length} payment history records...`)
-      for (const ph of paymentHistory) {
-        await tx.unsafe(`
-          INSERT INTO payment_history (id, sale_id, customer_phone, amount, previous_balance, new_balance, payment_method, notes, created_at)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-        `, [ph.id, ph.saleId, ph.customerPhone, ph.amount, ph.previousBalance, ph.newBalance, ph.paymentMethod, ph.notes, ph.createdAt])
-        exportedCounts.paymentHistory++
-      }
+    // Export payment history
+    console.log(`[Neon Export] Exporting ${paymentHistory.length} payment history records...`)
+    for (const ph of paymentHistory) {
+      await sql(`
+        INSERT INTO payment_history (id, sale_id, customer_phone, amount, previous_balance, new_balance, payment_method, notes, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `, [ph.id, ph.saleId, ph.customerPhone, ph.amount, ph.previousBalance, ph.newBalance, ph.paymentMethod, ph.notes, ph.createdAt])
+      exportedCounts.paymentHistory++
+    }
 
-      // Export returns
-      console.log(`[Neon Export] Exporting ${returns.length} returns...`)
-      for (const r of returns) {
-        await tx.unsafe(`
-          INSERT INTO returns (id, sale_id, customer_name, customer_phone, return_type, total_refund, reason, status, created_at)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-        `, [r.id, r.saleId, r.customerName, r.customerPhone, r.returnType, r.totalRefund, r.reason, r.status, r.createdAt])
-        exportedCounts.returns++
-      }
+    // Export returns
+    console.log(`[Neon Export] Exporting ${returns.length} returns...`)
+    for (const r of returns) {
+      await sql(`
+        INSERT INTO returns (id, sale_id, customer_name, customer_phone, return_type, total_refund, reason, status, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `, [r.id, r.saleId, r.customerName, r.customerPhone, r.returnType, r.totalRefund, r.reason, r.status, r.createdAt])
+      exportedCounts.returns++
+    }
 
-      // Export return items
-      console.log(`[Neon Export] Exporting ${returnItems.length} return items...`)
-      for (const ri of returnItems) {
-        await tx.unsafe(`
-          INSERT INTO return_items (id, return_id, color_id, sale_item_id, quantity, rate, subtotal, stock_restored)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        `, [ri.id, ri.returnId, ri.colorId, ri.saleItemId, ri.quantity, ri.rate, ri.subtotal, ri.stockRestored])
-        exportedCounts.returnItems++
-      }
-    })
+    // Export return items
+    console.log(`[Neon Export] Exporting ${returnItems.length} return items...`)
+    for (const ri of returnItems) {
+      await sql(`
+        INSERT INTO return_items (id, return_id, color_id, sale_item_id, quantity, rate, subtotal, stock_restored)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `, [ri.id, ri.returnId, ri.colorId, ri.saleItemId, ri.quantity, ri.rate, ri.subtotal, ri.stockRestored])
+      exportedCounts.returnItems++
+    }
 
     // Step 4: Verify data was exported
     console.log('[Neon Export] Verifying export...')
-    const [verifyProducts, verifySales] = await Promise.all([
-      sql`SELECT COUNT(*) as count FROM products`,
-      sql`SELECT COUNT(*) as count FROM sales`
-    ])
+    const verifyProducts = await sql(`SELECT COUNT(*) as count FROM products`)
+    const verifySales = await sql(`SELECT COUNT(*) as count FROM sales`)
     
     console.log(`[Neon Export] Verification:`)
     console.log(`  Products: ${verifyProducts[0]?.count || 0}`)
@@ -631,17 +613,14 @@ async function importFromNeonData() {
       throw new Error("Cloud database not configured")
     }
 
-    const { sql } = await getNeonSqlClient(settings.cloudDatabaseUrl)
+    const sql = await getNeonSqlClient(settings.cloudDatabaseUrl)
 
     console.log(`[Neon Import] Starting import...`)
 
     // Check if tables exist
     let tablesCheck
     try {
-      tablesCheck = await sql`
-        SELECT table_name FROM information_schema.tables
-        WHERE table_schema = 'public' AND table_name = 'products'
-      `
+      tablesCheck = await sql(`SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'products'`)
     } catch (error) {
       throw new Error("Tables do not exist in Neon. Please export first.")
     }
@@ -651,15 +630,15 @@ async function importFromNeonData() {
     }
 
     // Fetch all data from Neon
-    const cloudProducts = await sql`SELECT * FROM products ORDER BY created_at`
-    const cloudVariants = await sql`SELECT * FROM variants ORDER BY created_at`
-    const cloudColors = await sql`SELECT * FROM colors ORDER BY created_at`
-    const cloudSales = await sql`SELECT * FROM sales ORDER BY created_at`
-    const cloudSaleItems = await sql`SELECT * FROM sale_items`
-    const cloudStockInHistory = await sql`SELECT * FROM stock_in_history ORDER BY created_at`
-    const cloudPaymentHistory = await sql`SELECT * FROM payment_history ORDER BY created_at`
-    const cloudReturns = await sql`SELECT * FROM returns ORDER BY created_at`
-    const cloudReturnItems = await sql`SELECT * FROM return_items`
+    const cloudProducts = await sql(`SELECT * FROM products ORDER BY created_at`)
+    const cloudVariants = await sql(`SELECT * FROM variants ORDER BY created_at`)
+    const cloudColors = await sql(`SELECT * FROM colors ORDER BY created_at`)
+    const cloudSales = await sql(`SELECT * FROM sales ORDER BY created_at`)
+    const cloudSaleItems = await sql(`SELECT * FROM sale_items`)
+    const cloudStockInHistory = await sql(`SELECT * FROM stock_in_history ORDER BY created_at`)
+    const cloudPaymentHistory = await sql(`SELECT * FROM payment_history ORDER BY created_at`)
+    const cloudReturns = await sql(`SELECT * FROM returns ORDER BY created_at`)
+    const cloudReturnItems = await sql(`SELECT * FROM return_items`)
 
     const importedCounts = {
       products: 0,
@@ -2421,14 +2400,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       try {
-        const { sql } = await getNeonSqlClient(connectionUrl)
+        const sql = await getNeonSqlClient(connectionUrl)
         
         // Test with simple query
-        const result = await sql`SELECT version() as neon_version, now() as server_time`
+        const result = await sql(`SELECT version() as neon_version, now() as server_time`)
         
         // Verify we can create tables
-        await sql`CREATE TABLE IF NOT EXISTS test_paintpulse (id SERIAL PRIMARY KEY, test TEXT)`
-        await sql`DROP TABLE IF EXISTS test_paintpulse`
+        await sql(`CREATE TABLE IF NOT EXISTS test_paintpulse (id SERIAL PRIMARY KEY, test TEXT)`)
+        await sql(`DROP TABLE IF EXISTS test_paintpulse`)
         
         // Save URL to settings
         await storage.updateSettings({
@@ -2509,16 +2488,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       if (settings.cloudDatabaseUrl) {
         try {
-          const { sql } = await getNeonSqlClient(settings.cloudDatabaseUrl)
+          const sql = await getNeonSqlClient(settings.cloudDatabaseUrl)
           
           // Test connection
-          await sql`SELECT 1`
+          await sql(`SELECT 1`)
           connectionStatus = "connected"
           
           // Check if data exists
           try {
-            const productCount = await sql`SELECT COUNT(*) as count FROM products`
-            const salesCount = await sql`SELECT COUNT(*) as count FROM sales`
+            const productCount = await sql(`SELECT COUNT(*) as count FROM products`)
+            const salesCount = await sql(`SELECT COUNT(*) as count FROM sales`)
             dataInCloud = {
               products: parseInt(productCount[0]?.count || "0"),
               sales: parseInt(salesCount[0]?.count || "0")
@@ -2652,22 +2631,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "No connection URL provided" })
       }
       
-      const { sql } = await getNeonSqlClient(connectionUrl)
+      const sql = await getNeonSqlClient(connectionUrl)
       
       // Test basic query
-      const versionResult = await sql`SELECT version()`
+      const versionResult = await sql(`SELECT version()`)
       
       // Test creating a simple table
-      await sql`CREATE TABLE IF NOT EXISTS test_table (id SERIAL PRIMARY KEY, name TEXT)`
+      await sql(`CREATE TABLE IF NOT EXISTS test_table (id SERIAL PRIMARY KEY, name TEXT)`)
       
       // Test inserting data
-      await sql`INSERT INTO test_table (name) VALUES ('test')`
+      await sql(`INSERT INTO test_table (name) VALUES ('test')`)
       
       // Test reading data
-      const readResult = await sql`SELECT * FROM test_table`
+      const readResult = await sql(`SELECT * FROM test_table`)
       
       // Clean up
-      await sql`DROP TABLE IF EXISTS test_table`
+      await sql(`DROP TABLE IF EXISTS test_table`)
       
       res.json({
         success: true,

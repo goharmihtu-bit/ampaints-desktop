@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useDeferredValue, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useDeferredValue } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,7 +13,6 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
-  DialogFooter,
 } from "@/components/ui/dialog";
 import {
   Search,
@@ -28,12 +27,6 @@ import {
   Zap,
   AlertTriangle,
   RefreshCw,
-  Wifi,
-  WifiOff,
-  Upload,
-  Clock,
-  CheckCircle,
-  AlertCircle,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useDateFormat } from "@/hooks/use-date-format";
@@ -45,17 +38,15 @@ import {
   Command,
   CommandEmpty,
   CommandGroup,
+  CommandInput,
   CommandItem,
   CommandList,
-  CommandInput,
 } from "@/components/ui/command";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Progress } from "@/components/ui/progress";
 
 interface CartItem {
   colorId: string;
@@ -72,202 +63,6 @@ interface CustomerSuggestion {
   transactionCount: number;
 }
 
-interface PendingSale {
-  id: string;
-  offlineId: string;
-  customerName: string;
-  customerPhone: string;
-  totalAmount: number;
-  itemsCount: number;
-  timestamp: string;
-  status: 'pending' | 'synced' | 'failed';
-  attempts: number;
-  lastError?: string;
-  syncedSaleId?: string;
-}
-
-// Offline storage utilities
-class OfflineStorage {
-  private dbName = 'paintpulse-pos';
-  private version = 1;
-  private db: IDBDatabase | null = null;
-
-  async init(): Promise<boolean> {
-    return new Promise((resolve) => {
-      if (!window.indexedDB) {
-        console.warn('IndexedDB not supported, falling back to localStorage');
-        resolve(false);
-        return;
-      }
-
-      const request = indexedDB.open(this.dbName, this.version);
-
-      request.onerror = () => {
-        console.error('Failed to open IndexedDB');
-        resolve(false);
-      };
-
-      request.onsuccess = (event) => {
-        this.db = (event.target as IDBOpenDBRequest).result;
-        resolve(true);
-      };
-
-      request.onupgradeneeded = (event) => {
-        const db = (event.target as IDBOpenDBRequest).result;
-        
-        // Create pending sales store
-        if (!db.objectStoreNames.contains('pendingSales')) {
-          const store = db.createObjectStore('pendingSales', { keyPath: 'offlineId' });
-          store.createIndex('timestamp', 'timestamp', { unique: false });
-          store.createIndex('status', 'status', { unique: false });
-        }
-        
-        // Create cart store
-        if (!db.objectStoreNames.contains('cart')) {
-          db.createObjectStore('cart', { keyPath: 'colorId' });
-        }
-        
-        // Create customer store
-        if (!db.objectStoreNames.contains('customer')) {
-          db.createObjectStore('customer', { keyPath: 'id' });
-        }
-      };
-    });
-  }
-
-  async savePendingSale(sale: any): Promise<string> {
-    if (!this.db) {
-      // Fallback to localStorage
-      const offlineId = `offline_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      const pendingSales = JSON.parse(localStorage.getItem('pendingSales') || '[]');
-      pendingSales.push({ ...sale, offlineId });
-      localStorage.setItem('pendingSales', JSON.stringify(pendingSales));
-      return offlineId;
-    }
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction(['pendingSales'], 'readwrite');
-      const store = transaction.objectStore('pendingSales');
-      const offlineId = `offline_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      const pendingSale = {
-        ...sale,
-        offlineId,
-        timestamp: new Date().toISOString(),
-        status: 'pending',
-        attempts: 0
-      };
-
-      const request = store.add(pendingSale);
-
-      request.onsuccess = () => resolve(offlineId);
-      request.onerror = () => reject(request.error);
-    });
-  }
-
-  async getPendingSales(): Promise<PendingSale[]> {
-    if (!this.db) {
-      const sales = JSON.parse(localStorage.getItem('pendingSales') || '[]');
-      return sales;
-    }
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction(['pendingSales'], 'readonly');
-      const store = transaction.objectStore('pendingSales');
-      const request = store.getAll();
-
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
-  }
-
-  async deletePendingSale(offlineId: string): Promise<void> {
-    if (!this.db) {
-      const sales = JSON.parse(localStorage.getItem('pendingSales') || '[]');
-      const filtered = sales.filter((s: any) => s.offlineId !== offlineId);
-      localStorage.setItem('pendingSales', JSON.stringify(filtered));
-      return;
-    }
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction(['pendingSales'], 'readwrite');
-      const store = transaction.objectStore('pendingSales');
-      const request = store.delete(offlineId);
-
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
-    });
-  }
-
-  async saveCart(cart: CartItem[]): Promise<void> {
-    if (!this.db) {
-      localStorage.setItem('pos_cart', JSON.stringify(cart));
-      return;
-    }
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction(['cart'], 'readwrite');
-      const store = transaction.objectStore('cart');
-      
-      // Clear existing cart
-      store.clear();
-      
-      // Add all items
-      cart.forEach(item => {
-        store.add(item);
-      });
-
-      transaction.oncomplete = () => resolve();
-      transaction.onerror = () => reject(transaction.error);
-    });
-  }
-
-  async loadCart(): Promise<CartItem[]> {
-    if (!this.db) {
-      return JSON.parse(localStorage.getItem('pos_cart') || '[]');
-    }
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction(['cart'], 'readonly');
-      const store = transaction.objectStore('cart');
-      const request = store.getAll();
-
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
-  }
-
-  async saveCustomer(customer: { name: string; phone: string }): Promise<void> {
-    if (!this.db) {
-      localStorage.setItem('pos_customer', JSON.stringify(customer));
-      return;
-    }
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction(['customer'], 'readwrite');
-      const store = transaction.objectStore('customer');
-      store.put({ id: 'current', ...customer });
-      transaction.oncomplete = () => resolve();
-      transaction.onerror = () => reject(transaction.error);
-    });
-  }
-
-  async loadCustomer(): Promise<{ name: string; phone: string } | null> {
-    if (!this.db) {
-      const customer = localStorage.getItem('pos_customer');
-      return customer ? JSON.parse(customer) : null;
-    }
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction(['customer'], 'readonly');
-      const store = transaction.objectStore('customer');
-      const request = store.get('current');
-
-      request.onsuccess = () => resolve(request.result || null);
-      request.onerror = () => reject(request.error);
-    });
-  }
-}
-
 export default function POSSales() {
   const { formatDateShort } = useDateFormat();
   const [, setLocation] = useLocation();
@@ -277,102 +72,37 @@ export default function POSSales() {
     queryKey: ["/api/settings"],
   });
 
-  // Offline state
-  const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [offlineStorage, setOfflineStorage] = useState<OfflineStorage | null>(null);
-  const [pendingSales, setPendingSales] = useState<PendingSale[]>([]);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [showPendingSales, setShowPendingSales] = useState(false);
-
-  // POS state
   const [cart, setCart] = useState<CartItem[]>([]);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [amountPaid, setAmountPaid] = useState("");
   const [customerSuggestionsOpen, setCustomerSuggestionsOpen] = useState(false);
+
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const productsContainerRef = useRef<HTMLDivElement>(null);
+
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [selectedColor, setSelectedColor] = useState<ColorWithVariantAndProduct | null>(null);
+  const [selectedColor, setSelectedColor] =
+    useState<ColorWithVariantAndProduct | null>(null);
   const [confirmQty, setConfirmQty] = useState(1);
   const [confirmRate, setConfirmRate] = useState<number | "">("");
 
-  // Initialize offline storage
-  useEffect(() => {
-    const initOfflineStorage = async () => {
-      const storage = new OfflineStorage();
-      const success = await storage.init();
-      if (success) {
-        setOfflineStorage(storage);
-        
-        // Load saved data
-        const savedCart = await storage.loadCart();
-        if (savedCart.length > 0) {
-          setCart(savedCart);
-        }
-        
-        const savedCustomer = await storage.loadCustomer();
-        if (savedCustomer) {
-          setCustomerName(savedCustomer.name);
-          setCustomerPhone(savedCustomer.phone);
-        }
-        
-        // Load pending sales
-        const pending = await storage.getPendingSales();
-        setPendingSales(pending);
-      }
-    };
-    
-    initOfflineStorage();
-    
-    // Online/offline event listeners
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
-    
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-    
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
-  }, []);
+  // Multi-tab state
+  const [posInstances, setPosInstances] = useState<number>(1);
+  const [activeInstance, setActiveInstance] = useState<number>(1);
 
-  // Save cart and customer to offline storage when they change
-  useEffect(() => {
-    if (offlineStorage) {
-      offlineStorage.saveCart(cart);
-    }
-  }, [cart, offlineStorage]);
-
-  useEffect(() => {
-    if (offlineStorage && customerName && customerPhone) {
-      offlineStorage.saveCustomer({ name: customerName, phone: customerPhone });
-    }
-  }, [customerName, customerPhone, offlineStorage]);
-
-  const { data: colorsRaw = [], isLoading } = useQuery<ColorWithVariantAndProduct[]>({
-    queryKey: ["/api/colors"],
-    refetchOnWindowFocus: true,
-    enabled: isOnline, // Only fetch when online
-  });
+  const { data: colorsRaw = [], isLoading } =
+    useQuery<ColorWithVariantAndProduct[]>({
+      queryKey: ["/api/colors"],
+      refetchOnWindowFocus: true,
+    });
 
   const colors = useDeferredValue(colorsRaw);
 
   const { data: customerSuggestions = [] } = useQuery<CustomerSuggestion[]>({
     queryKey: ["/api/customers/suggestions"],
-    enabled: isOnline,
-  });
-
-  // Check connectivity periodically
-  useQuery({
-    queryKey: ["/api/pos/connectivity"],
-    refetchInterval: 30000, // Check every 30 seconds
-    enabled: true,
-    onSuccess: () => setIsOnline(true),
-    onError: () => setIsOnline(false),
   });
 
   const filteredColors = useMemo(() => {
@@ -406,65 +136,13 @@ export default function POSSales() {
   const paidAmount = parseFloat(amountPaid || "0");
   const remainingBalance = total - paidAmount;
 
-  // Sync pending sales when back online
-  const syncPendingSales = useCallback(async () => {
-    if (!isOnline || !pendingSales.length) return;
-    
-    setIsSyncing(true);
-    try {
-      const offlineIds = pendingSales.map(s => s.offlineId);
-      
-      const res = await apiRequest("POST", "/api/pos/sync-pending", { offlineIds });
-      const result = await res.json();
-      
-      if (result.success) {
-        // Remove synced sales from local storage
-        for (const item of result.results) {
-          if (item.success && offlineStorage) {
-            await offlineStorage.deletePendingSale(item.offlineId);
-          }
-        }
-        
-        // Update local state
-        const updatedPending = await offlineStorage?.getPendingSales() || [];
-        setPendingSales(updatedPending);
-        
-        // Refresh data
-        queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
-        
-        toast({
-          title: "Sync Complete",
-          description: `Successfully synced ${result.results.filter((r: any) => r.success).length} sales`,
-          variant: "default",
-        });
-      }
-    } catch (error) {
-      console.error("Sync failed:", error);
-      toast({
-        title: "Sync Failed",
-        description: "Failed to sync pending sales",
-        variant: "destructive",
-      });
-    } finally {
-      setIsSyncing(false);
-    }
-  }, [isOnline, pendingSales, offlineStorage, toast]);
-
-  // Auto-sync when coming back online
-  useEffect(() => {
-    if (isOnline && pendingSales.length > 0) {
-      syncPendingSales();
-    }
-  }, [isOnline, pendingSales.length, syncPendingSales]);
-
   const createSaleMutation = useMutation({
     mutationFn: async (data: any) => {
       const res = await apiRequest("POST", "/api/sales", data);
       return res.json();
     },
     onSuccess: (sale) => {
+      // Invalidate all related queries for auto-refresh across all pages
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
       queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
       queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
@@ -472,7 +150,6 @@ export default function POSSales() {
       queryClient.invalidateQueries({ queryKey: ["/api/customers/suggestions"] });
       queryClient.invalidateQueries({ queryKey: ["/api/products"] });
       queryClient.invalidateQueries({ queryKey: ["/api/variants"] });
-      
       toast({ title: "Sale completed successfully" });
       setCart([]);
       setCustomerName("");
@@ -486,107 +163,7 @@ export default function POSSales() {
     },
   });
 
-  // Offline sale creation
-  const createOfflineSale = async (saleData: any): Promise<string> => {
-    if (!offlineStorage) {
-      throw new Error("Offline storage not available");
-    }
-    
-    const offlineId = await offlineStorage.savePendingSale({
-      ...saleData,
-      customerName,
-      customerPhone,
-      totalAmount: total,
-      amountPaid: paidAmount,
-      paymentStatus: paidAmount >= total ? "paid" : paidAmount > 0 ? "partial" : "unpaid",
-      items: cart.map((it) => ({
-        colorId: it.colorId,
-        color: {
-          id: it.color.id,
-          colorCode: it.color.colorCode,
-          colorName: it.color.colorName,
-          variant: {
-            product: {
-              company: it.color.variant.product.company,
-              productName: it.color.variant.product.productName,
-            },
-            packingSize: it.color.variant.packingSize,
-          },
-        },
-        quantity: it.quantity,
-        rate: it.rate,
-        subtotal: it.quantity * it.rate,
-      })),
-    });
-    
-    const pending = await offlineStorage.getPendingSales();
-    setPendingSales(pending);
-    
-    return offlineId;
-  };
-
-  const handleCompleteSale = async (isPaid: boolean) => {
-    if (!customerName || !customerPhone) {
-      toast({
-        title: "Please enter customer name and phone",
-        variant: "destructive",
-      });
-      return;
-    }
-    if (cart.length === 0) {
-      toast({ title: "Cart is empty", variant: "destructive" });
-      return;
-    }
-
-    const paid = isPaid ? total : paidAmount;
-    const paymentStatus = paid >= total ? "paid" : paid > 0 ? "partial" : "unpaid";
-
-    const saleData = {
-      customerName,
-      customerPhone,
-      totalAmount: total,
-      amountPaid: paid,
-      paymentStatus,
-      items: cart.map((it) => ({
-        colorId: it.colorId,
-        quantity: it.quantity,
-        rate: it.rate,
-        subtotal: it.quantity * it.rate,
-      })),
-    };
-
-    if (!isOnline) {
-      // Store offline
-      try {
-        const offlineId = await createOfflineSale(saleData);
-        
-        toast({
-          title: "Sale Saved Offline",
-          description: `Sale stored locally (ID: ${offlineId.substring(0, 8)}). Will sync when back online.`,
-          variant: "default",
-          duration: 5000,
-        });
-        
-        setCart([]);
-        setCustomerName("");
-        setCustomerPhone("");
-        setAmountPaid("");
-        
-        // Show pending sales dialog
-        setShowPendingSales(true);
-      } catch (error) {
-        toast({
-          title: "Failed to save offline sale",
-          description: "Please try again",
-          variant: "destructive",
-        });
-      }
-    } else {
-      // Process online
-      createSaleMutation.mutate(saleData);
-    }
-  };
-
+  // Refresh data function - invalidate all related queries
   const refreshData = () => {
     queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
     queryClient.invalidateQueries({ queryKey: ["/api/customers/suggestions"] });
@@ -598,9 +175,76 @@ export default function POSSales() {
     toast({ title: "Data refreshed" });
   };
 
-  const addToCart = (color: ColorWithVariantAndProduct, qty = 1, rate?: number) => {
+  // New POS instance function
+  const openNewPOSInstance = () => {
+    const newInstanceNumber = posInstances + 1;
+    setPosInstances(newInstanceNumber);
+    
+    // Open in new tab with instance identifier
+    const newTab = window.open(`/pos?instance=${newInstanceNumber}`, `pos-${newInstanceNumber}`);
+    
+    if (!newTab) {
+      toast({
+        title: "Popup blocked!",
+        description: "Please allow popups for this site to open multiple POS instances",
+        variant: "destructive"
+      });
+    } else {
+      toast({
+        title: "New POS Instance Opened",
+        description: `POS Instance ${newInstanceNumber} opened in new tab`
+      });
+    }
+  };
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "F2") {
+        e.preventDefault();
+        setSearchOpen(true);
+        setTimeout(() => searchInputRef.current?.focus(), 60);
+      }
+      if (e.key === "Escape") {
+        setSearchOpen(false);
+        setConfirmOpen(false);
+        setCustomerSuggestionsOpen(false);
+      }
+      if (e.ctrlKey && e.key.toLowerCase() === "p") {
+        e.preventDefault();
+        handleCompleteSale(true);
+      }
+      if (e.ctrlKey && e.key.toLowerCase() === "b") {
+        e.preventDefault();
+        handleCompleteSale(false);
+      }
+      if (e.ctrlKey && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        setCustomerSuggestionsOpen(true);
+      }
+      // New shortcut for opening new POS instance
+      if (e.ctrlKey && e.key.toLowerCase() === "n") {
+        e.preventDefault();
+        openNewPOSInstance();
+      }
+      // Refresh shortcut
+      if (e.ctrlKey && e.key.toLowerCase() === "r") {
+        e.preventDefault();
+        refreshData();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [cart, customerName, customerPhone, amountPaid, posInstances]);
+
+  // FIXED: Consistent stock validation - allow adding but show clear warnings
+  const addToCart = (
+    color: ColorWithVariantAndProduct,
+    qty = 1,
+    rate?: number
+  ) => {
     const effectiveRate = rate ?? parseFloat(getEffectiveRate(color));
     
+    // Show warning for low stock but allow proceeding
     if (qty > color.stockQuantity) {
       toast({ 
         title: "⚠️ Low Stock Warning", 
@@ -610,6 +254,7 @@ export default function POSSales() {
       });
     }
 
+    // Show warning for out of stock but allow proceeding
     if (color.stockQuantity === 0) {
       toast({ 
         title: "⚠️ Out of Stock", 
@@ -623,6 +268,7 @@ export default function POSSales() {
       const existing = prev.find((p) => p.colorId === color.id);
       if (existing) {
         const newQuantity = existing.quantity + qty;
+        // Show warning for increased quantity exceeding stock
         if (newQuantity > color.stockQuantity) {
           toast({ 
             title: "⚠️ Low Stock Warning", 
@@ -656,6 +302,7 @@ export default function POSSales() {
     if (!selectedColor) return;
     const qty = Math.max(1, Math.floor(confirmQty));
     
+    // Show warnings but allow proceeding
     if (qty > selectedColor.stockQuantity) {
       toast({ 
         title: "⚠️ Low Stock Warning", 
@@ -687,6 +334,7 @@ export default function POSSales() {
       prev.map((it) => {
         if (it.colorId === id) {
           const newQuantity = Math.max(1, it.quantity + delta);
+          // Show warning for increased quantity exceeding stock
           if (newQuantity > it.color.stockQuantity) {
             toast({ 
               title: "⚠️ Low Stock Warning", 
@@ -704,6 +352,63 @@ export default function POSSales() {
 
   const removeFromCart = (id: string) =>
     setCart((prev) => prev.filter((it) => it.colorId !== id));
+
+  const handleCompleteSale = (isPaid: boolean) => {
+    if (!customerName || !customerPhone) {
+      toast({
+        title: "Please enter customer name and phone",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (cart.length === 0) {
+      toast({ title: "Cart is empty", variant: "destructive" });
+      return;
+    }
+
+    // Check for low stock items and show consolidated warning
+    const lowStockItems = cart.filter(item => item.quantity > item.color.stockQuantity);
+    const outOfStockItems = cart.filter(item => item.color.stockQuantity === 0);
+    
+    if (lowStockItems.length > 0 || outOfStockItems.length > 0) {
+      const lowStockNames = lowStockItems.map(item => item.color.colorName).join(', ');
+      const outOfStockNames = outOfStockItems.map(item => item.color.colorName).join(', ');
+      
+      let warningMessage = "";
+      if (outOfStockItems.length > 0 && lowStockItems.length > 0) {
+        warningMessage = `Out of stock: ${outOfStockNames}. Low stock: ${lowStockNames}. You can still proceed with the sale.`;
+      } else if (outOfStockItems.length > 0) {
+        warningMessage = `Out of stock items: ${outOfStockNames}. You can still proceed with the sale.`;
+      } else {
+        warningMessage = `Low stock items: ${lowStockNames}. You can still proceed with the sale.`;
+      }
+      
+      toast({
+        title: "⚠️ Stock Check",
+        description: warningMessage,
+        variant: "default",
+        duration: 6000,
+      });
+    }
+
+    const paid = isPaid ? total : paidAmount;
+    const paymentStatus =
+      paid >= total ? "paid" : paid > 0 ? "partial" : "unpaid";
+
+    createSaleMutation.mutate({
+      customerName,
+      customerPhone,
+      totalAmount: total,
+      amountPaid: paid,
+      paymentStatus,
+      items: cart.map((it) => ({
+        colorId: it.colorId,
+        quantity: it.quantity,
+        rate: it.rate,
+        subtotal: it.quantity * it.rate,
+      })),
+    });
+  };
 
   const selectCustomer = (customer: CustomerSuggestion) => {
     setCustomerName(customer.customerName);
@@ -745,47 +450,6 @@ export default function POSSales() {
     }
   };
 
-  // Keyboard shortcuts
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "F2") {
-        e.preventDefault();
-        setSearchOpen(true);
-        setTimeout(() => searchInputRef.current?.focus(), 60);
-      }
-      if (e.key === "Escape") {
-        setSearchOpen(false);
-        setConfirmOpen(false);
-        setCustomerSuggestionsOpen(false);
-        setShowPendingSales(false);
-      }
-      if (e.ctrlKey && e.key.toLowerCase() === "p") {
-        e.preventDefault();
-        handleCompleteSale(true);
-      }
-      if (e.ctrlKey && e.key.toLowerCase() === "b") {
-        e.preventDefault();
-        handleCompleteSale(false);
-      }
-      if (e.ctrlKey && e.key.toLowerCase() === "s") {
-        e.preventDefault();
-        setCustomerSuggestionsOpen(true);
-      }
-      if (e.ctrlKey && e.key.toLowerCase() === "u") {
-        e.preventDefault();
-        if (pendingSales.length > 0 && isOnline) {
-          syncPendingSales();
-        }
-      }
-      if (e.ctrlKey && e.key.toLowerCase() === "r") {
-        e.preventDefault();
-        refreshData();
-      }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [cart, customerName, customerPhone, amountPaid, pendingSales, isOnline]);
-
   useEffect(() => {
     if (!confirmOpen) return;
     const onKey = (e: KeyboardEvent) => {
@@ -804,46 +468,12 @@ export default function POSSales() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20 p-6">
       <div className="max-w-7xl mx-auto">
-        {/* Header with offline indicator */}
+        {/* Minimal Header */}
         <div className="mb-4 flex items-center justify-between flex-wrap gap-3">
-          <div className="flex items-center gap-4">
-            <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-              <ShoppingCart className="h-5 w-5 text-blue-600" />
-              Point of Sale
-            </h1>
-            <div className="flex items-center gap-2">
-              <Badge 
-                variant={isOnline ? "default" : "destructive"}
-                className={isOnline 
-                  ? "bg-emerald-100 text-emerald-700 border-emerald-200" 
-                  : "bg-red-100 text-red-700 border-red-200"
-                }
-              >
-                {isOnline ? (
-                  <>
-                    <Wifi className="h-3 w-3 mr-1" />
-                    Online
-                  </>
-                ) : (
-                  <>
-                    <WifiOff className="h-3 w-3 mr-1" />
-                    Offline
-                  </>
-                )}
-              </Badge>
-              {pendingSales.length > 0 && (
-                <Badge 
-                  variant="outline" 
-                  className="bg-amber-50 text-amber-600 border-amber-200 cursor-pointer"
-                  onClick={() => setShowPendingSales(true)}
-                >
-                  <Clock className="h-3 w-3 mr-1" />
-                  {pendingSales.length} pending
-                </Badge>
-              )}
-            </div>
-          </div>
-          
+          <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+            <ShoppingCart className="h-5 w-5 text-blue-600" />
+            Point of Sale
+          </h1>
           <div className="flex items-center gap-2 text-[10px] text-slate-400">
             <kbd className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded font-mono">F2</kbd>
             <span>Search</span>
@@ -851,8 +481,8 @@ export default function POSSales() {
             <kbd className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded font-mono">Ctrl+S</kbd>
             <span>Customer</span>
             <span className="text-slate-300">|</span>
-            <kbd className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded font-mono">Ctrl+U</kbd>
-            <span>Sync</span>
+            <kbd className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded font-mono">Ctrl+N</kbd>
+            <span>New Tab</span>
           </div>
         </div>
 
@@ -873,27 +503,10 @@ export default function POSSales() {
                     </Badge>
                   </CardTitle>
                   <div className="flex gap-2">
-                    {pendingSales.length > 0 && isOnline && (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={syncPendingSales}
-                        disabled={isSyncing}
-                        className="bg-white/10 text-white border-white/20"
-                      >
-                        {isSyncing ? (
-                          <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                        ) : (
-                          <Upload className="h-4 w-4 mr-2" />
-                        )}
-                        Sync Pending
-                      </Button>
-                    )}
                     <Button
                       variant="secondary"
                       size="sm"
                       onClick={refreshData}
-                      disabled={!isOnline}
                       className="bg-white/10 text-white border-white/20"
                     >
                       <RefreshCw className="h-4 w-4 mr-2" />
@@ -1026,7 +639,6 @@ export default function POSSales() {
                           onChange={(e) => setCustomerName(e.target.value)}
                           className="pr-12 border-slate-200 focus:border-blue-500 focus:ring-blue-500"
                           placeholder="Type or select customer"
-                          disabled={!isOnline && customerSuggestions.length === 0}
                         />
                         <Button
                           type="button"
@@ -1034,7 +646,6 @@ export default function POSSales() {
                           size="sm"
                           className="absolute right-0 top-0 h-full px-3"
                           onClick={() => setCustomerSuggestionsOpen(true)}
-                          disabled={!isOnline && customerSuggestions.length === 0}
                         >
                           <User className="h-4 w-4 text-slate-400" />
                         </Button>
@@ -1045,7 +656,6 @@ export default function POSSales() {
                         <CommandInput 
                           placeholder="Search customers..." 
                           className="border-0"
-                          disabled={!isOnline}
                         />
                         <CommandList className="max-h-80">
                           <CommandEmpty className="py-8 text-center text-slate-400">
@@ -1151,8 +761,7 @@ export default function POSSales() {
                     onClick={() => handleCompleteSale(true)}
                     disabled={createSaleMutation.isPending || cart.length === 0}
                   >
-                    {!isOnline ? "Save Offline (Ctrl+P)" : 
-                     createSaleMutation.isPending ? "Processing..." : "Complete Sale (Ctrl+P)"}
+                    {createSaleMutation.isPending ? "Processing..." : "Complete Sale (Ctrl+P)"}
                   </Button>
                   <Button
                     variant="outline"
@@ -1160,58 +769,24 @@ export default function POSSales() {
                     onClick={() => handleCompleteSale(false)}
                     disabled={createSaleMutation.isPending || cart.length === 0}
                   >
-                    {!isOnline ? "Save Bill Offline" : "Create Bill (Ctrl+B)"}
+                    Create Bill (Ctrl+B)
                   </Button>
                 </div>
-                
-                {/* Offline Notice */}
-                {!isOnline && (
-                  <div className="p-3 bg-amber-50 border border-amber-100 rounded-lg text-xs">
-                    <p className="text-amber-700 flex items-center gap-1.5">
-                      <WifiOff className="h-3.5 w-3.5" />
-                      Working offline. Sales will be saved locally and synced when connection is restored.
-                    </p>
-                  </div>
-                )}
               </CardContent>
             </Card>
 
-            {/* Offline Info Card */}
-            <Card className={`border ${isOnline ? 'bg-gradient-to-br from-emerald-50 to-green-50 border-emerald-100' : 'bg-gradient-to-br from-amber-50 to-orange-50 border-amber-100'}`}>
+            {/* Multi-tab Info Card */}
+            <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-100">
               <CardContent className="p-4">
                 <div className="flex items-center gap-2 mb-2">
-                  <div className={`p-1.5 rounded-lg ${isOnline ? 'bg-emerald-100' : 'bg-amber-100'}`}>
-                    {isOnline ? (
-                      <Wifi className="h-3.5 w-3.5 text-emerald-600" />
-                    ) : (
-                      <WifiOff className="h-3.5 w-3.5 text-amber-600" />
-                    )}
+                  <div className="p-1.5 bg-blue-100 rounded-lg">
+                    <Zap className="h-3.5 w-3.5 text-blue-600" />
                   </div>
-                  <h3 className="text-sm font-semibold text-slate-800">
-                    {isOnline ? 'Online Mode' : 'Offline Mode'}
-                  </h3>
+                  <h3 className="text-sm font-semibold text-slate-800">Multi-Tab POS</h3>
                 </div>
                 <p className="text-xs text-slate-600">
-                  {isOnline 
-                    ? 'All sales are processed immediately. Press Ctrl+R to refresh data.'
-                    : 'Sales are saved locally. Press Ctrl+U when back online to sync pending sales.'}
+                  Press <kbd className="bg-white border border-slate-200 text-slate-700 px-1.5 py-0.5 rounded text-[10px] font-mono shadow-sm">Ctrl+N</kbd> to open new POS instances for different customers
                 </p>
-                {pendingSales.length > 0 && (
-                  <div className="mt-3 pt-3 border-t border-slate-200">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-slate-600">Pending sales:</span>
-                      <span className="font-semibold">{pendingSales.length}</span>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="w-full mt-2 text-xs"
-                      onClick={() => setShowPendingSales(true)}
-                    >
-                      View Details
-                    </Button>
-                  </div>
-                )}
               </CardContent>
             </Card>
           </div>
@@ -1247,7 +822,7 @@ export default function POSSales() {
             ref={productsContainerRef}
             className="flex-1 overflow-y-auto p-6 bg-gradient-to-b from-slate-50/50 to-white"
           >
-            {isLoading && isOnline ? (
+            {isLoading ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
                 {Array.from({ length: 12 }).map((_, i) => (
                   <Card key={i} className="border-slate-100 shadow-sm bg-white">
@@ -1262,17 +837,6 @@ export default function POSSales() {
                     </CardContent>
                   </Card>
                 ))}
-              </div>
-            ) : !isOnline ? (
-              <div className="text-center py-16">
-                <div className="w-20 h-20 mx-auto mb-4 rounded-2xl bg-amber-100 flex items-center justify-center">
-                  <WifiOff className="h-10 w-10 text-amber-600" />
-                </div>
-                <h3 className="text-lg font-semibold text-slate-800 mb-2">Offline Mode</h3>
-                <p className="text-slate-500">Product search not available offline</p>
-                <p className="text-sm text-slate-400 mt-2">
-                  You can still add items you know from memory by searching
-                </p>
               </div>
             ) : filteredColors.length === 0 ? (
               <div className="text-center py-16">
@@ -1390,180 +954,6 @@ export default function POSSales() {
           </div>
         </DialogContent>
       </Dialog>
-
-      {/* Pending Sales Dialog */}
-      <Dialog open={showPendingSales} onOpenChange={setShowPendingSales}>
-        <DialogContent className="sm:max-w-2xl border-slate-200 shadow-2xl bg-white">
-          <DialogHeader>
-            <DialogTitle className="text-lg font-semibold text-slate-900 flex items-center gap-2">
-              <Clock className="h-5 w-5 text-amber-600" />
-              Pending Sales ({pendingSales.length})
-            </DialogTitle>
-            <DialogDescription className="text-slate-500">
-              Sales saved offline waiting to be synced
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4 max-h-96 overflow-y-auto">
-            {pendingSales.length === 0 ? (
-              <div className="text-center py-12">
-                <CheckCircle className="h-12 w-12 text-emerald-400 mx-auto mb-4" />
-                <p className="text-slate-700 font-medium">No pending sales</p>
-                <p className="text-slate-500 text-sm mt-1">All sales are synchronized</p>
-              </div>
-            ) : (
-              <>
-                <div className="flex items-center justify-between mb-4">
-                  <span className="text-sm text-slate-600">
-                    {isOnline 
-                      ? 'Ready to sync' 
-                      : 'Connect to internet to sync'}
-                  </span>
-                  {isOnline && (
-                    <Button
-                      size="sm"
-                      onClick={syncPendingSales}
-                      disabled={isSyncing || pendingSales.length === 0}
-                    >
-                      {isSyncing ? (
-                        <>
-                          <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                          Syncing...
-                        </>
-                      ) : (
-                        <>
-                          <Upload className="h-4 w-4 mr-2" />
-                          Sync All
-                        </>
-                      )}
-                    </Button>
-                  )}
-                </div>
-                
-                <Tabs defaultValue="all" className="w-full">
-                  <TabsList className="grid w-full grid-cols-3">
-                    <TabsTrigger value="all">All ({pendingSales.length})</TabsTrigger>
-                    <TabsTrigger value="pending">Pending</TabsTrigger>
-                    <TabsTrigger value="failed">Failed</TabsTrigger>
-                  </TabsList>
-                  
-                  <TabsContent value="all" className="space-y-3">
-                    {pendingSales.map((sale) => (
-                      <PendingSaleItem key={sale.offlineId} sale={sale} />
-                    ))}
-                  </TabsContent>
-                  
-                  <TabsContent value="pending" className="space-y-3">
-                    {pendingSales.filter(s => s.status === 'pending').map((sale) => (
-                      <PendingSaleItem key={sale.offlineId} sale={sale} />
-                    ))}
-                  </TabsContent>
-                  
-                  <TabsContent value="failed" className="space-y-3">
-                    {pendingSales.filter(s => s.status === 'failed').map((sale) => (
-                      <PendingSaleItem key={sale.offlineId} sale={sale} />
-                    ))}
-                  </TabsContent>
-                </Tabs>
-              </>
-            )}
-          </div>
-          <DialogFooter className="flex-col sm:flex-row gap-2">
-            <Button
-              variant="outline"
-              className="flex-1 border-slate-200"
-              onClick={() => setShowPendingSales(false)}
-            >
-              Close
-            </Button>
-            {isOnline && pendingSales.length > 0 && (
-              <Button
-                className="flex-1 bg-gradient-to-r from-blue-600 to-indigo-600"
-                onClick={syncPendingSales}
-                disabled={isSyncing}
-              >
-                {isSyncing ? 'Syncing...' : 'Sync Now'}
-              </Button>
-            )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-}
-
-// Component for individual pending sale item
-function PendingSaleItem({ sale }: { sale: PendingSale }) {
-  const { toast } = useToast();
-  
-  const handleDelete = async () => {
-    // In a real app, you would delete from offline storage
-    toast({
-      title: "Delete functionality",
-      description: "This would delete the pending sale from local storage",
-      variant: "default",
-    });
-  };
-  
-  return (
-    <div className="p-4 border border-slate-200 rounded-lg bg-white hover:bg-slate-50 transition-colors">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-2">
-            <div className={`p-1 rounded ${sale.status === 'pending' ? 'bg-amber-100' : sale.status === 'failed' ? 'bg-red-100' : 'bg-emerald-100'}`}>
-              {sale.status === 'pending' ? (
-                <Clock className="h-3.5 w-3.5 text-amber-600" />
-              ) : sale.status === 'failed' ? (
-                <AlertCircle className="h-3.5 w-3.5 text-red-600" />
-              ) : (
-                <CheckCircle className="h-3.5 w-3.5 text-emerald-600" />
-              )}
-            </div>
-            <span className="text-sm font-medium text-slate-900 capitalize">{sale.status}</span>
-            <Badge variant="outline" className="text-xs bg-slate-50">
-              {sale.offlineId.substring(0, 8)}...
-            </Badge>
-          </div>
-          
-          <div className="text-sm text-slate-700 mb-1">
-            <span className="font-medium">{sale.customerName}</span>
-            <span className="text-slate-400 mx-2">•</span>
-            <span>{sale.customerPhone}</span>
-          </div>
-          
-          <div className="flex items-center gap-4 text-xs text-slate-500">
-            <div className="flex items-center gap-1">
-              <Calendar className="h-3 w-3" />
-              {new Date(sale.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            </div>
-            <div>
-              <span className="font-medium">Items:</span> {sale.itemsCount || 1}
-            </div>
-            <div className="text-emerald-600 font-semibold font-mono tabular-nums">
-              Rs. {Math.round(sale.totalAmount).toLocaleString()}
-            </div>
-          </div>
-          
-          {sale.lastError && (
-            <div className="mt-2 p-2 bg-red-50 border border-red-100 rounded text-xs">
-              <p className="text-red-700 flex items-center gap-1">
-                <AlertCircle className="h-3 w-3" />
-                {sale.lastError}
-              </p>
-            </div>
-          )}
-        </div>
-        
-        <div className="flex flex-col gap-2">
-          <Button
-            size="sm"
-            variant="ghost"
-            className="text-red-600 hover:text-red-700 hover:bg-red-50"
-            onClick={handleDelete}
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
     </div>
   );
 }
