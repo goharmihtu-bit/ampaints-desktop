@@ -1,4 +1,4 @@
-// routes.ts - COMPLETE FIXED VERSION WITH ALL MISSING ROUTES - AUTO SYNC DISABLED
+// routes.ts - COMPLETE FIXED VERSION WITH SILENT AUTO-EXPORT ENABLED
 import type { Express } from "express"
 import { createServer, type Server } from "http"
 import { storage } from "./storage"
@@ -171,8 +171,8 @@ function invalidateInventoryCache(): void {
   cache.colors = null
 }
 
-// Auto-sync state - COMPLETELY DISABLED
-let autoSyncEnabled = false
+// Auto-sync state - ENABLED FOR SILENT AUTO-EXPORT
+let autoSyncEnabled = true  // ✅ ENABLED FOR SILENT AUTO-EXPORT
 let syncInterval: NodeJS.Timeout | null = null
 
 // Helper function to hash PIN
@@ -420,7 +420,7 @@ setInterval(
   60 * 60 * 1000,
 ) // Run every hour
 
-// FIXED: Neon-specific export function - COMPLETELY MANUAL, NO AUTO REFRESH
+// FIXED: Neon-specific export function - NO AUTO REFRESH
 async function exportToNeonData() {
   try {
     const settings = await storage.getSettings()
@@ -804,7 +804,33 @@ async function importFromNeonData() {
   }
 }
 
-// Silent sync trigger - REMOVED: No auto-sync functionality
+// SILENT AUTO-EXPORT FUNCTION - Runs in background without UI refresh
+async function triggerSilentAutoExport() {
+  if (!autoSyncEnabled) return
+
+  try {
+    console.log("[Silent Auto-Export] Starting automatic export...")
+
+    const settings = await storage.getSettings()
+    if (!settings.cloudDatabaseUrl || !settings.cloudSyncEnabled) {
+      console.log("[Silent Auto-Export] Cloud sync not configured, skipping")
+      return
+    }
+
+    // Export only (no import in auto-sync to avoid conflicts)
+    await exportToNeonData()
+
+    // Update sync timestamp WITHOUT triggering any UI refresh
+    await storage.updateSettings({ lastSyncTime: new Date() })
+
+    console.log("[Silent Auto-Export] Automatic export completed (no UI refresh)")
+  } catch (error) {
+    console.error("[Silent Auto-Export] Failed silently:", error)
+    // Don't throw error - this is silent background process
+  }
+}
+
+// Manual sync trigger - for manual user requests
 async function triggerManualSync() {
   try {
     console.log("[Manual Sync] Starting sync...")
@@ -823,13 +849,30 @@ async function triggerManualSync() {
 
     console.log("[Manual Sync] Sync completed")
     return { success: true, ...result }
-  } catch (error) {
+  } catch (error: any) {
     console.error("[Manual Sync] Failed:", error)
     return { success: false, error: error.message }
   }
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // START AUTO-SYNC INTERVAL WHEN SERVER STARTS
+  setTimeout(() => {
+    if (autoSyncEnabled) {
+      // Start auto-export after 2 minutes (let server warm up)
+      // Then run every 30 minutes
+      syncInterval = setInterval(triggerSilentAutoExport, 30 * 60 * 1000) // 30 minutes
+      console.log("[Auto-Sync] Silent auto-export enabled: Running every 30 minutes")
+      
+      // Run first export after 5 minutes
+      setTimeout(() => {
+        if (autoSyncEnabled) {
+          triggerSilentAutoExport()
+        }
+      }, 5 * 60 * 1000) // 5 minutes
+    }
+  }, 2 * 60 * 1000) // Wait 2 minutes before setting up interval
+
   // Products - with caching
   app.get("/api/products", async (_req, res) => {
     try {
@@ -2517,8 +2560,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         syncEnabled: settings.cloudSyncEnabled || false,
         lastSyncTime: settings.lastSyncTime,
         dataInCloud,
-        autoSyncEnabled: false, // ALWAYS FALSE - AUTO SYNC DISABLED
-        note: "Auto-sync is disabled. Use manual export/import only."
+        autoSyncEnabled: true, // ✅ AUTO SYNC ENABLED
+        syncType: "silent_export",
+        syncInterval: "30 minutes",
+        note: "Auto-export runs silently in background every 30 minutes. No UI refresh."
       })
     } catch (error) {
       console.error("Error getting cloud status:", error)
@@ -2526,14 +2571,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // Auto-sync control - DISABLED
+  // Auto-sync control - ENABLED FOR SILENT AUTO-EXPORT
   app.post("/api/cloud/auto-sync", verifyAuditToken, async (req, res) => {
     try {
+      const { enabled, intervalMinutes } = req.body
+
+      // If user wants to disable, we can disable
+      if (enabled === false) {
+        autoSyncEnabled = false
+        if (syncInterval) {
+          clearInterval(syncInterval)
+          syncInterval = null
+        }
+      } else {
+        autoSyncEnabled = true
+        // Update interval if provided
+        if (intervalMinutes) {
+          if (syncInterval) {
+            clearInterval(syncInterval)
+          }
+          syncInterval = setInterval(triggerSilentAutoExport, intervalMinutes * 60 * 1000)
+          console.log(`[Auto-Sync] Interval updated to ${intervalMinutes} minutes`)
+        }
+      }
+
+      // Save settings
+      await storage.updateSettings({
+        cloudSyncEnabled: autoSyncEnabled
+      })
+
       res.json({
-        ok: false,
-        autoSyncEnabled: false,
-        message: "Auto-sync is disabled. Use manual export/import only.",
-        note: "Auto-sync functionality has been removed for stability."
+        ok: true,
+        autoSyncEnabled,
+        message: autoSyncEnabled 
+          ? `Silent auto-export enabled (every ${intervalMinutes || 30} minutes)` 
+          : "Auto-export disabled",
+        note: "Silent export runs in background without UI refresh"
       })
     } catch (error: any) {
       console.error("Error configuring auto-sync:", error)
@@ -2541,7 +2614,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // Manual sync trigger - MANUAL ONLY
+  // Manual sync trigger
   app.post("/api/cloud/trigger-sync", verifyAuditToken, async (_req, res) => {
     try {
       const result = await triggerManualSync()
@@ -2552,7 +2625,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // Export data to Neon PostgreSQL - COMPLETELY MANUAL
+  // Export data to Neon PostgreSQL - MANUAL REQUEST
   app.post("/api/cloud/export", verifyAuditToken, async (_req, res) => {
     try {
       console.log("[API] Manual export to Neon requested")
@@ -2562,7 +2635,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({
         ok: true,
         ...data,
-        note: "Data exported successfully. No automatic refresh triggered."
+        note: "Data exported successfully. Auto-export continues in background."
       })
     } catch (error: any) {
       console.error("Neon export failed:", error)
