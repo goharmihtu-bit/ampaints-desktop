@@ -249,139 +249,189 @@ setInterval(
   60 * 60 * 1000,
 ) // Run every hour
 
-// FIXED: Create tables for Neon with proper data types
+// FIXED: Create tables for Neon with proper data types and better error handling
 async function createNeonTables(sql: any) {
+  let tx: any;
   try {
     console.log('[Neon] Creating tables if not exist...')
     
-    // Use transaction for better reliability
-    await sql.begin(async (tx: any) => {
-      // Products table
-      await tx.unsafe(`
-        CREATE TABLE IF NOT EXISTS products (
-          id TEXT PRIMARY KEY,
-          company TEXT NOT NULL,
-          product_name TEXT NOT NULL,
-          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-        )
-      `)
-      
-      // Variants table
-      await tx.unsafe(`
-        CREATE TABLE IF NOT EXISTS variants (
-          id TEXT PRIMARY KEY,
-          product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-          packing_size TEXT NOT NULL,
-          rate TEXT NOT NULL,
-          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-        )
-      `)
-      
-      // Colors table
-      await tx.unsafe(`
-        CREATE TABLE IF NOT EXISTS colors (
-          id TEXT PRIMARY KEY,
-          variant_id TEXT NOT NULL REFERENCES variants(id) ON DELETE CASCADE,
-          color_name TEXT NOT NULL,
-          color_code TEXT NOT NULL,
-          stock_quantity INTEGER DEFAULT 0,
-          rate_override TEXT,
-          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-        )
-      `)
-      
-      // Sales table
-      await tx.unsafe(`
-        CREATE TABLE IF NOT EXISTS sales (
-          id TEXT PRIMARY KEY,
-          customer_name TEXT NOT NULL,
-          customer_phone TEXT NOT NULL,
-          total_amount TEXT NOT NULL,
-          amount_paid TEXT DEFAULT '0',
-          payment_status TEXT DEFAULT 'unpaid',
-          due_date TIMESTAMP WITH TIME ZONE,
-          is_manual_balance BOOLEAN DEFAULT FALSE,
-          notes TEXT,
-          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-        )
-      `)
-      
-      // Sale items table
-      await tx.unsafe(`
-        CREATE TABLE IF NOT EXISTS sale_items (
-          id TEXT PRIMARY KEY,
-          sale_id TEXT NOT NULL REFERENCES sales(id) ON DELETE CASCADE,
-          color_id TEXT NOT NULL,
-          quantity INTEGER NOT NULL,
-          rate TEXT NOT NULL,
-          subtotal TEXT NOT NULL
-        )
-      `)
-      
-      // Stock history table
-      await tx.unsafe(`
-        CREATE TABLE IF NOT EXISTS stock_in_history (
-          id TEXT PRIMARY KEY,
-          color_id TEXT NOT NULL,
-          quantity INTEGER NOT NULL,
-          previous_stock INTEGER NOT NULL,
-          new_stock INTEGER NOT NULL,
-          stock_in_date TEXT NOT NULL,
-          notes TEXT,
-          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-        )
-      `)
-      
-      // Payment history table
-      await tx.unsafe(`
-        CREATE TABLE IF NOT EXISTS payment_history (
-          id TEXT PRIMARY KEY,
-          sale_id TEXT NOT NULL,
-          customer_phone TEXT NOT NULL,
-          amount TEXT NOT NULL,
-          previous_balance TEXT NOT NULL,
-          new_balance TEXT NOT NULL,
-          payment_method TEXT DEFAULT 'cash',
-          notes TEXT,
-          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-        )
-      `)
-      
-      // Returns table
-      await tx.unsafe(`
-        CREATE TABLE IF NOT EXISTS returns (
-          id TEXT PRIMARY KEY,
-          sale_id TEXT,
-          customer_name TEXT NOT NULL,
-          customer_phone TEXT NOT NULL,
-          return_type TEXT DEFAULT 'item',
-          total_refund TEXT DEFAULT '0',
-          reason TEXT,
-          status TEXT DEFAULT 'completed',
-          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-        )
-      `)
-      
-      // Return items table
-      await tx.unsafe(`
-        CREATE TABLE IF NOT EXISTS return_items (
-          id TEXT PRIMARY KEY,
-          return_id TEXT NOT NULL REFERENCES returns(id) ON DELETE CASCADE,
-          color_id TEXT NOT NULL,
-          sale_item_id TEXT,
-          quantity INTEGER NOT NULL,
-          rate TEXT NOT NULL,
-          subtotal TEXT NOT NULL,
-          stock_restored BOOLEAN DEFAULT TRUE
-        )
-      `)
-    })
+    // Start transaction
+    tx = await sql.begin()
+    
+    // Check if tables already exist first
+    const checkQuery = `
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'products'
+      ) as products_exist
+    `
+    const checkResult = await tx.unsafe(checkQuery)
+    
+    if (checkResult[0]?.products_exist) {
+      console.log('[Neon] Tables already exist, skipping creation')
+      await tx.commit()
+      return true
+    }
+    
+    console.log('[Neon] Creating tables...')
+    
+    // Products table
+    await tx.unsafe(`
+      CREATE TABLE IF NOT EXISTS products (
+        id TEXT PRIMARY KEY,
+        company TEXT NOT NULL,
+        product_name TEXT NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      )
+    `)
+    console.log('[Neon] Created products table')
+    
+    // Variants table
+    await tx.unsafe(`
+      CREATE TABLE IF NOT EXISTS variants (
+        id TEXT PRIMARY KEY,
+        product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+        packing_size TEXT NOT NULL,
+        rate TEXT NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      )
+    `)
+    console.log('[Neon] Created variants table')
+    
+    // Colors table
+    await tx.unsafe(`
+      CREATE TABLE IF NOT EXISTS colors (
+        id TEXT PRIMARY KEY,
+        variant_id TEXT NOT NULL REFERENCES variants(id) ON DELETE CASCADE,
+        color_name TEXT NOT NULL,
+        color_code TEXT NOT NULL,
+        stock_quantity INTEGER DEFAULT 0,
+        rate_override TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      )
+    `)
+    console.log('[Neon] Created colors table')
+    
+    // Sales table
+    await tx.unsafe(`
+      CREATE TABLE IF NOT EXISTS sales (
+        id TEXT PRIMARY KEY,
+        customer_name TEXT NOT NULL,
+        customer_phone TEXT NOT NULL,
+        total_amount TEXT NOT NULL,
+        amount_paid TEXT DEFAULT '0',
+        payment_status TEXT DEFAULT 'unpaid',
+        due_date TIMESTAMP WITH TIME ZONE,
+        is_manual_balance BOOLEAN DEFAULT FALSE,
+        notes TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      )
+    `)
+    console.log('[Neon] Created sales table')
+    
+    // Sale items table
+    await tx.unsafe(`
+      CREATE TABLE IF NOT EXISTS sale_items (
+        id TEXT PRIMARY KEY,
+        sale_id TEXT NOT NULL REFERENCES sales(id) ON DELETE CASCADE,
+        color_id TEXT NOT NULL,
+        quantity INTEGER NOT NULL,
+        rate TEXT NOT NULL,
+        subtotal TEXT NOT NULL
+      )
+    `)
+    console.log('[Neon] Created sale_items table')
+    
+    // Stock history table
+    await tx.unsafe(`
+      CREATE TABLE IF NOT EXISTS stock_in_history (
+        id TEXT PRIMARY KEY,
+        color_id TEXT NOT NULL,
+        quantity INTEGER NOT NULL,
+        previous_stock INTEGER NOT NULL,
+        new_stock INTEGER NOT NULL,
+        stock_in_date TEXT NOT NULL,
+        notes TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      )
+    `)
+    console.log('[Neon] Created stock_in_history table')
+    
+    // Payment history table
+    await tx.unsafe(`
+      CREATE TABLE IF NOT EXISTS payment_history (
+        id TEXT PRIMARY KEY,
+        sale_id TEXT NOT NULL,
+        customer_phone TEXT NOT NULL,
+        amount TEXT NOT NULL,
+        previous_balance TEXT NOT NULL,
+        new_balance TEXT NOT NULL,
+        payment_method TEXT DEFAULT 'cash',
+        notes TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      )
+    `)
+    console.log('[Neon] Created payment_history table')
+    
+    // Returns table
+    await tx.unsafe(`
+      CREATE TABLE IF NOT EXISTS returns (
+        id TEXT PRIMARY KEY,
+        sale_id TEXT,
+        customer_name TEXT NOT NULL,
+        customer_phone TEXT NOT NULL,
+        return_type TEXT DEFAULT 'item',
+        total_refund TEXT DEFAULT '0',
+        reason TEXT,
+        status TEXT DEFAULT 'completed',
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      )
+    `)
+    console.log('[Neon] Created returns table')
+    
+    // Return items table
+    await tx.unsafe(`
+      CREATE TABLE IF NOT EXISTS return_items (
+        id TEXT PRIMARY KEY,
+        return_id TEXT NOT NULL REFERENCES returns(id) ON DELETE CASCADE,
+        color_id TEXT NOT NULL,
+        sale_item_id TEXT,
+        quantity INTEGER NOT NULL,
+        rate TEXT NOT NULL,
+        subtotal TEXT NOT NULL,
+        stock_restored BOOLEAN DEFAULT TRUE
+      )
+    `)
+    console.log('[Neon] Created return_items table')
+    
+    await tx.commit()
     
     console.log('[Neon] Tables created/verified successfully')
     return true
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Neon] Error creating tables:', error)
-    return false
+    
+    // Rollback transaction if it exists
+    if (tx) {
+      try {
+        await tx.rollback()
+      } catch (rollbackError) {
+        console.error('[Neon] Error rolling back transaction:', rollbackError)
+      }
+    }
+    
+    // Provide more detailed error message
+    let errorMessage = 'Failed to create tables in Neon'
+    if (error.message?.includes('permission denied')) {
+      errorMessage = 'Permission denied. Check if the user has CREATE TABLE privileges.'
+    } else if (error.message?.includes('does not exist')) {
+      errorMessage = 'Database or schema does not exist.'
+    } else if (error.message?.includes('SSL')) {
+      errorMessage = 'SSL connection error. Try adding ?sslmode=require to connection URL.'
+    }
+    
+    throw new Error(`${errorMessage}: ${error.message || error}`)
   }
 }
 
@@ -393,26 +443,31 @@ async function exportToNeonData() {
       throw new Error("Cloud database not configured")
     }
 
-    const { sql } = await getNeonSqlClient(settings.cloudDatabaseUrl)
-
     console.log(`[Neon Export] Starting export...`)
 
+    // Get connection
+    const { sql } = await getNeonSqlClient(settings.cloudDatabaseUrl)
+
     // Step 1: Create tables if they don't exist
+    console.log('[Neon Export] Checking/creating tables...')
     const tablesCreated = await createNeonTables(sql)
     if (!tablesCreated) {
       throw new Error("Failed to create tables in Neon")
     }
 
     // Step 2: Get all data from local storage
-    const products = await storage.getProducts()
-    const variants = await storage.getVariants()
-    const colorsData = await storage.getColors()
-    const sales = await storage.getSales()
-    const saleItems = await storage.getSaleItems()
-    const stockInHistory = await storage.getStockInHistory()
-    const paymentHistory = await storage.getAllPaymentHistory()
-    const returns = await storage.getReturns()
-    const returnItems = await storage.getReturnItems()
+    console.log('[Neon Export] Fetching local data...')
+    const [products, variants, colorsData, sales, saleItems, stockInHistory, paymentHistory, returns, returnItems] = await Promise.all([
+      storage.getProducts(),
+      storage.getVariants(),
+      storage.getColors(),
+      storage.getSales(),
+      storage.getSaleItems(),
+      storage.getStockInHistory(),
+      storage.getAllPaymentHistory(),
+      storage.getReturns(),
+      storage.getReturnItems()
+    ])
 
     const exportedCounts = {
       products: 0,
@@ -427,11 +482,24 @@ async function exportToNeonData() {
     }
 
     // Step 3: Export data using transactions
+    console.log('[Neon Export] Exporting data to Neon...')
     await sql.begin(async (tx: any) => {
-      // Clear existing data first
-      await tx.unsafe(`TRUNCATE TABLE return_items, returns, payment_history, stock_in_history, sale_items, sales, colors, variants, products RESTART IDENTITY CASCADE`)
+      // Clear existing data first (optional, but ensures clean sync)
+      console.log('[Neon Export] Clearing existing data...')
+      await tx.unsafe(`TRUNCATE TABLE 
+        return_items, 
+        returns, 
+        payment_history, 
+        stock_in_history, 
+        sale_items, 
+        sales, 
+        colors, 
+        variants, 
+        products 
+        RESTART IDENTITY CASCADE`)
       
       // Export products
+      console.log(`[Neon Export] Exporting ${products.length} products...`)
       for (const p of products) {
         await tx.unsafe(`
           INSERT INTO products (id, company, product_name, created_at)
@@ -441,6 +509,7 @@ async function exportToNeonData() {
       }
 
       // Export variants
+      console.log(`[Neon Export] Exporting ${variants.length} variants...`)
       for (const v of variants) {
         await tx.unsafe(`
           INSERT INTO variants (id, product_id, packing_size, rate, created_at)
@@ -450,6 +519,7 @@ async function exportToNeonData() {
       }
 
       // Export colors
+      console.log(`[Neon Export] Exporting ${colorsData.length} colors...`)
       for (const c of colorsData) {
         await tx.unsafe(`
           INSERT INTO colors (id, variant_id, color_name, color_code, stock_quantity, rate_override, created_at)
@@ -459,6 +529,7 @@ async function exportToNeonData() {
       }
 
       // Export sales
+      console.log(`[Neon Export] Exporting ${sales.length} sales...`)
       for (const s of sales) {
         await tx.unsafe(`
           INSERT INTO sales (id, customer_name, customer_phone, total_amount, amount_paid, payment_status, due_date, is_manual_balance, notes, created_at)
@@ -468,6 +539,7 @@ async function exportToNeonData() {
       }
 
       // Export sale items
+      console.log(`[Neon Export] Exporting ${saleItems.length} sale items...`)
       for (const si of saleItems) {
         await tx.unsafe(`
           INSERT INTO sale_items (id, sale_id, color_id, quantity, rate, subtotal)
@@ -477,6 +549,7 @@ async function exportToNeonData() {
       }
 
       // Export stock history
+      console.log(`[Neon Export] Exporting ${stockInHistory.length} stock history records...`)
       for (const sih of stockInHistory) {
         await tx.unsafe(`
           INSERT INTO stock_in_history (id, color_id, quantity, previous_stock, new_stock, stock_in_date, notes, created_at)
@@ -486,6 +559,7 @@ async function exportToNeonData() {
       }
 
       // Export payment history
+      console.log(`[Neon Export] Exporting ${paymentHistory.length} payment history records...`)
       for (const ph of paymentHistory) {
         await tx.unsafe(`
           INSERT INTO payment_history (id, sale_id, customer_phone, amount, previous_balance, new_balance, payment_method, notes, created_at)
@@ -495,6 +569,7 @@ async function exportToNeonData() {
       }
 
       // Export returns
+      console.log(`[Neon Export] Exporting ${returns.length} returns...`)
       for (const r of returns) {
         await tx.unsafe(`
           INSERT INTO returns (id, sale_id, customer_name, customer_phone, return_type, total_refund, reason, status, created_at)
@@ -504,6 +579,7 @@ async function exportToNeonData() {
       }
 
       // Export return items
+      console.log(`[Neon Export] Exporting ${returnItems.length} return items...`)
       for (const ri of returnItems) {
         await tx.unsafe(`
           INSERT INTO return_items (id, return_id, color_id, sale_item_id, quantity, rate, subtotal, stock_restored)
@@ -514,8 +590,11 @@ async function exportToNeonData() {
     })
 
     // Step 4: Verify data was exported
-    const verifyProducts = await sql`SELECT COUNT(*) as count FROM products`
-    const verifySales = await sql`SELECT COUNT(*) as count FROM sales`
+    console.log('[Neon Export] Verifying export...')
+    const [verifyProducts, verifySales] = await Promise.all([
+      sql`SELECT COUNT(*) as count FROM products`,
+      sql`SELECT COUNT(*) as count FROM sales`
+    ])
     
     console.log(`[Neon Export] Verification:`)
     console.log(`  Products: ${verifyProducts[0]?.count || 0}`)
@@ -2564,6 +2643,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
+  // Add debug test endpoint for Neon connection
+  app.post("/api/cloud/debug-test", verifyAuditToken, async (req, res) => {
+    try {
+      const { connectionUrl } = req.body || (await storage.getSettings()).cloudDatabaseUrl
+      
+      if (!connectionUrl) {
+        return res.status(400).json({ error: "No connection URL provided" })
+      }
+      
+      const { sql } = await getNeonSqlClient(connectionUrl)
+      
+      // Test basic query
+      const versionResult = await sql`SELECT version()`
+      
+      // Test creating a simple table
+      await sql`CREATE TABLE IF NOT EXISTS test_table (id SERIAL PRIMARY KEY, name TEXT)`
+      
+      // Test inserting data
+      await sql`INSERT INTO test_table (name) VALUES ('test')`
+      
+      // Test reading data
+      const readResult = await sql`SELECT * FROM test_table`
+      
+      // Clean up
+      await sql`DROP TABLE IF EXISTS test_table`
+      
+      res.json({
+        success: true,
+        version: versionResult[0]?.version,
+        testData: readResult,
+        message: "Neon connection and basic operations working correctly"
+      })
+    } catch (error: any) {
+      console.error("Neon debug test failed:", error)
+      res.status(500).json({
+        success: false,
+        error: error.message,
+        details: error.toString()
+      })
+    }
+  })
+
   // ============ SOFTWARE LICENSE MANAGEMENT ============
   
   // Master PIN for software blocking
@@ -2778,6 +2899,131 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error verifying PIN:", error)
       res.status(500).json({ error: "Failed to verify PIN" })
+    }
+  })
+
+  // ============ OFFLINE POS SYNC ROUTES ============
+
+  // Store pending offline sales
+  app.post("/api/pos/offline-sales", async (req, res) => {
+    try {
+      const { saleData, items, offlineId, timestamp } = req.body
+      
+      if (!offlineId) {
+        res.status(400).json({ error: "Offline ID is required" })
+        return
+      }
+      
+      // Store in pending sales table
+      const pendingSale = await storage.createPendingSale({
+        offlineId,
+        saleData: JSON.stringify(saleData),
+        items: JSON.stringify(items),
+        timestamp: new Date(timestamp),
+        status: "pending",
+        attempts: 0
+      })
+      
+      res.json({ 
+        success: true, 
+        pendingSale,
+        message: "Sale stored offline, will sync when online"
+      })
+    } catch (error) {
+      console.error("Error storing offline sale:", error)
+      res.status(500).json({ error: "Failed to store offline sale" })
+    }
+  })
+
+  // Sync pending sales when back online
+  app.post("/api/pos/sync-pending", async (req, res) => {
+    try {
+      const { offlineIds } = req.body
+      
+      const pendingSales = await storage.getPendingSales()
+      const results = []
+      
+      for (const pending of pendingSales) {
+        if (offlineIds && !offlineIds.includes(pending.offlineId)) {
+          continue
+        }
+        
+        try {
+          const saleData = JSON.parse(pending.saleData)
+          const items = JSON.parse(pending.items)
+          
+          // Process the sale
+          const sale = await storage.createSale(saleData, items)
+          
+          // Mark as synced
+          await storage.updatePendingSale(pending.id, {
+            status: "synced",
+            syncedAt: new Date(),
+            syncedSaleId: sale.id,
+            attempts: pending.attempts + 1
+          })
+          
+          results.push({
+            offlineId: pending.offlineId,
+            success: true,
+            saleId: sale.id
+          })
+        } catch (error) {
+          // Update attempt count
+          await storage.updatePendingSale(pending.id, {
+            attempts: pending.attempts + 1,
+            lastError: error.message
+          })
+          
+          results.push({
+            offlineId: pending.offlineId,
+            success: false,
+            error: error.message
+          })
+        }
+      }
+      
+      res.json({
+        success: true,
+        results,
+        message: `Processed ${results.length} pending sales`
+      })
+    } catch (error) {
+      console.error("Error syncing pending sales:", error)
+      res.status(500).json({ error: "Failed to sync pending sales" })
+    }
+  })
+
+  // Get pending sales status
+  app.get("/api/pos/pending-sales", async (req, res) => {
+    try {
+      const pendingSales = await storage.getPendingSales()
+      res.json(pendingSales)
+    } catch (error) {
+      console.error("Error fetching pending sales:", error)
+      res.status(500).json({ error: "Failed to fetch pending sales" })
+    }
+  })
+
+  // Clear specific pending sale
+  app.delete("/api/pos/pending-sales/:id", async (req, res) => {
+    try {
+      await storage.deletePendingSale(req.params.id)
+      res.json({ success: true })
+    } catch (error) {
+      console.error("Error deleting pending sale:", error)
+      res.status(500).json({ error: "Failed to delete pending sale" })
+    }
+  })
+
+  // Check connectivity
+  app.get("/api/pos/connectivity", async (_req, res) => {
+    try {
+      // Test database connection
+      await storage.getSettings()
+      res.json({ online: true, timestamp: new Date().toISOString() })
+    } catch (error) {
+      res.json({ online: false, timestamp: new Date().toISOString() })
     }
   })
 
