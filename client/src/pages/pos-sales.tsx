@@ -70,8 +70,6 @@ export default function POSSales() {
 
   const { data: settings } = useQuery<Settings>({
     queryKey: ["/api/settings"],
-    refetchOnWindowFocus: false, // Disable auto-refresh on window focus
-    staleTime: 5 * 60 * 1000, // 5 minutes stale time
   });
 
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -98,17 +96,13 @@ export default function POSSales() {
   const { data: colorsRaw = [], isLoading } =
     useQuery<ColorWithVariantAndProduct[]>({
       queryKey: ["/api/colors"],
-      refetchOnWindowFocus: false, // Disable auto-refresh on window focus
-      staleTime: 5 * 60 * 1000, // 5 minutes stale time
-      gcTime: 10 * 60 * 1000, // 10 minutes cache time
+      refetchOnWindowFocus: true,
     });
 
   const colors = useDeferredValue(colorsRaw);
 
   const { data: customerSuggestions = [] } = useQuery<CustomerSuggestion[]>({
     queryKey: ["/api/customers/suggestions"],
-    refetchOnWindowFocus: false, // Disable auto-refresh on window focus
-    staleTime: 10 * 60 * 1000, // 10 minutes stale time
   });
 
   const filteredColors = useMemo(() => {
@@ -148,15 +142,15 @@ export default function POSSales() {
       return res.json();
     },
     onSuccess: (sale) => {
-      // MINIMAL INVALIDATION - Only invalidate what's absolutely necessary
-      queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
+      // Invalidate all related queries for auto-refresh across all pages
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
-      
-      toast({ 
-        title: "Sale completed successfully",
-        description: `Bill #${sale.id} created`
-      });
-      
+      queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/customers/suggestions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/variants"] });
+      toast({ title: "Sale completed successfully" });
       setCart([]);
       setCustomerName("");
       setCustomerPhone("");
@@ -165,31 +159,20 @@ export default function POSSales() {
     },
     onError: (error: Error) => {
       console.error("Create sale error:", error);
-      toast({ 
-        title: "Failed to create sale", 
-        description: error.message,
-        variant: "destructive" 
-      });
+      toast({ title: "Failed to create sale", variant: "destructive" });
     },
   });
 
-  // REFRESH DATA FUNCTION - MANUAL ONLY
+  // Refresh data function - invalidate all related queries
   const refreshData = () => {
-    toast({ 
-      title: "Refreshing data...",
-      description: "Fetching latest stock information"
-    });
-    
-    // Manual refresh - only fetch fresh data when explicitly requested
-    queryClient.refetchQueries({ queryKey: ["/api/colors"] });
-    queryClient.refetchQueries({ queryKey: ["/api/customers/suggestions"] });
-    
-    setTimeout(() => {
-      toast({ 
-        title: "Data refreshed",
-        description: "Stock information updated"
-      });
-    }, 500);
+    queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/customers/suggestions"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/variants"] });
+    toast({ title: "Data refreshed" });
   };
 
   // New POS instance function
@@ -243,7 +226,7 @@ export default function POSSales() {
         e.preventDefault();
         openNewPOSInstance();
       }
-      // Refresh shortcut - MANUAL ONLY
+      // Refresh shortcut
       if (e.ctrlKey && e.key.toLowerCase() === "r") {
         e.preventDefault();
         refreshData();
