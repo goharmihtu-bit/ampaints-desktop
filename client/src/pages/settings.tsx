@@ -143,7 +143,7 @@ export default function Settings() {
       const json = await res.json()
       if (res.ok && json.ok) {
         toast({ title: "Job processed", description: json.result?.status || "Processed" })
-        loadJobs()
+        void loadJobs()
       } else {
         toast({ title: "Error", description: json.error || "Failed to process job", variant: "destructive" })
       }
