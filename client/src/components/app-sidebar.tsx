@@ -95,12 +95,14 @@ export function AppSidebar() {
         return
       }
     }
-    if (location === url) {
-      e.preventDefault();
-      startTransition(() => {
-        triggerRefresh();
-      });
-    }
+    // Always trigger a fresh page reload on every sidebar click
+    e.preventDefault();
+    startTransition(() => {
+      triggerRefresh();
+      // Navigate to the URL after triggering refresh
+      window.history.pushState({}, '', url);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
   };
 
   const handleMouseEnter = (url: string) => {
