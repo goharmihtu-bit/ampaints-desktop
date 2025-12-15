@@ -2099,7 +2099,7 @@ export class DatabaseStorage implements IStorage {
 
     // OPTIMIZED: Paginated payment history query for large datasets
     async getAllPaymentHistoryPaginated(params: PaginationParams = {}): Promise<PaginatedResult<PaymentHistoryWithSale>> {
-      const page = Math.max(1,
+      const page = Math.max(1, params.page || 1)
       const limit = Math.min(MAX_LIMIT, Math.max(1, params.limit || DEFAULT_LIMIT))
       const offset = (page - 1) * limit
 
