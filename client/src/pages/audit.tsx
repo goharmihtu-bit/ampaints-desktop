@@ -15,8 +15,8 @@ import {
   Download, Upload, TrendingUp, AlertCircle, Activity, Eye, EyeOff, Filter, ChevronDown,
   Calendar, Clock, User, FileText, CheckCircle2, XCircle, HelpCircle, BarChart3, PieChart as PieChartIcon
 } from 'lucide-react';
-import type { AuditLog, ExportLog, ImportLog } from '@/api/audit';
-import { auditApi } from '@/api/audit';
+import type { AuditLog, ExportLog, ImportLog } from '@/lib/api';
+import { auditApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 interface AuditFilters {
