@@ -78,7 +78,6 @@ export default function Admin() {
   const [isLicenseActive, setIsLicenseActive] = useState(true);
   const [isSettingLicense, setIsSettingLicense] = useState(false);
   const [secretKeyInput, setSecretKeyInput] = useState("");
-  const [showSecretKeyInput, setShowSecretKeyInput] = useState(false);
 
   const { data: licenseData, isLoading: isLoadingLicense } = useQuery({
     queryKey: ["/api/license/status"],
@@ -137,7 +136,6 @@ export default function Admin() {
       toast({ title: 'License Activated', description: result.message || 'Your license has been successfully reactivated!' });
       setIsLicenseActive(true);
       setSecretKeyInput("");
-      setShowSecretKeyInput(false);
       queryClient.invalidateQueries({ queryKey: ['/api/license/status'] });
     } catch (error: any) {
       toast({ title: 'Error', description: error.error || 'Failed to activate license', variant: 'destructive' });
@@ -389,7 +387,7 @@ export default function Admin() {
                       Reactivate License with Secret Key
                     </h4>
                     <p className="text-xs text-muted-foreground mb-3">
-                      Enter your secret key to reactivate the software and set a new 10-year expiry date
+                      Enter your secret key to reactivate the software and set a new 10-year expiry date. Secret key is required for reactivation.
                     </p>
                   </div>
                   <div className="space-y-3">

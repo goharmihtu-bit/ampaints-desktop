@@ -2051,7 +2051,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.json({
         active: isActive,
-        isActive: isActive,
         expiryDate: expiryDate || null,
         licenseStatus: licenseStatus,
         isExpired: isExpired,
