@@ -19,12 +19,13 @@ import {
   DialogDescription,
 } from "@/components/ui";
 import { Key, Download, ShieldCheck, Lock, Eye, EyeOff, Calendar, Zap, CalendarDays } from "lucide-react";
-import { apiRequest } from "@/lib/api";
-import { toast } from "@/lib/toast";
+import { apiRequest } from "@/lib/queryClient"; // Changed from "@/lib/api"
+import { useToast } from "@/hooks/use-toast"; // Added missing toast import
 
 export default function Admin() {
   const queryClient = useQueryClient();
   const [, navigate] = useNavigate();
+  const { toast } = useToast(); // Added toast hook
 
   // Admin PIN gating
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
@@ -87,7 +88,10 @@ export default function Admin() {
   });
 
   const handleSetLicenseExpiry = async () => {
-    if (!licenseExpiryDate) return toast({ title: 'Error', description: 'Select expiry date', variant: 'destructive' });
+    if (!licenseExpiryDate) {
+      toast({ title: 'Error', description: 'Select expiry date', variant: 'destructive' });
+      return;
+    }
     setIsSettingLicense(true);
     try {
       const response = await fetch('/api/license/set-expiry', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ expiryDate: licenseExpiryDate }) });
@@ -142,8 +146,14 @@ export default function Admin() {
       const res = await apiRequest('POST', '/api/cloud-sync/test-connection', { connectionString: cloudConn });
       const json = await res.json();
       setTestResult(json);
+      if (json.ok) {
+        toast({ title: 'Connection Successful', description: 'Remote Postgres connection validated.' });
+      } else {
+        toast({ title: 'Connection Failed', description: json.error || 'Unable to connect', variant: 'destructive' });
+      }
     } catch (err: any) {
       setTestResult({ ok: false, error: err.message || String(err) });
+      toast({ title: 'Connection Error', description: err.message || String(err), variant: 'destructive' });
     } finally { setIsTesting(false) }
   };
 
@@ -154,10 +164,14 @@ export default function Admin() {
       const json = await res.json();
       if (res.ok && json.ok) {
         toast({ title: 'Saved', description: 'Connection saved on server' });
+        setCloudConn("");
         loadCloudConnections();
-      } else { throw new Error(json.error || 'Failed') }
-    } catch (err: any) { toast({ title: 'Error', description: err.message || String(err), variant: 'destructive' }) }
-    finally { setIsSaving(false) }
+      } else { 
+        throw new Error(json.error || 'Failed') 
+      }
+    } catch (err: any) { 
+      toast({ title: 'Error', description: err.message || String(err), variant: 'destructive' }) 
+    } finally { setIsSaving(false) }
   };
 
   const loadCloudConnections = async () => {
@@ -167,7 +181,7 @@ export default function Admin() {
       const json = await res.json();
       if (res.ok && json.ok) setConnections(json.connections || [])
     } catch (err) {
-      // ignore
+      console.error("Error loading connections", err);
     } finally { setConnectionsLoading(false) }
   };
 
@@ -178,38 +192,46 @@ export default function Admin() {
       const json = await res.json();
       if (res.ok && json.ok) setJobs(json.jobs || [])
     } catch (err) {
+      console.error("Error loading jobs", err);
     } finally { setJobsLoading(false) }
   };
 
   const enqueueJob = async (connectionId: string, jobType: 'export' | 'import') => {
     try {
-      let details = undefined
+      let details = undefined;
       if (jobType === 'import') {
-        const strategy = prompt('Import strategy (skip, overwrite, merge). Default: merge', 'merge') || 'merge'
-        if (!["skip","overwrite","merge"].includes(strategy)) { toast({ title: 'Cancelled', description: 'Invalid strategy selected', variant: 'destructive' }); return }
-        details = { strategy }
+        const strategy = prompt('Import strategy (skip, overwrite, merge). Default: merge', 'merge') || 'merge';
+        if (!["skip","overwrite","merge"].includes(strategy)) { 
+          toast({ title: 'Cancelled', description: 'Invalid strategy selected', variant: 'destructive' }); 
+          return; 
+        }
+        details = { strategy };
       }
-      const res = await apiRequest('POST', '/api/cloud-sync/jobs', { connectionId, jobType, dryRun: true, details })
-      const json = await res.json()
+      const res = await apiRequest('POST', '/api/cloud-sync/jobs', { connectionId, jobType, dryRun: true, details });
+      const json = await res.json();
       if (res.ok && json.ok) {
-        toast({ title: 'Job Enqueued', description: `Job ${json.jobId} created (dry-run)` })
+        toast({ title: 'Job Enqueued', description: `Job ${json.jobId} created (dry-run)` });
       } else {
-        toast({ title: 'Error', description: json.error || 'Failed to enqueue', variant: 'destructive' })
+        toast({ title: 'Error', description: json.error || 'Failed to enqueue', variant: 'destructive' });
       }
-    } catch (err: any) { toast({ title: 'Error', description: err.message || String(err), variant: 'destructive' }) }
+    } catch (err: any) { 
+      toast({ title: 'Error', description: err.message || String(err), variant: 'destructive' }) 
+    }
   };
 
   const processNextJob = async () => {
     try {
-      const res = await apiRequest('POST', '/api/cloud-sync/process-next')
-      const json = await res.json()
+      const res = await apiRequest('POST', '/api/cloud-sync/process-next');
+      const json = await res.json();
       if (res.ok && json.ok) {
-        toast({ title: 'Job processed', description: json.result?.status || 'Processed' })
-        loadJobs()
+        toast({ title: 'Job processed', description: json.result?.status || 'Processed' });
+        loadJobs();
       } else {
-        toast({ title: 'Error', description: json.error || 'Failed to process job', variant: 'destructive' })
+        toast({ title: 'Error', description: json.error || 'Failed to process job', variant: 'destructive' });
       }
-    } catch (err: any) { toast({ title: 'Error', description: err.message || String(err), variant: 'destructive' }) }
+    } catch (err: any) { 
+      toast({ title: 'Error', description: err.message || String(err), variant: 'destructive' }) 
+    }
   };
 
   useEffect(() => { loadCloudConnections(); loadJobs() }, []);
@@ -221,19 +243,25 @@ export default function Admin() {
   const [isChangingPin, setIsChangingPin] = useState(false);
 
   const handleChangeMasterPin = async () => {
-    if (!newPin || newPin !== confirmPin) return toast({ title: 'Error', description: 'New PINs do not match', variant: 'destructive' });
+    if (!newPin || newPin !== confirmPin) {
+      toast({ title: 'Error', description: 'New PINs do not match', variant: 'destructive' });
+      return;
+    }
     setIsChangingPin(true);
     try {
-      const res = await fetch('/api/license/set-master-pin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ currentPin, newPin }) })
-      const json = await res.json()
+      const res = await fetch('/api/license/set-master-pin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ currentPin, newPin }) });
+      const json = await res.json();
       if (res.ok && json.ok) {
-        toast({ title: 'PIN Updated', description: 'Master PIN changed successfully' })
-        setCurrentPin(''); setNewPin(''); setConfirmPin('')
+        toast({ title: 'PIN Updated', description: 'Master PIN changed successfully' });
+        setCurrentPin(''); 
+        setNewPin(''); 
+        setConfirmPin('');
       } else {
-        toast({ title: 'Error', description: json.error || 'Failed to set PIN', variant: 'destructive' })
+        toast({ title: 'Error', description: json.error || 'Failed to set PIN', variant: 'destructive' });
       }
-    } catch (err: any) { toast({ title: 'Error', description: err.message || String(err), variant: 'destructive' }) }
-    finally { setIsChangingPin(false) }
+    } catch (err: any) { 
+      toast({ title: 'Error', description: err.message || String(err), variant: 'destructive' }) 
+    } finally { setIsChangingPin(false) }
   };
 
   if (!isAdminUnlocked) {
@@ -256,11 +284,25 @@ export default function Admin() {
             <div className="space-y-4">
               <div className="flex justify-center gap-3">
                 {[0,1,2,3].map((index) => (
-                  <Input key={index} type={showAdminPin ? 'text' : 'password'} inputMode="numeric" maxLength={1} value={adminPinInput[index]} onChange={(e) => handleAdminPinInput(index, e.target.value)} className="w-14 h-14 text-center text-2xl font-bold" data-testid={`input-admin-pin-${index}`} disabled={isVerifyingPin} autoFocus={index === 0} />
+                  <Input 
+                    key={index} 
+                    type={showAdminPin ? 'text' : 'password'} 
+                    inputMode="numeric" 
+                    maxLength={1} 
+                    value={adminPinInput[index]} 
+                    onChange={(e) => handleAdminPinInput(index, e.target.value)} 
+                    className="w-14 h-14 text-center text-2xl font-bold" 
+                    data-testid={`input-admin-pin-${index}`} 
+                    disabled={isVerifyingPin} 
+                    autoFocus={index === 0} 
+                  />
                 ))}
               </div>
               <div className="flex justify-center">
-                <Button variant="ghost" size="sm" onClick={() => setShowAdminPin(!showAdminPin)} className="flex items-center gap-2">{showAdminPin ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}{showAdminPin ? 'Hide PIN' : 'Show PIN'}</Button>
+                <Button variant="ghost" size="sm" onClick={() => setShowAdminPin(!showAdminPin)} className="flex items-center gap-2">
+                  {showAdminPin ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  {showAdminPin ? 'Hide PIN' : 'Show PIN'}
+                </Button>
               </div>
               {adminPinError && <p className="text-sm text-destructive text-center">{adminPinError}</p>}
               <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
@@ -271,7 +313,7 @@ export default function Admin() {
           </DialogContent>
         </Dialog>
       </div>
-    )
+    );
   }
 
   return (
@@ -290,31 +332,63 @@ export default function Admin() {
 
         <TabsContent value="license" className="space-y-4">
           <div className="glass-card p-5">
-            <div className="flex items-center gap-2 mb-1"><Key className="h-5 w-5" /><h3 className="font-semibold">Software License Management</h3><Badge variant={isLicenseActive ? 'default' : 'destructive'} className="ml-2">{isLicenseActive ? 'Active' : 'Inactive'}</Badge></div>
-            <p className="text-sm text-muted-foreground mb-6">Manage your software license expiration date and activation status</p>
+            <div className="flex items-center gap-2 mb-1">
+              <Key className="h-5 w-5" />
+              <h3 className="font-semibold">Software License Management</h3>
+              <Badge variant={isLicenseActive ? 'default' : 'destructive'} className="ml-2">
+                {isLicenseActive ? 'Active' : 'Inactive'}
+              </Badge>
+            </div>
+            <p className="text-sm text-muted-foreground mb-6">
+              Manage your software license expiration date and activation status
+            </p>
             <div className="space-y-6">
               <div className="border border-border/50 rounded-lg p-4">
                 <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2"><Zap className="h-5 w-5 text-blue-600" /><h4 className="font-semibold">Current License Status</h4></div>
-                  <Badge variant={isLicenseActive ? 'default' : 'secondary'}>{isLicenseActive ? 'Operational' : 'Inactive'}</Badge>
+                  <div className="flex items-center gap-2">
+                    <Zap className="h-5 w-5 text-blue-600" />
+                    <h4 className="font-semibold">Current License Status</h4>
+                  </div>
+                  <Badge variant={isLicenseActive ? 'default' : 'secondary'}>
+                    {isLicenseActive ? 'Operational' : 'Inactive'}
+                  </Badge>
                 </div>
-                <p className="text-sm text-muted-foreground">{isLicenseActive ? 'Your software license is active and operational.' : 'Your software license is currently inactive. Click Reactivate License below to restore functionality.'}</p>
+                <p className="text-sm text-muted-foreground">
+                  {isLicenseActive ? 'Your software license is active and operational.' : 'Your software license is currently inactive. Click Reactivate License below to restore functionality.'}
+                </p>
               </div>
 
               <div className="border border-border/50 rounded-lg p-4 space-y-4">
                 <div>
-                  <h4 className="font-semibold mb-2 flex items-center gap-2"><Calendar className="h-4 w-4" />Set License Expiration Date</h4>
-                  <p className="text-xs text-muted-foreground mb-3">Set a date after which the software will require reactivation</p>
+                  <h4 className="font-semibold mb-2 flex items-center gap-2">
+                    <Calendar className="h-4 w-4" />
+                    Set License Expiration Date
+                  </h4>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    Set a date after which the software will require reactivation
+                  </p>
                 </div>
                 <div className="space-y-3">
                   <div>
                     <Label htmlFor="license-date">Expiration Date</Label>
-                    <Input id="license-date" type="date" value={licenseExpiryDate} onChange={(e) => setLicenseExpiryDate(e.target.value)} className="mt-1" />
+                    <Input 
+                      id="license-date" 
+                      type="date" 
+                      value={licenseExpiryDate} 
+                      onChange={(e) => setLicenseExpiryDate(e.target.value)} 
+                      className="mt-1" 
+                    />
                   </div>
                   <div className="flex gap-2">
-                    <Button onClick={handleSetLicenseExpiry} disabled={isSettingLicense}>{isSettingLicense ? 'Saving...' : 'Set Expiry'}</Button>
-                    <Button variant="outline" onClick={handleDeactivateLicense}>Deactivate License</Button>
-                    <Button variant="ghost" onClick={handleActivateLicense}>Reactivate License</Button>
+                    <Button onClick={handleSetLicenseExpiry} disabled={isSettingLicense}>
+                      {isSettingLicense ? 'Saving...' : 'Set Expiry'}
+                    </Button>
+                    <Button variant="outline" onClick={handleDeactivateLicense}>
+                      Deactivate License
+                    </Button>
+                    <Button variant="ghost" onClick={handleActivateLicense}>
+                      Reactivate License
+                    </Button>
                   </div>
                 </div>
               </div>
@@ -324,30 +398,117 @@ export default function Admin() {
 
         <TabsContent value="cloud" className="space-y-4">
           <div className="glass-card p-5">
-            <div className="flex items-center gap-2 mb-1"><Download className="h-5 w-5 text-green-600" /><h3 className="font-semibold">Cloud Sync (Neon / Supabase)</h3></div>
-            <p className="text-sm text-muted-foreground mb-4">Connect your remote Postgres (Neon or Supabase) to perform opt-in exports and imports. This is an admin-only, explicit operation. Credentials are stored on the server only.</p>
+            <div className="flex items-center gap-2 mb-1">
+              <Download className="h-5 w-5 text-green-600" />
+              <h3 className="font-semibold">Cloud Sync (Neon / Supabase)</h3>
+            </div>
+            <p className="text-sm text-muted-foreground mb-4">
+              Connect your remote Postgres (Neon or Supabase) to perform opt-in exports and imports. 
+              This is an admin-only, explicit operation. Credentials are stored on the server only.
+            </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
               <div className="sm:col-span-2">
                 <Label htmlFor="cloudConnection">Postgres Connection String</Label>
-                <Input id="cloudConnection" placeholder="postgresql://user:pass@host:5432/dbname?sslmode=require" value={cloudConn} onChange={(e) => setCloudConn(e.target.value)} className="mt-1" />
-                <p className="text-xs text-muted-foreground mt-1">Tip: Use SSL mode=require for Neon/Supabase. Do NOT paste secrets in public chat. Rotate exposed keys immediately.</p>
+                <Input 
+                  id="cloudConnection" 
+                  placeholder="postgresql://user:pass@host:5432/dbname?sslmode=require" 
+                  value={cloudConn} 
+                  onChange={(e) => setCloudConn(e.target.value)} 
+                  className="mt-1" 
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Tip: Use SSL mode=require for Neon/Supabase. Do NOT paste secrets in public chat. Rotate exposed keys immediately.
+                </p>
               </div>
-              <div className="flex gap-2"><Button onClick={handleTestCloudConnection} disabled={!cloudConn || isTesting} variant="outline">{isTesting ? 'Testing...' : 'Test Connection'}</Button></div>
+              <div className="flex gap-2">
+                <Button onClick={handleTestCloudConnection} disabled={!cloudConn || isTesting} variant="outline">
+                  {isTesting ? 'Testing...' : 'Test Connection'}
+                </Button>
+              </div>
             </div>
 
-            {testResult && (<div className={`mt-4 p-3 rounded ${testResult.ok ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}><p className="text-sm">{testResult.ok ? 'Connection successful' : `Connection failed: ${testResult.error}`}</p></div>)}
+            {testResult && (
+              <div className={`mt-4 p-3 rounded ${testResult.ok ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                <p className="text-sm">
+                  {testResult.ok ? 'Connection successful' : `Connection failed: ${testResult.error}`}
+                </p>
+              </div>
+            )}
 
-            <div className="mt-4"><div className="flex gap-2"><Button onClick={handleSaveCloudConnection} disabled={!cloudConn || isSaving}>{isSaving ? 'Saving...' : 'Save Connection'}</Button><Button variant="outline" onClick={loadCloudConnections}>Refresh</Button></div>
-              <div className="mt-4"><h4 className="font-semibold">Saved Connections</h4>
-                {connectionsLoading ? (<p className="text-sm text-muted-foreground">Loading...</p>) : (
-                  <div className="space-y-2 mt-2">{connections.length === 0 && <p className="text-sm text-muted-foreground">No connections saved</p>}{connections.map((c: any) => (<div key={c.id} className="p-3 border rounded flex items-center justify-between"><div><div className="font-medium">{c.label || c.provider}</div><div className="text-xs text-muted-foreground">{c.provider} • Created: {new Date(c.created_at).toLocaleString()}</div></div><div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => enqueueJob(c.id, 'export')}>Run Export (dry-run)</Button><Button size="sm" variant="outline" onClick={() => enqueueJob(c.id, 'import')}>Run Import (dry-run)</Button></div></div>))}</div>
+            <div className="mt-4">
+              <div className="flex gap-2">
+                <Button onClick={handleSaveCloudConnection} disabled={!cloudConn || isSaving}>
+                  {isSaving ? 'Saving...' : 'Save Connection'}
+                </Button>
+                <Button variant="outline" onClick={loadCloudConnections}>
+                  Refresh
+                </Button>
+              </div>
+              
+              <div className="mt-4">
+                <h4 className="font-semibold">Saved Connections</h4>
+                {connectionsLoading ? (
+                  <p className="text-sm text-muted-foreground">Loading...</p>
+                ) : (
+                  <div className="space-y-2 mt-2">
+                    {connections.length === 0 && <p className="text-sm text-muted-foreground">No connections saved</p>}
+                    {connections.map((c: any) => (
+                      <div key={c.id} className="p-3 border rounded flex items-center justify-between">
+                        <div>
+                          <div className="font-medium">{c.label || c.provider}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {c.provider} • Created: {new Date(c.created_at).toLocaleString()}
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button size="sm" variant="outline" onClick={() => enqueueJob(c.id, 'export')}>
+                            Run Export (dry-run)
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => enqueueJob(c.id, 'import')}>
+                            Run Import (dry-run)
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
 
               <div className="mt-6">
-                <div className="flex items-center justify-between"><h4 className="font-semibold">Job History</h4><div className="flex gap-2"><Button size="sm" variant="outline" onClick={loadJobs}>Refresh</Button><Button size="sm" onClick={processNextJob}>Process Next Job</Button></div></div>
-                <div className="mt-3">{jobsLoading ? (<p className="text-sm text-muted-foreground">Loading jobs...</p>) : (<div className="space-y-2">{jobs.length === 0 && <p className="text-sm text-muted-foreground">No jobs</p>}{jobs.map((j: any) => (<div key={j.id} className="p-3 border rounded flex items-center justify-between"><div><div className="font-medium">{j.job_type} • {j.provider}</div><div className="text-xs text-muted-foreground">Status: {j.status} • Attempts: {j.attempts} • {new Date(j.created_at).toLocaleString()}</div></div><div className="text-sm text-muted-foreground">{j.last_error ? `Error: ${j.last_error}` : ''}</div></div>))}</div>)}</div>
+                <div className="flex items-center justify-between">
+                  <h4 className="font-semibold">Job History</h4>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" onClick={loadJobs}>
+                      Refresh
+                    </Button>
+                    <Button size="sm" onClick={processNextJob}>
+                      Process Next Job
+                    </Button>
+                  </div>
+                </div>
+                <div className="mt-3">
+                  {jobsLoading ? (
+                    <p className="text-sm text-muted-foreground">Loading jobs...</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {jobs.length === 0 && <p className="text-sm text-muted-foreground">No jobs</p>}
+                      {jobs.map((j: any) => (
+                        <div key={j.id} className="p-3 border rounded flex items-center justify-between">
+                          <div>
+                            <div className="font-medium">{j.job_type} • {j.provider}</div>
+                            <div className="text-xs text-muted-foreground">
+                              Status: {j.status} • Attempts: {j.attempts} • {new Date(j.created_at).toLocaleString()}
+                            </div>
+                          </div>
+                          <div className="text-sm text-muted-foreground">
+                            {j.last_error ? `Error: ${j.last_error}` : ''}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -356,13 +517,28 @@ export default function Admin() {
         <TabsContent value="pin" className="space-y-4">
           <div className="glass-card p-5">
             <h3 className="font-semibold">Change Admin PIN</h3>
-            <p className="text-sm text-muted-foreground mb-4">Set or change the master admin PIN used to unlock admin tools.</p>
+            <p className="text-sm text-muted-foreground mb-4">
+              Set or change the master admin PIN used to unlock admin tools.
+            </p>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div><Label>Current PIN (leave empty if not set)</Label><Input value={currentPin} onChange={(e) => setCurrentPin(e.target.value)} type="password" /></div>
-              <div><Label>New PIN</Label><Input value={newPin} onChange={(e) => setNewPin(e.target.value)} type="password" /></div>
-              <div><Label>Confirm New PIN</Label><Input value={confirmPin} onChange={(e) => setConfirmPin(e.target.value)} type="password" /></div>
+              <div>
+                <Label>Current PIN (leave empty if not set)</Label>
+                <Input value={currentPin} onChange={(e) => setCurrentPin(e.target.value)} type="password" />
+              </div>
+              <div>
+                <Label>New PIN</Label>
+                <Input value={newPin} onChange={(e) => setNewPin(e.target.value)} type="password" />
+              </div>
+              <div>
+                <Label>Confirm New PIN</Label>
+                <Input value={confirmPin} onChange={(e) => setConfirmPin(e.target.value)} type="password" />
+              </div>
             </div>
-            <div className="mt-4"><Button onClick={handleChangeMasterPin} disabled={isChangingPin}>{isChangingPin ? 'Saving...' : 'Change PIN'}</Button></div>
+            <div className="mt-4">
+              <Button onClick={handleChangeMasterPin} disabled={isChangingPin}>
+                {isChangingPin ? 'Saving...' : 'Change PIN'}
+              </Button>
+            </div>
           </div>
         </TabsContent>
       </Tabs>
