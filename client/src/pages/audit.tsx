@@ -930,6 +930,7 @@ export default function Audit() {
 													</h4>
 
 													<div className="space-y-3">
+														{lastExportCounts && (
 															<div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
 																<div className="flex items-center gap-2 mb-2">
 																	<Upload className="h-4 w-4 text-blue-500" />
@@ -1002,6 +1003,7 @@ export default function Audit() {
 												System Information
 											</CardTitle>
 										</CardHeader>
+										<CardContent>
 											<div className="grid grid-cols-2 gap-4">
 												<div className="space-y-2">
 													<Label className="text-sm font-medium">Cloud Status</Label>
