@@ -7,25 +7,25 @@ import {
   TabsTrigger,
   TabsContent,
 } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import {
-  Button,
-  Input,
-  Label,
-  Badge,
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
-} from "@/components/ui";
+} from "@/components/ui/dialog";
 import { Key, Download, ShieldCheck, Lock, Eye, EyeOff, Calendar, Zap, CalendarDays } from "lucide-react";
-import { apiRequest } from "@/lib/queryClient"; // Changed from "@/lib/api"
-import { useToast } from "@/hooks/use-toast"; // Added missing toast import
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 export default function Admin() {
   const queryClient = useQueryClient();
   const [, navigate] = useNavigate();
-  const { toast } = useToast(); // Added toast hook
+  const { toast } = useToast();
 
   // Admin PIN gating
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
@@ -47,7 +47,7 @@ export default function Admin() {
     setAdminPinInput(newPin);
     setAdminPinError("");
     if (value && index < 3) {
-      const next = document.querySelector(`[data-testid=\"input-admin-pin-${index + 1}\"]`) as HTMLInputElement;
+      const next = document.querySelector(`[data-testid="input-admin-pin-${index + 1}"]`) as HTMLInputElement;
       next?.focus();
     }
     if (newPin.every(d => d !== "") && index === 3) {
