@@ -1821,10 +1821,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ============ ADMIN LICENSE SETTINGS ============
   
   // Crypto helper for hashing secret key
-  const crypto = require('crypto')
-  
   function hashSecretKey(key: string): string {
-    return crypto.createHash('sha256').update(key).digest('hex')
+    // use imported `crypto` (ESM-friendly)
+    return crypto.createHash("sha256").update(key).digest("hex")
   }
 
   // Get license status for admin panel

@@ -3,6 +3,7 @@
 import Database from "better-sqlite3"
 import fs from "fs"
 import path from "path"
+import { fileURLToPath } from "url"
 
 /**
  * Migrates an imported database to the latest schema
@@ -477,10 +478,19 @@ export function migrateDatabase(db: Database.Database): void {
     // applied yet. This ensures ad-hoc migration files (e.g., 0001_add_license_fields.sql)
     // are executed even if they were added after code-based migrations.
     try {
+      // Resolve possible migrations directories. `__dirname` is not available
+      // in ESM builds, so derive a base dir via `import.meta.url` when possible.
+      let baseDir = process.cwd()
+      try {
+        baseDir = path.dirname(fileURLToPath(import.meta.url))
+      } catch (err) {
+        // ignore; fallback to process.cwd()
+      }
+
       const candidates = [
         path.join(process.cwd(), "migrations"),
-        path.join(__dirname, "..", "migrations"),
-        path.join(__dirname, "..", "..", "migrations"),
+        path.join(baseDir, "..", "migrations"),
+        path.join(baseDir, "..", "..", "migrations"),
       ]
 
       let migrationsDir: string | null = null
