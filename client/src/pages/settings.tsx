@@ -113,7 +113,7 @@ export default function Settings() {
       if (res.ok && json.ok) {
         toast({ title: "Saved", description: "Connection saved securely on server." })
         setCloudConn("")
-        loadCloudConnections()
+        void loadCloudConnections()
       } else {
         toast({ title: "Save failed", description: json.error || "Unable to save", variant: "destructive" })
       }
@@ -159,7 +159,7 @@ export default function Settings() {
       const json = await res.json()
       if (res.ok && json.ok) {
         toast({ title: "Deleted", description: "Connection removed" })
-        loadCloudConnections()
+        void loadCloudConnections()
       } else {
         toast({ title: "Error", description: json.error || "Failed to delete", variant: "destructive" })
       }
