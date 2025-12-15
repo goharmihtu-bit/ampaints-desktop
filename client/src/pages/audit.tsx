@@ -1,1106 +1,664 @@
-"use client"
-
-import type React from "react"
-import { useState, useMemo, useEffect, useCallback, useRef } from "react"
-import { useQuery, useMutation } from "@tanstack/react-query"
-
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
-import { Label } from "@/components/ui/label"
-import { Switch } from "@/components/ui/switch"
+import React, { useState, useEffect, useMemo } from 'react';
 import {
-  Lock,
-  Settings,
-  Eye,
-  EyeOff,
-  ShieldCheck,
-  AlertTriangle,
-  RefreshCw,
-  Database,
-  Trash2,
-  Edit,
-  Cloud,
-  Upload,
-  Download,
-  Check,
-  XCircle,
-  Loader2,
-  Users,
-  Key,
-  Cpu,
-  Wifi,
-  WifiOff,
-  Receipt,
-  CreditCard,
-  Package,
-  Activity,
-  Clock,
-} from "lucide-react"
-import { useToast } from "@/hooks/use-toast"
-import { queryClient } from "@/lib/queryClient"
-import type { Settings as AppSettings } from "@shared/schema"
+  BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  PieChart, Pie, Cell, ScatterChart, Scatter
+} from 'recharts';
+import {
+  Card, CardContent, CardDescription, CardHeader, CardTitle,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Tabs, TabsContent, TabsList, TabsTrigger,
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Button, Input, Badge, ScrollArea
+} from '@/components/ui';
+import {
+  Download, Upload, TrendingUp, AlertCircle, Activity, Eye, EyeOff, Filter, ChevronDown,
+  Calendar, Clock, User, FileText, CheckCircle2, XCircle, HelpCircle, BarChart3, PieChart as PieChartIcon
+} from 'lucide-react';
+import type { AuditLog, ExportLog, ImportLog } from '@/api/audit';
+import { auditApi } from '@/api/audit';
+import { cn } from '@/lib/utils';
 
-// Custom hook for authenticated API calls
-function useAuditApiRequest() {
-  const [auditToken, setAuditToken] = useState<string | null>(null)
+interface AuditFilters {
+  dateRange: 'all' | '7days' | '30days' | '90days';
+  logType: 'all' | 'export' | 'import' | 'system';
+  userId: string;
+  searchText: string;
+}
+
+interface ExportCounts {
+  csvCount: number;
+  excelCount: number;
+  pdfCount: number;
+  totalCount: number;
+}
+
+interface ImportCounts {
+  csvCount: number;
+  excelCount: number;
+  pdfCount: number;
+  totalCount: number;
+}
+
+const AuditPage: React.FC = () => {
+  const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [exportLogs, setExportLogs] = useState<ExportLog[]>([]);
+  const [importLogs, setImportLogs] = useState<ImportLog[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedLogId, setSelectedLogId] = useState<string | null>(null);
+  const [showDetailDialog, setShowDetailDialog] = useState(false);
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  const [showDetails, setShowDetails] = useState<Record<string, boolean>>({});
+  const [filters, setFilters] = useState<AuditFilters>({
+    dateRange: 'all',
+    logType: 'all',
+    userId: '',
+    searchText: ''
+  });
 
   useEffect(() => {
-    const storedToken = sessionStorage.getItem("auditToken")
-    if (storedToken) {
-      setAuditToken(storedToken)
-    }
-  }, [])
-
-  const authenticatedRequest = async (url: string, options: RequestInit = {}) => {
-    const token = auditToken || sessionStorage.getItem("auditToken")
-    if (!token) {
-      throw new Error("No audit token available")
-    }
-
-    const headers = {
-      "Content-Type": "application/json",
-      "X-Audit-Token": token,
-      ...options.headers,
-    }
-
-    try {
-      const response = await fetch(url, {
-        ...options,
-        headers,
-      })
-
-      if (response.status === 401) {
-        sessionStorage.removeItem("auditToken")
-        sessionStorage.removeItem("auditVerified")
-        setAuditToken(null)
-        throw new Error("Authentication failed. Please re-enter your PIN.")
+    const fetchLogs = async () => {
+      try {
+        setLoading(true);
+        const [auditData, exportData, importData] = await Promise.all([
+          auditApi.getLogs({}),
+          auditApi.getExportLogs({}),
+          auditApi.getImportLogs({})
+        ]);
+        setLogs(auditData);
+        setExportLogs(exportData);
+        setImportLogs(importData);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to fetch audit logs');
+      } finally {
+        setLoading(false);
       }
+    };
 
-      if (!response.ok) {
-        let errorMessage = `Request failed with status ${response.status}`
-        try {
-          const errorData = await response.json()
-          errorMessage = errorData.error || errorMessage
-        } catch (e) {
-          const text = await response.text()
-          if (text) errorMessage = `${errorMessage}: ${text}`
-        }
-        throw new Error(errorMessage)
-      }
+    fetchLogs();
+  }, []);
 
-      return response.json()
-    } catch (error: any) {
-      console.error(`API Request Error for ${url}:`, error)
-      throw error
+  const filteredLogs = useMemo(() => {
+    return logs.filter(log => {
+      const logDate = new Date(log.timestamp);
+      const now = new Date();
+      const daysAgo = (now.getTime() - logDate.getTime()) / (1000 * 60 * 60 * 24);
+
+      let matchesDateRange = true;
+      if (filters.dateRange === '7days') matchesDateRange = daysAgo <= 7;
+      else if (filters.dateRange === '30days') matchesDateRange = daysAgo <= 30;
+      else if (filters.dateRange === '90days') matchesDateRange = daysAgo <= 90;
+
+      const matchesType = filters.logType === 'all' || log.type === filters.logType;
+      const matchesUser = !filters.userId || log.userId === filters.userId;
+      const matchesSearch = !filters.searchText ||
+        log.action.toLowerCase().includes(filters.searchText.toLowerCase()) ||
+        (log.details && log.details.toLowerCase().includes(filters.searchText.toLowerCase()));
+
+      return matchesDateRange && matchesType && matchesUser && matchesSearch;
+    });
+  }, [logs, filters]);
+
+  const exportCounts: ExportCounts = useMemo(() => ({
+    csvCount: exportLogs.filter(log => log.format === 'csv').length,
+    excelCount: exportLogs.filter(log => log.format === 'excel').length,
+    pdfCount: exportLogs.filter(log => log.format === 'pdf').length,
+    totalCount: exportLogs.length
+  }), [exportLogs]);
+
+  const importCounts: ImportCounts = useMemo(() => ({
+    csvCount: importLogs.filter(log => log.format === 'csv').length,
+    excelCount: importLogs.filter(log => log.format === 'excel').length,
+    pdfCount: importLogs.filter(log => log.format === 'pdf').length,
+    totalCount: importLogs.length
+  }), [importLogs]);
+
+  const lastExportCounts = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todaysExports = exportLogs.filter(log => {
+      const logDate = new Date(log.timestamp);
+      logDate.setHours(0, 0, 0, 0);
+      return logDate.getTime() === today.getTime();
+    });
+
+    return todaysExports.length > 0 ? {
+      csvCount: todaysExports.filter(log => log.format === 'csv').length,
+      excelCount: todaysExports.filter(log => log.format === 'excel').length,
+      pdfCount: todaysExports.filter(log => log.format === 'pdf').length,
+      totalCount: todaysExports.length
+    } : null;
+  }, [exportLogs]);
+
+  const lastImportCounts = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todaysImports = importLogs.filter(log => {
+      const logDate = new Date(log.timestamp);
+      logDate.setHours(0, 0, 0, 0);
+      return logDate.getTime() === today.getTime();
+    });
+
+    return todaysImports.length > 0 ? {
+      csvCount: todaysImports.filter(log => log.format === 'csv').length,
+      excelCount: todaysImports.filter(log => log.format === 'excel').length,
+      pdfCount: todaysImports.filter(log => log.format === 'pdf').length,
+      totalCount: todaysImports.length
+    } : null;
+  }, [importLogs]);
+
+  const chartData = useMemo(() => {
+    const last30Days = [];
+    for (let i = 29; i >= 0; i--) {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      date.setHours(0, 0, 0, 0);
+
+      const exports = exportLogs.filter(log => {
+        const logDate = new Date(log.timestamp);
+        logDate.setHours(0, 0, 0, 0);
+        return logDate.getTime() === date.getTime();
+      }).length;
+
+      const imports = importLogs.filter(log => {
+        const logDate = new Date(log.timestamp);
+        logDate.setHours(0, 0, 0, 0);
+        return logDate.getTime() === date.getTime();
+      }).length;
+
+      last30Days.push({
+        date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        exports,
+        imports,
+        total: exports + imports
+      });
     }
+    return last30Days;
+  }, [exportLogs, importLogs]);
+
+  const exportFormatData = [
+    { name: 'CSV', value: exportCounts.csvCount, color: '#3b82f6' },
+    { name: 'Excel', value: exportCounts.excelCount, color: '#10b981' },
+    { name: 'PDF', value: exportCounts.pdfCount, color: '#f59e0b' }
+  ];
+
+  const importFormatData = [
+    { name: 'CSV', value: importCounts.csvCount, color: '#3b82f6' },
+    { name: 'Excel', value: importCounts.excelCount, color: '#10b981' },
+    { name: 'PDF', value: importCounts.pdfCount, color: '#f59e0b' }
+  ];
+
+  const selectedLog = logs.find(log => log.id === selectedLogId);
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'success':
+        return <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />;
+      case 'error':
+        return <XCircle className="h-4 w-4 text-red-600 dark:text-red-400" />;
+      default:
+        return <AlertCircle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />;
+    }
+  };
+
+  const getStatusBadge = (status: string) => {
+    const variants: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
+      success: 'default',
+      error: 'destructive',
+      pending: 'secondary'
+    };
+    return <Badge variant={variants[status] || 'outline'}>{status}</Badge>;
+  };
+
+  const handleDetailClick = (logId: string) => {
+    setSelectedLogId(logId);
+    setShowDetailDialog(true);
+  };
+
+  const handleFilterChange = (key: keyof AuditFilters, value: any) => {
+    setFilters(prev => ({
+      ...prev,
+      [key]: value
+    }));
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-lg text-gray-600 dark:text-gray-400">Loading audit logs...</div>
+      </div>
+    );
   }
 
-  return { authenticatedRequest, auditToken, setAuditToken }
-}
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-lg text-red-600 dark:text-red-400">Error: {error}</div>
+      </div>
+    );
+  }
 
-export default function Audit() {
-	const { toast } = useToast()
-	const { authenticatedRequest, auditToken, setAuditToken } = useAuditApiRequest()
+  return (
+    <div className="space-y-6 p-6">
+      <div>
+        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Audit Logs</h1>
+        <p className="text-gray-600 dark:text-gray-400 mt-2">Track all system activities and data changes</p>
+      </div>
 
-	const [isVerified, setIsVerified] = useState(false)
-	const [pinInput, setPinInput] = useState(["", "", "", ""])
-	const [pinError, setPinError] = useState("")
-	const [isDefaultPin, setIsDefaultPin] = useState(false)
-	const [showPinDialog, setShowPinDialog] = useState(true)
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium">Total Logs</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{logs.length}</div>
+            <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">All time</p>
+          </CardContent>
+        </Card>
 
-	// Settings Tabs State
-	const [settingsTab, setSettingsTab] = useState("pin")
-	const [currentPin, setCurrentPin] = useState("")
-	const [newPin, setNewPin] = useState("")
-	const [confirmPin, setConfirmPin] = useState("")
-	const [showCurrentPin, setShowCurrentPin] = useState(false)
-	const [showNewPin, setShowNewPin] = useState(false)
-	const [showConfirmPin, setShowConfirmPin] = useState(false)
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium">Total Exports</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{exportCounts.totalCount}</div>
+            <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">All formats</p>
+          </CardContent>
+        </Card>
 
-	// Cloud Sync State - Optimized for silent operation
-	const [cloudUrl, setCloudUrl] = useState("")
-	const [showCloudUrl, setShowCloudUrl] = useState(false)
-	const [cloudConnectionStatus, setCloudConnectionStatus] = useState<"idle" | "testing" | "success" | "error">("idle")
-	const [cloudSyncStatus, setCloudSyncStatus] = useState<"idle" | "exporting" | "importing">("idle")
-	const [lastExportCounts, setLastExportCounts] = useState<any>(null)
-	const [lastImportCounts, setLastImportCounts] = useState<any>(null)
-	
-	const { data: hasPin } = useQuery<{ hasPin: boolean; isDefault?: boolean }>({
-		queryKey: ["/api/audit/has-pin"],
-		enabled: !isVerified,
-		refetchOnWindowFocus: false
-	})
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium">Total Imports</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{importCounts.totalCount}</div>
+            <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">All formats</p>
+          </CardContent>
+        </Card>
 
-	const { data: appSettings } = useQuery<AppSettings>({
-		queryKey: ["/api/settings"],
-		enabled: isVerified,
-		staleTime: 10 * 60 * 1000,
-		refetchOnWindowFocus: false,
-		refetchOnMount: false,
-		gcTime: 30 * 60 * 1000,
-	})
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium">Active Users</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{new Set(logs.map(log => log.userId)).size}</div>
+            <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">Unique users</p>
+          </CardContent>
+        </Card>
+      </div>
 
-	const updatePermissionsMutation = useMutation({
-		mutationFn: async (permissions: Partial<AppSettings>) => {
-			const response = await authenticatedRequest("/api/settings", {
-				method: "PATCH",
-				body: JSON.stringify(permissions),
-			})
-			return response
-		},
-		onSuccess: () => {
-			queryClient.setQueryData(["/api/settings"], (old: AppSettings) => ({
-				...old,
-				...updatePermissionsMutation.variables
-			}))
-			
-			toast({
-				title: "Permissions Updated",
-				description: "Access control settings have been saved.",
-			})
-		},
-		onError: () => {
-			toast({
-				title: "Failed to Update",
-				description: "Could not save permission settings.",
-				variant: "destructive",
-			})
-		},
-	})
+      {/* Charts Section */}
+      <Tabs defaultValue="timeline" className="w-full">
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="timeline">Timeline</TabsTrigger>
+          <TabsTrigger value="exports">Export Formats</TabsTrigger>
+          <TabsTrigger value="imports">Import Formats</TabsTrigger>
+        </TabsList>
 
-	const handlePermissionChange = useCallback((key: keyof AppSettings, value: boolean) => {
-		updatePermissionsMutation.mutate({ [key]: value })
-	}, [updatePermissionsMutation])
+        <TabsContent value="timeline">
+          <Card>
+            <CardHeader>
+              <CardTitle>Activity Timeline (Last 30 Days)</CardTitle>
+              <CardDescription>Export and import activity over time</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="date" />
+                  <YAxis />
+                  <Tooltip />
+                  <Legend />
+                  <Line type="monotone" dataKey="exports" stroke="#3b82f6" />
+                  <Line type="monotone" dataKey="imports" stroke="#10b981" />
+                </LineChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-	const verifyPinMutation = useMutation({
-		mutationFn: async (pin: string) => {
-			const response = await fetch("/api/audit/verify", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ pin }),
-			})
-			if (!response.ok) {
-				const errorData = await response.json()
-				throw new Error(errorData.error || "PIN verification failed")
-			}
-			return response.json()
-		},
-		onSuccess: (data: { ok: boolean; isDefault?: boolean; auditToken?: string }) => {
-			if (data.ok && data.auditToken) {
-				setIsVerified(true)
-				setAuditToken(data.auditToken)
-				setShowPinDialog(false)
-				setIsDefaultPin(data.isDefault || false)
-				setPinError("")
-				if (data.isDefault) {
-					toast({
-						title: "Default PIN Used",
-						description: "Please change your PIN in the Settings tab for security.",
-						variant: "destructive",
-					})
-				}
-				sessionStorage.setItem("auditVerified", "true")
-				sessionStorage.setItem("auditToken", data.auditToken)
-			}
-		},
-		onError: (error: Error) => {
-			setPinError(error.message || "Invalid PIN. Please try again.")
-			setPinInput(["", "", "", ""])
-		},
-	})
+        <TabsContent value="exports">
+          <Card>
+            <CardHeader>
+              <CardTitle>Export Format Distribution</CardTitle>
+              <CardDescription>Breakdown of exports by format</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={exportFormatData}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ name, value }) => `${name}: ${value}`}
+                    outerRadius={80}
+                    fill="#8884d8"
+                    dataKey="value"
+                  >
+                    {exportFormatData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-	const changePinMutation = useMutation({
-		mutationFn: async ({ currentPin, newPin }: { currentPin: string; newPin: string }) => {
-			const response = await authenticatedRequest("/api/audit/pin", {
-				method: "PATCH",
-				body: JSON.stringify({ currentPin, newPin }),
-			})
-			return response
-		},
-		onSuccess: () => {
-			toast({
-				title: "PIN Changed",
-				description: "Your audit PIN has been successfully updated.",
-			})
-			setCurrentPin("")
-			setNewPin("")
-			setConfirmPin("")
-			setIsDefaultPin(false)
-		},
-		onError: (error: Error) => {
-			toast({
-				title: "PIN Change Failed",
-				description: error.message || "Failed to change PIN. Please check your current PIN.",
-				variant: "destructive",
-			})
-		},
-	})
+        <TabsContent value="imports">
+          <Card>
+            <CardHeader>
+              <CardTitle>Import Format Distribution</CardTitle>
+              <CardDescription>Breakdown of imports by format</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={importFormatData}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ name, value }) => `${name}: ${value}`}
+                    outerRadius={80}
+                    fill="#8884d8"
+                    dataKey="value"
+                  >
+                    {importFormatData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
 
-	// Cloud Sync Functions - Optimized for silent operation
-	const handleTestConnection = useCallback(async () => {
-		if (!cloudUrl.trim()) {
-			toast({
-				title: "Connection URL Required",
-				description: "Please enter a PostgreSQL connection URL.",
-				variant: "destructive",
-			})
-			return
-		}
+      {/* Statistics Card */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <BarChart3 className="h-5 w-5" />
+            Statistics
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">CSV Exports</p>
+              <p className="text-2xl font-bold">{exportCounts.csvCount}</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Excel Exports</p>
+              <p className="text-2xl font-bold">{exportCounts.excelCount}</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">PDF Exports</p>
+              <p className="text-2xl font-bold">{exportCounts.pdfCount}</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Total Exports</p>
+              <p className="text-2xl font-bold">{exportCounts.totalCount}</p>
+            </div>
+          </div>
 
-		if (!cloudUrl.includes('postgresql://') || !cloudUrl.includes('@')) {
-			setCloudConnectionStatus("error")
-			toast({
-				title: "Invalid Format",
-				description: "URL must be in format: postgresql://user:password@host/database",
-				variant: "destructive",
-			})
-			return
-		}
+          <div className="border-t pt-4">
+            <h4 className="font-medium mb-3 flex items-center gap-2">
+              <Activity className="h-4 w-4" />
+              Export/Import History
+            </h4>
 
-		setCloudConnectionStatus("testing")
-		try {
-			const response = await authenticatedRequest("/api/cloud/test-connection", {
-				method: "POST",
-				body: JSON.stringify({ connectionUrl: cloudUrl }),
-			})
-			
-			if (response.ok) {
-				setCloudConnectionStatus("success")
-				
-				await authenticatedRequest("/api/cloud/save-settings", {
-					method: "POST",
-					body: JSON.stringify({ connectionUrl: cloudUrl, syncEnabled: true }),
-				})
-				
-				toast({
-					title: "Connection Successful",
-					description: response.message || "Connected to cloud database successfully.",
-				})
-			} else {
-				setCloudConnectionStatus("error")
-				toast({
-					title: "Connection Failed",
-					description: response.error || response.details || "Could not connect to cloud database.",
-					variant: "destructive",
-				})
-			}
-		} catch (error: any) {
-			setCloudConnectionStatus("error")
-			toast({
-				title: "Connection Failed",
-				description: error.message || "Could not connect to cloud database.",
-				variant: "destructive",
-			})
-		}
-	}, [cloudUrl, authenticatedRequest, toast])
+            <div className="space-y-3">
+              {lastExportCounts && (
+                <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                  <p className="text-sm font-medium text-blue-900 dark:text-blue-200">Today's Exports</p>
+                  <div className="grid grid-cols-3 gap-2 mt-2 text-xs">
+                    <div>
+                      <span className="text-gray-600 dark:text-gray-400">CSV: </span>
+                      <span className="font-semibold">{lastExportCounts.csvCount}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600 dark:text-gray-400">Excel: </span>
+                      <span className="font-semibold">{lastExportCounts.excelCount}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600 dark:text-gray-400">PDF: </span>
+                      <span className="font-semibold">{lastExportCounts.pdfCount}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
 
-	// --- NEW: Persist UI state to survive reloads ---
-	const UI_STATE_KEY = "audit:uiState";
-	const saveUiStateDebounceRef = useRef<number | null>(null);
+              {lastImportCounts && (
+                <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                  <p className="text-sm font-medium text-green-900 dark:text-green-200">Today's Imports</p>
+                  <div className="grid grid-cols-3 gap-2 mt-2 text-xs">
+                    <div>
+                      <span className="text-gray-600 dark:text-gray-400">CSV: </span>
+                      <span className="font-semibold">{lastImportCounts.csvCount}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600 dark:text-gray-400">Excel: </span>
+                      <span className="font-semibold">{lastImportCounts.excelCount}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600 dark:text-gray-400">PDF: </span>
+                      <span className="font-semibold">{lastImportCounts.pdfCount}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
-	const saveUiState = useCallback(() => {
-		if (saveUiStateDebounceRef.current) {
-			clearTimeout(saveUiStateDebounceRef.current);
-		}
-		// debounce small changes to avoid frequent writes
-		saveUiStateDebounceRef.current = (window.setTimeout(() => {
-			const state = {
-				settingsTab,
-				pinInput,
-				pinError,
-				isDefaultPin,
-				showPinDialog,
-				cloudUrl,
-				cloudConnectionStatus,
-				cloudSyncStatus,
-			};
-			try {
-				sessionStorage.setItem(UI_STATE_KEY, JSON.stringify(state));
-			} catch (e) {
-				// ignore storage errors
-			}
-		}, 200) as unknown) as number;
-	}, [settingsTab, pinInput, pinError, isDefaultPin, showPinDialog, cloudUrl, cloudConnectionStatus, cloudSyncStatus]);
+      {/* Filters Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Filter className="h-5 w-5" />
+            Filters
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div>
+              <label className="text-sm font-medium block mb-2">Date Range</label>
+              <Select value={filters.dateRange} onValueChange={(value: any) => handleFilterChange('dateRange', value)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Time</SelectItem>
+                  <SelectItem value="7days">Last 7 Days</SelectItem>
+                  <SelectItem value="30days">Last 30 Days</SelectItem>
+                  <SelectItem value="90days">Last 90 Days</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-	const restoreUiState = useCallback(() => {
-		try {
-			const raw = sessionStorage.getItem(UI_STATE_KEY);
-			if (!raw) return;
-			const parsed = JSON.parse(raw);
-			if (parsed.settingsTab) setSettingsTab(parsed.settingsTab);
-			if (Array.isArray(parsed.pinInput)) setPinInput(parsed.pinInput);
-			if (parsed.pinError) setPinError(parsed.pinError);
-			if (parsed.isDefaultPin) setIsDefaultPin(parsed.isDefaultPin);
-			if (typeof parsed.showPinDialog === "boolean") setShowPinDialog(parsed.showPinDialog);
-			if (parsed.cloudUrl) setCloudUrl(parsed.cloudUrl);
-			if (parsed.cloudConnectionStatus) setCloudConnectionStatus(parsed.cloudConnectionStatus);
-			if (parsed.cloudSyncStatus) setCloudSyncStatus(parsed.cloudSyncStatus);
-		} catch (e) {
-			// ignore JSON parse errors
-		}
-	}, []);
+            <div>
+              <label className="text-sm font-medium block mb-2">Log Type</label>
+              <Select value={filters.logType} onValueChange={(value: any) => handleFilterChange('logType', value)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Types</SelectItem>
+                  <SelectItem value="export">Export</SelectItem>
+                  <SelectItem value="import">Import</SelectItem>
+                  <SelectItem value="system">System</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-	useEffect(() => {
-		restoreUiState();
-		// save on state changes
-		saveUiState();
-		return () => {
-			// persist before unmount
-			saveUiState();
-			if (saveUiStateDebounceRef.current) {
-				clearTimeout(saveUiStateDebounceRef.current);
-			}
-		};
-		// intentionally omit saveUiState from deps to avoid frequent rebinds
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [restoreUiState]);
+            <div>
+              <label className="text-sm font-medium block mb-2">User ID</label>
+              <Input
+                placeholder="Filter by user..."
+                value={filters.userId}
+                onChange={(e) => handleFilterChange('userId', e.target.value)}
+              />
+            </div>
 
-	// also save when important UI pieces change
-	useEffect(() => { saveUiState(); }, [settingsTab, pinInput, showPinDialog, cloudUrl, cloudConnectionStatus, cloudSyncStatus]);
+            <div>
+              <label className="text-sm font-medium block mb-2">Search</label>
+              <Input
+                placeholder="Search in logs..."
+                value={filters.searchText}
+                onChange={(e) => handleFilterChange('searchText', e.target.value)}
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
-	// --- CHANGES: make cloud actions set cloudSyncInProgress flag and only selectively invalidate queries ---
-	const handleExportToCloud = useCallback(async () => {
-		if (!cloudUrl.trim() || cloudSyncStatus !== "idle") return
-		setCloudSyncStatus("exporting")
-		try {
-			const response = await authenticatedRequest("/api/cloud/export", { method: "POST" })
-			if (response.ok) {
-				setLastExportCounts(response.counts || {})
-				toast({ title: "Export Complete", description: response.message || "Data exported to cloud successfully." })
-			} else {
-				toast({ title: "Export Failed", description: response.error || "Could not export data to cloud.", variant: "destructive" })
-			}
-		} catch (error: any) {
-			toast({ title: "Export Failed", description: error.message || "Could not export data to cloud.", variant: "destructive" })
-		} finally {
-			setCloudSyncStatus("idle")
-		}
-	}, [cloudUrl, cloudSyncStatus, authenticatedRequest, toast])
+      {/* Logs Table */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Audit Logs</CardTitle>
+              <CardDescription>
+                Showing {filteredLogs.length} of {logs.length} logs
+              </CardDescription>
+            </div>
+            <Button variant="outline" onClick={() => setViewMode(viewMode === 'list' ? 'grid' : 'list')}>
+              {viewMode === 'list' ? 'Grid View' : 'List View'}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {viewMode === 'list' ? (
+            <ScrollArea className="w-full">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Timestamp</TableHead>
+                    <TableHead>User</TableHead>
+                    <TableHead>Action</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Details</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredLogs.map(log => (
+                    <TableRow key={log.id} className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800">
+                      <TableCell className="text-sm">
+                        {new Date(log.timestamp).toLocaleString()}
+                      </TableCell>
+                      <TableCell className="text-sm">{log.userId}</TableCell>
+                      <TableCell className="text-sm font-medium">{log.action}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{log.type}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        {getStatusBadge(log.status)}
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDetailClick(log.id)}
+                          className="h-8 w-8 p-0"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </ScrollArea>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filteredLogs.map(log => (
+                <Card key={log.id} className="cursor-pointer hover:shadow-lg transition-shadow" onClick={() => handleDetailClick(log.id)}>
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <CardTitle className="text-base">{log.action}</CardTitle>
+                        <CardDescription className="text-xs mt-1">
+                          {new Date(log.timestamp).toLocaleString()}
+                        </CardDescription>
+                      </div>
+                      {getStatusIcon(log.status)}
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    <div>
+                      <p className="text-xs text-gray-600 dark:text-gray-400">User</p>
+                      <p className="text-sm font-medium">{log.userId}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-600 dark:text-gray-400">Type</p>
+                      <Badge variant="outline">{log.type}</Badge>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-600 dark:text-gray-400">Status</p>
+                      {getStatusBadge(log.status)}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
-	const handleImportFromCloud = useCallback(async () => {
-		if (!cloudUrl.trim()) {
-			toast({ title: "Connection URL Required", description: "Please enter and save a PostgreSQL connection URL first.", variant: "destructive" })
-			return
-		}
-		setCloudSyncStatus("importing")
-		try {
-			const response = await authenticatedRequest("/api/cloud/import", { method: "POST" })
-			if (response.ok) {
-				setLastImportCounts(response.counts || {})
-				toast({ title: "Import Complete", description: response.message || "Data imported from cloud successfully." })
-			} else {
-				toast({ title: "Import Failed", description: response.error || "Could not import data from cloud.", variant: "destructive" })
-			}
-		} catch (error: any) {
-			toast({ title: "Import Failed", description: error.message || "Could not import data from cloud.", variant: "destructive" })
-		} finally {
-			setCloudSyncStatus("idle")
-		}
-	}, [cloudUrl, authenticatedRequest, toast])
+      {/* Detail Dialog */}
+      <Dialog open={showDetailDialog} onOpenChange={setShowDetailDialog}>
+        <DialogContent className="max-w-2xl max-h-screen overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Log Details</DialogTitle>
+          </DialogHeader>
+          {selectedLog && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Timestamp</p>
+                  <p className="font-medium">{new Date(selectedLog.timestamp).toLocaleString()}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">User ID</p>
+                  <p className="font-medium">{selectedLog.userId}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Action</p>
+                  <p className="font-medium">{selectedLog.action}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Type</p>
+                  <Badge variant="outline">{selectedLog.type}</Badge>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Status</p>
+                  {getStatusBadge(selectedLog.status)}
+                </div>
+              </div>
 
+              {selectedLog.details && (
+                <div>
+                  <p className="text-sm font-medium mb-2">Details</p>
+                  <pre className="bg-gray-50 dark:bg-gray-900 p-4 rounded-lg text-xs overflow-x-auto">
+                    {selectedLog.details}
+                  </pre>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+};
 
-	useEffect(() => {
-		const storedToken = sessionStorage.getItem("auditToken")
-		const storedVerified = sessionStorage.getItem("auditVerified")
-
-		if (storedVerified === "true" && storedToken) {
-			setIsVerified(true)
-			setAuditToken(storedToken)
-			setShowPinDialog(false)
-		}
-	}, [])
-
-	useEffect(() => {
-		if (appSettings?.cloudDatabaseUrl && !cloudUrl) {
-			setCloudUrl(appSettings.cloudDatabaseUrl)
-			if (appSettings.cloudSyncEnabled) {
-				setCloudConnectionStatus("success")
-			}
-		}
-	}, [appSettings?.cloudDatabaseUrl, appSettings?.cloudSyncEnabled])
-
-	const handlePinInput = (index: number, value: string) => {
-		if (!/^\d*$/.test(value)) return
-
-		const newPinInput = [...pinInput]
-		newPinInput[index] = value.slice(-1)
-		setPinInput(newPinInput)
-		setPinError("")
-
-		if (value && index < 3) {
-			const nextInput = document.getElementById(`pin-${index + 1}`)
-			nextInput?.focus()
-		}
-
-		if (index === 3 && value) {
-			const fullPin = newPinInput.join("")
-			if (fullPin.length === 4) {
-				verifyPinMutation.mutate(fullPin)
-			}
-		}
-	}
-
-	const handlePinKeyDown = (index: number, e: React.KeyboardEvent) => {
-		if (e.key === "Backspace" && !pinInput[index] && index > 0) {
-			const prevInput = document.getElementById(`pin-${index - 1}`)
-			prevInput?.focus()
-		}
-	}
-
-	const handlePinChange = () => {
-		if (newPin !== confirmPin) {
-			toast({
-				title: "PIN Mismatch",
-				description: "New PIN and confirmation do not match.",
-				variant: "destructive",
-			})
-			return
-		}
-
-		if (newPin.length !== 4 || !/^\d{4}$/.test(newPin)) {
-			toast({
-				title: "Invalid PIN",
-				description: "PIN must be exactly 4 digits.",
-				variant: "destructive",
-			})
-			return
-		}
-
-		changePinMutation.mutate({
-			currentPin: currentPin || "0000",
-			newPin: newPin,
-		})
-	}
-
-	if (showPinDialog) {
-		return (
-			<Dialog open={showPinDialog} onOpenChange={() => {}}>
-				<DialogContent
-					className="sm:max-w-md"
-					onPointerDownOutside={(e) => e.preventDefault()}
-				>
-					<DialogHeader>
-						<DialogTitle className="flex items-center gap-2 justify-center text-xl">
-							<ShieldCheck className="h-6 w-6 text-primary" />
-							Audit PIN Verification
-						</DialogTitle>
-						<DialogDescription className="text-center">
-							Enter your 4-digit PIN to access Audit Reports
-						</DialogDescription>
-					</DialogHeader>
-					<div className="space-y-6 py-4">
-						{hasPin && !hasPin.hasPin && (
-							<div className="flex items-center gap-2 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-md">
-								<AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
-								<p className="text-sm text-yellow-700 dark:text-yellow-300">
-									Default PIN is <strong>0000</strong>. Please change it after login.
-								</p>
-							</div>
-						)}
-
-						<div className="flex justify-center gap-3">
-							{[0, 1, 2, 3].map((index) => (
-								<input
-									key={index}
-									id={`pin-${index}`}
-									type="text"
-									inputMode="numeric"
-									pattern="[0-9]*"
-									maxLength={1}
-									value={pinInput[index]}
-									onChange={(e) => handlePinInput(index, e.target.value)}
-									onKeyDown={(e) => handlePinKeyDown(index, e)}
-									className="w-14 h-14 text-center text-2xl font-bold border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-									autoFocus={index === 0}
-									autoComplete="off"
-								/>
-							))}
-						</div>
-
-						{pinError && <p className="text-center text-sm text-destructive">{pinError}</p>}
-
-						{verifyPinMutation.isPending && (
-							<div className="flex justify-center">
-								<RefreshCw className="h-5 w-5 animate-spin text-muted-foreground" />
-							</div>
-						)}
-					</div>
-				</DialogContent>
-			</Dialog>
-		)
-	}
-
-	return (
-		<div className="flex flex-col h-full overflow-hidden">
-			<div className="m-4 mb-0 p-4">
-				<div className="flex items-center justify-between gap-4 flex-wrap">
-					<div className="flex items-center gap-2">
-						<ShieldCheck className="h-6 w-6 text-primary" />
-						<h1 className="text-2xl font-bold">Audit Settings</h1>
-					</div>
-				</div>
-
-				<div className="mt-4 border-t pt-4">
-					<div className="flex items-center gap-2">
-						<Settings className="h-5 w-5 text-muted-foreground" />
-						<span className="text-sm font-medium">Audit Settings & Cloud Sync</span>
-					</div>
-				</div>
-			</div>
-
-			<div className="flex-1 overflow-hidden mt-4">
-				<div className="h-full overflow-hidden">
-					<div className="h-full overflow-auto p-4">
-						<div className="max-w-4xl mx-auto">
-							<Tabs value={settingsTab} onValueChange={setSettingsTab} className="w-full">
-								<TabsList className="grid grid-cols-4 mb-6">
-									<TabsTrigger value="pin" className="flex items-center gap-2">
-										<Key className="h-4 w-4" />
-										PIN
-									</TabsTrigger>
-									<TabsTrigger value="permissions" className="flex items-center gap-2">
-										<Users className="h-4 w-4" />
-										Permissions
-									</TabsTrigger>
-									<TabsTrigger value="cloud" className="flex items-center gap-2">
-										<Cloud className="h-4 w-4" />
-										Cloud Sync
-									</TabsTrigger>
-									<TabsTrigger value="system" className="flex items-center gap-2">
-										<Cpu className="h-4 w-4" />
-										System
-									</TabsTrigger>
-								</TabsList>
-
-								{/* PIN SETTINGS TAB */}
-								<TabsContent value="pin" className="space-y-6">
-									<Card>
-										<CardHeader>
-											<CardTitle className="flex items-center gap-2">
-												<Lock className="h-5 w-5" />
-												Change Audit PIN
-											</CardTitle>
-										</CardHeader>
-										<CardContent className="space-y-4">
-											{isDefaultPin && (
-												<div className="flex items-center gap-2 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-md">
-													<AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
-													<p className="text-sm text-yellow-700 dark:text-yellow-300">
-														You are using the default PIN. Please change it for security.
-													</p>
-												</div>
-											)}
-
-											<div className="space-y-2">
-												<Label htmlFor="currentPin">Current PIN</Label>
-												<div className="relative">
-													<Input
-														id="currentPin"
-														type={showCurrentPin ? "text" : "password"}
-														value={currentPin}
-														onChange={(e) => setCurrentPin(e.target.value)}
-														placeholder={isDefaultPin ? "Default: 0000" : "Enter current PIN"}
-														maxLength={4}
-													/>
-													<Button
-														type="button"
-														variant="ghost"
-														size="icon"
-														className="absolute right-0 top-0"
-														onClick={() => setShowCurrentPin(!showCurrentPin)}
-													>
-														{showCurrentPin ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-													</Button>
-												</div>
-											</div>
-
-											<div className="space-y-2">
-												<Label htmlFor="newPin">New PIN</Label>
-												<div className="relative">
-													<Input
-														id="newPin"
-														type={showNewPin ? "text" : "password"}
-														value={newPin}
-														onChange={(e) => setNewPin(e.target.value)}
-														placeholder="Enter new 4-digit PIN"
-														maxLength={4}
-													/>
-													<Button
-														type="button"
-														variant="ghost"
-														size="icon"
-														className="absolute right-0 top-0"
-														onClick={() => setShowNewPin(!showNewPin)}
-													>
-														{showNewPin ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-													</Button>
-												</div>
-											</div>
-
-											<div className="space-y-2">
-												<Label htmlFor="confirmPin">Confirm New PIN</Label>
-												<div className="relative">
-													<Input
-														id="confirmPin"
-														type={showConfirmPin ? "text" : "password"}
-														value={confirmPin}
-														onChange={(e) => setConfirmPin(e.target.value)}
-														placeholder="Confirm new PIN"
-														maxLength={4}
-													/>
-													<Button
-														type="button"
-														variant="ghost"
-														size="icon"
-														className="absolute right-0 top-0"
-														onClick={() => setShowConfirmPin(!showConfirmPin)}
-													>
-														{showConfirmPin ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-													</Button>
-												</div>
-											</div>
-
-											<Button
-												onClick={handlePinChange}
-												className="w-full"
-												disabled={changePinMutation.isPending}
-											>
-												{changePinMutation.isPending ? (
-													<RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-												) : (
-													<Lock className="h-4 w-4 mr-2" />
-												)}
-												Change PIN
-											</Button>
-										</CardContent>
-									</Card>
-								</TabsContent>
-
-								{/* PERMISSIONS TAB */}
-								<TabsContent value="permissions" className="space-y-6">
-									<Card>
-										<CardHeader>
-											<CardTitle className="flex items-center gap-2">
-												<ShieldCheck className="h-5 w-5" />
-												Access Control Permissions
-											</CardTitle>
-										</CardHeader>
-										<CardContent className="space-y-6">
-											<p className="text-sm text-muted-foreground">
-												Control which actions are allowed in the application. Disabled actions will be hidden throughout
-												the software.
-											</p>
-
-											<div className="space-y-4">
-												<div className="border-b pb-3">
-													<h4 className="font-medium flex items-center gap-2 mb-3">
-														<Package className="h-4 w-4" />
-														Stock Management
-													</h4>
-													<div className="space-y-3 pl-6">
-														<div className="flex items-center justify-between">
-															<div className="space-y-0.5">
-																<Label className="flex items-center gap-2">
-																	<Edit className="h-4 w-4 text-blue-500" />
-																	Edit Products/Variants/Colors
-																</Label>
-																<p className="text-xs text-muted-foreground">Allow editing stock items</p>
-															</div>
-															<Switch
-																checked={appSettings?.permStockEdit ?? true}
-																onCheckedChange={(checked) => handlePermissionChange("permStockEdit", checked)}
-															/>
-														</div>
-														<div className="flex items-center justify-between">
-															<div className="space-y-0.5">
-																<Label className="flex items-center gap-2">
-																	<Trash2 className="h-4 w-4 text-red-500" />
-																	Delete Products/Variants/Colors
-																</Label>
-																<p className="text-xs text-muted-foreground">Allow deleting stock items</p>
-															</div>
-															<Switch
-																checked={appSettings?.permStockDelete ?? true}
-																onCheckedChange={(checked) => handlePermissionChange("permStockDelete", checked)}
-															/>
-														</div>
-													</div>
-												</div>
-
-												<div className="border-b pb-3">
-													<h4 className="font-medium flex items-center gap-2 mb-3">
-														<Receipt className="h-4 w-4" />
-														Sales / Bills
-													</h4>
-													<div className="space-y-3 pl-6">
-														<div className="flex items-center justify-between">
-															<div className="space-y-0.5">
-																<Label className="flex items-center gap-2">
-																	<Edit className="h-4 w-4 text-blue-500" />
-																	Edit Bills
-																</Label>
-																<p className="text-xs text-muted-foreground">Allow editing sales bills</p>
-															</div>
-															<Switch
-																checked={appSettings?.permSalesEdit ?? true}
-																onCheckedChange={(checked) => handlePermissionChange("permSalesEdit", checked)}
-															/>
-														</div>
-														<div className="flex items-center justify-between">
-															<div className="space-y-0.5">
-																<Label className="flex items-center gap-2">
-																	<Trash2 className="h-4 w-4 text-red-500" />
-																	Delete Bills
-																</Label>
-																<p className="text-xs text-muted-foreground">Allow deleting sales bills</p>
-															</div>
-															<Switch
-																checked={appSettings?.permSalesDelete ?? true}
-																onCheckedChange={(checked) => handlePermissionChange("permSalesDelete", checked)}
-															/>
-														</div>
-													</div>
-												</div>
-
-												<div className="border-b pb-3">
-													<h4 className="font-medium flex items-center gap-2 mb-3">
-														<CreditCard className="h-4 w-4" />
-														Payments
-													</h4>
-													<div className="space-y-3 pl-6">
-														<div className="flex items-center justify-between">
-															<div className="space-y-0.5">
-																<Label className="flex items-center gap-2">
-																	<Edit className="h-4 w-4 text-blue-500" />
-																	Edit Payments
-																</Label>
-																<p className="text-xs text-muted-foreground">Allow editing payment records</p>
-															</div>
-															<Switch
-																checked={appSettings?.permPaymentEdit ?? true}
-																onCheckedChange={(checked) => handlePermissionChange("permPaymentEdit", checked)}
-															/>
-														</div>
-														<div className="flex items-center justify-between">
-															<div className="space-y-0.5">
-																<Label className="flex items-center gap-2">
-																	<Trash2 className="h-4 w-4 text-red-500" />
-																	Delete Payments
-																</Label>
-																<p className="text-xs text-muted-foreground">Allow deleting payment records</p>
-															</div>
-															<Switch
-																checked={appSettings?.permPaymentDelete ?? true}
-																onCheckedChange={(checked) => handlePermissionChange("permPaymentDelete", checked)}
-															/>
-														</div>
-													</div>
-												</div>
-											</div>
-										</CardContent>
-									</Card>
-								</TabsContent>
-
-								{/* CLOUD SYNC TAB */}
-								<TabsContent value="cloud" className="space-y-6">
-									<Card>
-										<CardHeader>
-											<CardTitle className="flex items-center gap-2">
-												<Cloud className="h-5 w-5 text-blue-500" />
-												Cloud Database Sync
-											</CardTitle>
-										</CardHeader>
-										<CardContent className="space-y-6">
-											<div className="text-sm text-muted-foreground">
-												Connect to a cloud PostgreSQL database (Neon, Supabase) to sync your data across multiple devices.
-											</div>
-
-											<div className="space-y-4">
-												<div className="space-y-2">
-													<Label htmlFor="cloudUrl" className="flex items-center gap-2">
-														<Database className="h-4 w-4" />
-														PostgreSQL Connection URL
-													</Label>
-													<div className="relative">
-														<Input
-															id="cloudUrl"
-															type={showCloudUrl ? "text" : "password"}
-															value={cloudUrl}
-															onChange={(e) => {
-																setCloudUrl(e.target.value)
-																setCloudConnectionStatus("idle")
-															}}
-															placeholder="postgresql://user:password@host/database"
-															className="pr-20"
-														/>
-														<div className="absolute right-0 top-0 flex">
-															<Button
-																type="button"
-																variant="ghost"
-																size="icon"
-																onClick={() => setShowCloudUrl(!showCloudUrl)}
-															>
-																{showCloudUrl ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-															</Button>
-															{cloudConnectionStatus === "success" && (
-																<div className="flex items-center text-green-500 pr-2">
-																	<Check className="h-4 w-4" />
-																</div>
-															)}
-															{cloudConnectionStatus === "error" && (
-																<div className="flex items-center text-red-500 pr-2">
-																	<XCircle className="h-4 w-4" />
-																</div>
-															)}
-														</div>
-													</div>
-													<p className="text-xs text-muted-foreground">
-														Example: postgresql://username:password@hostname/database
-													</p>
-												</div>
-
-												<Button
-													onClick={handleTestConnection}
-													variant="outline"
-													className="w-full bg-transparent"
-													disabled={cloudConnectionStatus === "testing" || !cloudUrl.trim()}
-												>
-													{cloudConnectionStatus === "testing" ? (
-														<Loader2 className="h-4 w-4 mr-2 animate-spin" />
-													) : cloudConnectionStatus === "success" ? (
-														<Check className="h-4 w-4 mr-2 text-green-500" />
-													) : cloudConnectionStatus === "error" ? (
-														<XCircle className="h-4 w-4 mr-2 text-red-500" />
-													) : (
-														<Database className="h-4 w-4 mr-2" />
-													)}
-													{cloudConnectionStatus === "testing"
-														? "Testing..."
-														: cloudConnectionStatus === "success"
-															? "Connected"
-															: cloudConnectionStatus === "error"
-																? "Connection Failed"
-																: "Test Connection"}
-												</Button>
-												<div className="border-t pt-4">
-													<h4 className="font-medium mb-3 flex items-center gap-2">
-														<RefreshCw className="h-4 w-4" />
-														Manual Sync Actions
-													</h4>
-
-													<div className="grid grid-cols-2 gap-3">
-														<Button
-															onClick={handleExportToCloud}
-															variant="default"
-															disabled={cloudSyncStatus !== "idle" || !cloudUrl.trim()}
-															className="flex items-center gap-2"
-														>
-															{cloudSyncStatus === "exporting" ? (
-																<Loader2 className="h-4 w-4 animate-spin" />
-															) : (
-																<Upload className="h-4 w-4" />
-															)}
-															{cloudSyncStatus === "exporting" ? "Exporting..." : "Export to Cloud"}
-														</Button>
-
-														<Button
-															onClick={handleImportFromCloud}
-															variant="outline"
-															disabled={cloudSyncStatus !== "idle" || !cloudUrl.trim()}
-															className="flex items-center gap-2 bg-transparent"
-														>
-															{cloudSyncStatus === "importing" ? (
-																<Loader2 className="h-4 w-4 animate-spin" />
-															) : (
-																<Download className="h-4 w-4" />
-															)}
-															{cloudSyncStatus === "importing" ? "Importing..." : "Import from Cloud"}
-														</Button>
-													</div>
-												</div>
-
-												<div className="border-t pt-4">
-													<h4 className="font-medium mb-3 flex items-center gap-2">
-														<Activity className="h-4 w-4" />
-														Export/Import History
-													</h4>
-
-													<div className="space-y-3">
-															<div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-																<div className="flex items-center gap-2 mb-2">
-																	<Upload className="h-4 w-4 text-blue-500" />
-																	<span className="text-sm font-medium text-blue-700 dark:text-blue-300">Last Export</span>
-																</div>
-																<div className="grid grid-cols-3 gap-2 text-xs">
-																	{lastExportCounts.products !== undefined && (
-																		<div className="text-center">
-																			<div className="font-bold text-blue-600">{lastExportCounts.products}</div>
-																			<div className="text-muted-foreground">Products</div>
-																		</div>
-																	)}
-																	{lastExportCounts.colors !== undefined && (
-																		<div className="text-center">
-																			<div className="font-bold text-blue-600">{lastExportCounts.colors}</div>
-																			<div className="text-muted-foreground">Colors</div>
-																		</div>
-																	)}
-																	{lastExportCounts.sales !== undefined && (
-																		<div className="text-center">
-																			<div className="font-bold text-blue-600">{lastExportCounts.sales}</div>
-																			<div className="text-muted-foreground">Sales</div>
-																		</div>
-																	)}
-																</div>
-															</div>
-														)}
-
-														{lastImportCounts && (
-															<div className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
-																<div className="flex items-center gap-2 mb-2">
-																	<Download className="h-4 w-4 text-purple-500" />
-																	<span className="text-sm font-medium text-purple-700 dark:text-purple-300">Last Import</span>
-																</div>
-																<div className="grid grid-cols-3 gap-2 text-xs">
-																	{lastImportCounts.products !== undefined && (
-																		<div className="text-center">
-																			<div className="font-bold text-purple-600">{lastImportCounts.products}</div>
-																			<div className="text-muted-foreground">Products</div>
-																		</div>
-																	)}
-																	{lastImportCounts.colors !== undefined && (
-																		<div className="text-center">
-																			<div className="font-bold text-purple-600">{lastImportCounts.colors}</div>
-																			<div className="text-muted-foreground">Colors</div>
-																		</div>
-																	)}
-																	{lastImportCounts.sales !== undefined && (
-																		<div className="text-center">
-																			<div className="font-bold text-purple-600">{lastImportCounts.sales}</div>
-																			<div className="text-muted-foreground">Sales</div>
-																		</div>
-																	)}
-																</div>
-															</div>
-														)}
-													</div>
-												</div>
-											</div>
-										</CardContent>
-									</Card>
-								</TabsContent>
-
-								{/* SYSTEM TAB */}
-								<TabsContent value="system" className="space-y-6">
-									<Card>
-										<CardHeader>
-											<CardTitle className="flex items-center gap-2">
-												<Cpu className="h-5 w-5" />
-												System Information
-											</CardTitle>
-										</CardHeader>
-											<div className="grid grid-cols-2 gap-4">
-												<div className="space-y-2">
-													<Label className="text-sm font-medium">Cloud Status</Label>
-													<div className="flex items-center gap-2">
-														{cloudConnectionStatus === "success" ? (
-															<Check className="h-4 w-4 text-green-500" />
-														) : (
-															<XCircle className="h-4 w-4 text-red-500" />
-														)}
-														<span className={cloudConnectionStatus === "success" ? "text-green-600" : "text-red-600"}>
-															{cloudConnectionStatus === "success" ? "Connected" : "Not Connected"}
-														</span>
-													</div>
-													<p className="text-xs text-muted-foreground">
-														{cloudConnectionStatus === "success" ? "Cloud sync enabled" : "Manual sync only"}
-													</p>
-												</div>
-											</div>
-
-											<div className="border-t pt-4">
-												<h4 className="font-medium mb-3">Quick Actions</h4>
-												<div className="grid grid-cols-2 gap-3">
-													<Button
-														variant="outline"
-														className="flex items-center gap-2 bg-transparent"
-														onClick={() => {
-															queryClient.invalidateQueries()
-															toast({
-																title: "Data Refreshed",
-																description: "Data has been refreshed from server.",
-															})
-														}}
-													>
-														<RefreshCw className="h-4 w-4" />
-														Refresh Data
-													</Button>
-													<Button 
-														variant="outline" 
-														className="flex items-center gap-2 bg-transparent"
-														onClick={async () => {
-															try {
-																const response = await fetch("/api/database/export")
-																if (response.ok) {
-																	const blob = await response.blob()
-																	const url = window.URL.createObjectURL(blob)
-																	const a = document.createElement("a")
-																	a.href = url
-																	a.download = `paintpulse-backup-${new Date().toISOString().split("T")[0]}.db`
-																	document.body.appendChild(a)
-																	a.click()
-																	document.body.removeChild(a)
-																	window.URL.revokeObjectURL(url)
-																	toast({
-																		title: "Backup Complete",
-																		description: "Database backup has been downloaded.",
-																	})
-																}
-															} catch (error) {
-																toast({
-																	title: "Backup Failed", 
-																	description: "Could not create database backup.",
-																	variant: "destructive",
-																})
-															}
-														}}
-													>
-														<Database className="h-4 w-4" />
-														Backup Database
-													</Button>
-												</div>
-											</div>
-
-											<div className="border-t pt-4">
-												<div className="bg-gradient-to-r from-primary/5 to-primary/10 dark:from-primary/10 dark:to-primary/20 rounded-lg p-4 border border-primary/20">
-													<div className="text-center space-y-3">
-														<div>
-															<h3 className="text-lg font-bold text-foreground">
-																PaintPulse POS System
-															</h3>
-															<p className="text-sm text-muted-foreground mt-1">
-																Point of Sale & Inventory Management
-															</p>
-														</div>
-														<div className="border-t border-primary/20 pt-3">
-															<p className="text-xs text-muted-foreground">
-																Version 1.0.0 • Cloud Sync Enabled
-															</p>
-														</div>
-													</div>
-												</div>
-											</div>
-										</CardContent>
-									</Card>
-								</TabsContent>
-							</Tabs>
-						</div>
-					</div>
-				</div>
-			</div>
-		</div>
-	)
-}
+export default AuditPage;
