@@ -1,4 +1,4 @@
-import { useState, useMemo, useDeferredValue, useEffect } from "react";
+import { useState, useMemo, useDeferredValue, useEffect, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { useDebounce } from "@/hooks/use-debounce";
@@ -122,11 +122,11 @@ export default function Reports() {
   const paymentHistory = useDeferredValue(paymentHistoryRaw);
   const returns = useDeferredValue(returnsRaw);
 
-  const parseDate = (dateStr: string | Date | null): Date | null => {
+  const parseDate = useCallback((dateStr: string | Date | null): Date | null => {
     if (!dateStr) return null;
     if (dateStr instanceof Date) return dateStr;
     
-    if (dateStr.includes("-")) {
+    if (typeof dateStr === "string" && dateStr.includes("-")) {
       const parts = dateStr.split("-");
       if (parts[0].length === 4) {
         return parseISO(dateStr);
@@ -136,11 +136,11 @@ export default function Reports() {
       }
     }
     return new Date(dateStr);
-  };
+  }, []);
 
-  const formatDisplayDate = (dateStr: string | Date | null): string => {
+  const formatDisplayDate = useCallback((dateStr: string | Date | null): string => {
     return formatDateShort(dateStr);
-  };
+  }, [formatDateShort]);
 
   const clearFilters = () => {
     setSearchQuery("");
@@ -150,16 +150,6 @@ export default function Reports() {
   };
 
   const hasActiveFilters = searchQuery || dateFrom || dateTo || paymentStatusFilter !== "all";
-
-  // Format date for date input
-  const formatDateForInput = (date: Date | string): string => {
-    if (!date) return "";
-    const d = new Date(date);
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
 
   const filteredSales = useMemo(() => {
     let filtered = [...allSales];
@@ -386,6 +376,26 @@ export default function Reports() {
     return filteredPayments.reduce((sum, payment) => sum + parseFloat(payment.amount), 0);
   }, [filteredPayments]);
 
+  const returnStats: ReturnStats = useMemo(() => {
+    return {
+      totalReturns: filteredReturns.length,
+      totalRefunded: filteredReturnsTotal,
+      itemReturns: filteredReturns.filter((ret) => ret.returnType === "item").length,
+      billReturns: filteredReturns.filter((ret) => ret.returnType === "bill").length,
+    };
+  }, [filteredReturns, filteredReturnsTotal]);
+
+  const refundMethodBreakdown = useMemo(() => {
+    return {
+      cashRefunds: filteredReturns.filter((ret) => ret.refundMethod === "cash").reduce((sum, ret) => sum + parseFloat(ret.totalRefund || "0"), 0),
+      creditRefunds: filteredReturns.filter((ret) => ret.refundMethod === "credit").reduce((sum, ret) => sum + parseFloat(ret.totalRefund || "0"), 0),
+      bankTransferRefunds: filteredReturns.filter((ret) => ret.refundMethod === "bank_transfer").reduce((sum, ret) => sum + parseFloat(ret.totalRefund || "0"), 0),
+      cashCount: filteredReturns.filter((ret) => ret.refundMethod === "cash").length,
+      creditCount: filteredReturns.filter((ret) => ret.refundMethod === "credit").length,
+      bankTransferCount: filteredReturns.filter((ret) => ret.refundMethod === "bank_transfer").length,
+    };
+  }, [filteredReturns]);
+
   // Store Cash Balance = Initial payments at POS + Recovery in range - ONLY CASH REFUNDS
   // Credit refunds don't affect cash in hand (they reduce customer balance)
   const storeCashBalance = useMemo(() => {
@@ -418,26 +428,6 @@ export default function Reports() {
     // Subtract only return credits that belong to unpaid sales
     return Math.max(0, unpaidSalesTotal - unpaidSalesPaid - unpaidSalesReturnCredits);
   }, [unpaidSalesTotal, unpaidSalesPaid, unpaidSalesReturnCredits]);
-
-  const returnStats: ReturnStats = useMemo(() => {
-    return {
-      totalReturns: filteredReturns.length,
-      totalRefunded: filteredReturnsTotal,
-      itemReturns: filteredReturns.filter((ret) => ret.returnType === "item").length,
-      billReturns: filteredReturns.filter((ret) => ret.returnType === "bill").length,
-    };
-  }, [filteredReturns, filteredReturnsTotal]);
-
-  const refundMethodBreakdown = useMemo(() => {
-    return {
-      cashRefunds: filteredReturns.filter((ret) => ret.refundMethod === "cash").reduce((sum, ret) => sum + parseFloat(ret.totalRefund || "0"), 0),
-      creditRefunds: filteredReturns.filter((ret) => ret.refundMethod === "credit").reduce((sum, ret) => sum + parseFloat(ret.totalRefund || "0"), 0),
-      bankTransferRefunds: filteredReturns.filter((ret) => ret.refundMethod === "bank_transfer").reduce((sum, ret) => sum + parseFloat(ret.totalRefund || "0"), 0),
-      cashCount: filteredReturns.filter((ret) => ret.refundMethod === "cash").length,
-      creditCount: filteredReturns.filter((ret) => ret.refundMethod === "credit").length,
-      bankTransferCount: filteredReturns.filter((ret) => ret.refundMethod === "bank_transfer").length,
-    };
-  }, [filteredReturns]);
 
   const stats = useMemo(() => {
     const totalSalesAmount = allSales.reduce((sum, sale) => sum + parseFloat(sale.totalAmount), 0);
