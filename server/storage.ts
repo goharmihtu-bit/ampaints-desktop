@@ -2985,6 +2985,7 @@ export class DatabaseStorage implements IStorage {
           customerPhone: returnData.customerPhone,
           returnType: returnData.returnType || "item",
           totalRefund: String(returnData.totalRefund || "0"),
+          refundMethod: (returnData as any).refundMethod || "cash",
           reason: returnData.reason || null,
           status: returnData.status || "completed",
           createdAt: new Date(),
@@ -3071,6 +3072,20 @@ export class DatabaseStorage implements IStorage {
 
         console.log("[Storage] Return created successfully:", returnRecord.id)
 
+        // If refund was issued as credit to customer account, adjust customer account balance
+        try {
+          if ((returnData as any).refundMethod === "credit" && returnRecord.customerPhone) {
+            const existingAccount = await this.getCustomerAccount(returnRecord.customerPhone)
+            const prevBalance = Number(existingAccount?.current_balance || existingAccount?.currentBalance || 0)
+            const refundAmount = Number(returnRecord.totalRefund || "0")
+            const newBalance = (prevBalance - refundAmount).toString()
+            await this.updateCustomerBalance(returnRecord.customerPhone, newBalance)
+            this.detectChanges("customer_accounts")
+            console.log(`[Storage] Applied credit refund to customer ${returnRecord.customerPhone}: -${refundAmount}, newBalance=${newBalance}`)
+          }
+        } catch (err) {
+          console.error("[Storage] Error applying credit refund to customer account:", err)
+        }
         // AUTO-SYNC TRIGGER
         this.detectChanges("returns")
         this.detectChanges("colors")
@@ -3108,6 +3123,7 @@ export class DatabaseStorage implements IStorage {
           customerPhone,
           returnType: "item",
           totalRefund: String(subtotal),
+          refundMethod: (data as any).refundMethod || "cash",
           reason: reason || "Quick return",
           status: "completed",
           createdAt: new Date(),
@@ -3158,6 +3174,21 @@ export class DatabaseStorage implements IStorage {
         // AUTO-SYNC TRIGGER
         this.detectChanges("returns")
         this.detectChanges("colors")
+
+        // Apply refund as credit to customer account if requested
+        try {
+          if ((data as any).refundMethod === "credit" && customerPhone) {
+            const existingAccount = await this.getCustomerAccount(customerPhone)
+            const prevBalance = Number(existingAccount?.current_balance || existingAccount?.currentBalance || 0)
+            const refundAmount = subtotal
+            const newBalance = (prevBalance - refundAmount).toString()
+            await this.updateCustomerBalance(customerPhone, newBalance)
+            this.detectChanges("customer_accounts")
+            console.log(`[Storage] Applied quick return credit to customer ${customerPhone}: -${refundAmount}, newBalance=${newBalance}`)
+          }
+        } catch (err) {
+          console.error("[Storage] Error applying quick return credit to customer account:", err)
+        }
 
         return returnRecord
       } catch (error) {
@@ -3255,6 +3286,36 @@ export class DatabaseStorage implements IStorage {
         if (data.refundMethod !== undefined) updateData.refundMethod = data.refundMethod
         if (data.totalRefund !== undefined) updateData.totalRefund = String(data.totalRefund)
         if (data.status !== undefined) updateData.status = data.status
+
+        // If refund method changed, adjust customer account balances accordingly
+        try {
+          if (data.refundMethod !== undefined && data.refundMethod !== returnRecord.refundMethod) {
+            const refundAmt = Number(data.totalRefund ?? returnRecord.totalRefund ?? "0")
+            const phone = returnRecord.customerPhone
+            if (phone) {
+              const existingAccount = await this.getCustomerAccount(phone)
+              const prevBalance = Number(existingAccount?.current_balance || existingAccount?.currentBalance || 0)
+
+              // If changing to credit: subtract refund (reduces outstanding)
+              if (data.refundMethod === "credit") {
+                const newBalance = (prevBalance - refundAmt).toString()
+                await this.updateCustomerBalance(phone, newBalance)
+                console.log(`[Storage] Applied refund-method change to credit for ${phone}: -${refundAmt}, newBalance=${newBalance}`)
+              }
+
+              // If changing from credit to cash: revert previous credit effect
+              if (returnRecord.refundMethod === "credit" && data.refundMethod === "cash") {
+                const newBalance = (prevBalance + refundAmt).toString()
+                await this.updateCustomerBalance(phone, newBalance)
+                console.log(`[Storage] Reverted credit refund for ${phone}: +${refundAmt}, newBalance=${newBalance}`)
+              }
+
+              this.detectChanges("customer_accounts")
+            }
+          }
+        } catch (err) {
+          console.error("[Storage] Error adjusting customer account for refund method change:", err)
+        }
 
         await db.update(returns).set(updateData).where(eq(returns.id, returnId))
 
