@@ -1,30 +1,28 @@
 import React, { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "wouter";
 import {
   Tabs,
   TabsList,
   TabsTrigger,
   TabsContent,
 } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import {
-  Button,
-  Input,
-  Label,
-  Badge,
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
-} from "@/components/ui";
+} from "@/components/ui/dialog";
 import { Key, Download, ShieldCheck, Lock, Eye, EyeOff, Calendar, Zap, CalendarDays } from "lucide-react";
-import { apiRequest } from "@/lib/api";
-import { toast } from "@/lib/toast";
+import { apiRequest } from "@/lib/queryClient";
+import { toast } from "@/hooks/use-toast";
 
 export default function Admin() {
   const queryClient = useQueryClient();
-  const [, navigate] = useNavigate();
 
   // Admin PIN gating
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
