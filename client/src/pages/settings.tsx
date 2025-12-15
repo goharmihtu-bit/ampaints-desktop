@@ -77,7 +77,7 @@ export default function Settings() {
   // Update license active status based on API response
   useEffect(() => {
     if (licenseData) {
-      setIsLicenseActive(licenseData.isActive !== false);
+      setIsLicenseActive(licenseData.isActive === true);
     }
   }, [licenseData]);
 
