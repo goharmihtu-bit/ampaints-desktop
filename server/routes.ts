@@ -1941,27 +1941,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Check settings-stored master pin first
       const s = await storage.getSettings()
-      if (s.masterPinHash && s.masterPinSalt) {
-        try {
-          const derived = crypto.scryptSync(masterPin, Buffer.from(s.masterPinSalt, 'hex'), 64)
-          if (derived.toString('hex') !== s.masterPinHash) {
-            res.status(403).json({ valid: false, error: "Invalid master PIN" })
-            return
-          }
+      
+      // If no PIN is set in database, accept default PIN "0000"
+      if (!s.masterPinHash || !s.masterPinSalt) {
+        if (masterPin === "0000") {
+          res.json({ valid: true, message: "Master PIN verified (default)" })
+          return
+        }
+        // Also check env-based master PIN
+        if (verifyMasterPin(masterPin)) {
           res.json({ valid: true, message: "Master PIN verified" })
           return
-        } catch (err) {
-          // fallthrough to env check
         }
-      }
-
-      // Fallback to env-based master PIN
-      if (!verifyMasterPin(masterPin)) {
         res.status(403).json({ valid: false, error: "Invalid master PIN" })
         return
       }
 
-      res.json({ valid: true, message: "Master PIN verified" })
+      // Verify against stored hash
+      try {
+        const derived = crypto.scryptSync(masterPin, Buffer.from(s.masterPinSalt, 'hex'), 64)
+        if (derived.toString('hex') === s.masterPinHash) {
+          res.json({ valid: true, message: "Master PIN verified" })
+          return
+        }
+      } catch (err) {
+        console.error("Error verifying stored PIN:", err)
+      }
+
+      // Fallback to env-based master PIN
+      if (verifyMasterPin(masterPin)) {
+        res.json({ valid: true, message: "Master PIN verified" })
+        return
+      }
+
+      res.status(403).json({ valid: false, error: "Invalid master PIN" })
     } catch (error) {
       console.error("Error verifying PIN:", error)
       res.status(500).json({ error: "Failed to verify PIN" })
@@ -2020,9 +2033,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/license/status", async (req, res) => {
     try {
       const settings = await storage.getSettings()
+      const expiryDate = settings?.licenseExpiryDate
+      const licenseStatus = settings?.licenseStatus || "active"
+      
+      // Check if license is expired
+      let isActive = true
+      let isExpired = false
+      
+      if (licenseStatus === "deactivated") {
+        isActive = false
+      } else if (expiryDate) {
+        const expiry = new Date(expiryDate)
+        const now = new Date()
+        isExpired = expiry < now
+        isActive = !isExpired
+      }
+      
       res.json({
-        isActive: true,
-        expiryDate: settings?.licenseExpiryDate || null,
+        active: isActive,
+        isActive: isActive,
+        expiryDate: expiryDate || null,
+        licenseStatus: licenseStatus,
+        isExpired: isExpired,
         lastChecked: new Date().toISOString(),
       })
     } catch (error) {
@@ -2102,20 +2134,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { secretKey } = req.body
       
-      if (!secretKey) {
-        res.status(400).json({ error: "Secret key is required" })
-        return
+      // Allow activation with secret key or without (for admin reactivation)
+      if (secretKey) {
+        // Verify secret key if provided
+        const MASTER_SECRET_KEY = process.env.MASTER_SECRET_KEY || "3620192373285"
+        const hashedInput = hashSecretKey(secretKey.toString())
+        const hashedMaster = hashSecretKey(MASTER_SECRET_KEY)
+
+        if (hashedInput !== hashedMaster) {
+          res.status(403).json({ error: "Invalid secret key" })
+          return
+        }
       }
 
-      const MASTER_SECRET_KEY = process.env.MASTER_SECRET_KEY || "3620192373285"
-      const hashedInput = hashSecretKey(secretKey.toString())
-      const hashedMaster = hashSecretKey(MASTER_SECRET_KEY)
-
-      if (hashedInput !== hashedMaster) {
-        res.status(403).json({ error: "Invalid secret key" })
-        return
-      }
-
+      // Set expiry to 10 years from now
       const futureDate = new Date()
       futureDate.setFullYear(futureDate.getFullYear() + 10)
       const expiryDate = futureDate.toISOString().split('T')[0]
@@ -2126,8 +2158,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           licenseExpiryDate: expiryDate,
           licenseStatus: "active",
         })
+        
+        invalidateCache("settings")
 
-        console.log("License reactivated with valid secret key")
+        console.log("License reactivated" + (secretKey ? " with valid secret key" : ""))
 
         res.json({
           success: true,
