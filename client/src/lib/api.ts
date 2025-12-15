@@ -49,15 +49,15 @@ export interface ImportLog {
 
 // Audit API
 export const auditApi = {
-  async getLogs(): Promise<AuditLog[]> {
+  async getLogs(filters?: Record<string, any>): Promise<AuditLog[]> {
     return fetchAPI<AuditLog[]>('/audit/logs');
   },
 
-  async getExportLogs(): Promise<ExportLog[]> {
+  async getExportLogs(filters?: Record<string, any>): Promise<ExportLog[]> {
     return fetchAPI<ExportLog[]>('/audit/exports');
   },
 
-  async getImportLogs(): Promise<ImportLog[]> {
+  async getImportLogs(filters?: Record<string, any>): Promise<ImportLog[]> {
     return fetchAPI<ImportLog[]>('/audit/imports');
   },
 
