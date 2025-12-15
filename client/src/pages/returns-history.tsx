@@ -15,8 +15,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Search, RotateCcw, Download, Eye, Phone, DollarSign, Package, AlertTriangle, Edit, Save, AlertCircle, Clock, X } from "lucide-react"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Search, RotateCcw, Download, Eye, Phone, DollarSign, Package, AlertTriangle } from "lucide-react"
 import jsPDF from "jspdf"
 import type { ReturnWithItems } from "@shared/schema"
 
@@ -45,11 +44,6 @@ export default function ReturnsHistory() {
   const [viewDetailsOpen, setViewDetailsOpen] = useState(false)
   const [startDate, setStartDate] = useState(getTodayString())
   const [endDate, setEndDate] = useState(getTodayString())
-  const [editingReturnId, setEditingReturnId] = useState<string | null>(null)
-  const [editReturnData, setEditReturnData] = useState<{ reason?: string; refundMethod?: string; totalRefund?: string; status?: string }>({})
-  const [canEditReturn, setCanEditReturn] = useState<{ canEdit: boolean; hoursLeft?: number } | null>(null)
-  const [editingError, setEditingError] = useState<string | null>(null)
-  const [isSavingReturn, setIsSavingReturn] = useState(false)
 
   const debouncedSearchQuery = useDebounce(searchQuery, 300)
 
@@ -155,61 +149,7 @@ export default function ReturnsHistory() {
     doc.save(`return-${ret.id.slice(0, 8)}.pdf`)
   }
 
-  const handleEditReturn = async (returnId: string, ret: ReturnWithItems) => {
-    try {
-      setEditingError(null)
-      setEditingReturnId(returnId)
-      
-      // Check if return can be edited
-      const response = await fetch(`/api/returns/${returnId}/can-edit`)
-      const result = await response.json()
-      setCanEditReturn(result)
-      
-      if (result.canEdit) {
-        setEditReturnData({
-          reason: ret.reason || "",
-          refundMethod: ret.refundMethod || "cash",
-          totalRefund: ret.totalRefund,
-          status: ret.status,
-        })
-      } else {
-        setEditingError(result.reason || "Cannot edit this return")
-      }
-    } catch (error) {
-      setEditingError("Failed to check return edit status")
-      console.error("Error checking return edit status:", error)
-    }
-  }
-
-  const handleSaveReturn = async (returnId: string) => {
-    try {
-      setIsSavingReturn(true)
-      setEditingError(null)
-      
-      const response = await fetch(`/api/returns/${returnId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(editReturnData),
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || "Failed to update return")
-      }
-
-      // Invalidate returns query to refresh data
-      await refetch()
-      
-      setEditingReturnId(null)
-      setEditReturnData({})
-      setCanEditReturn(null)
-    } catch (error) {
-      setEditingError(error instanceof Error ? error.message : "Failed to update return")
-      console.error("Error saving return:", error)
-    } finally {
-      setIsSavingReturn(false)
-    }
-  }
+  return (
     <div className="p-4 md:p-6 space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
@@ -374,9 +314,6 @@ export default function ReturnsHistory() {
                       <Button variant="outline" size="sm" onClick={() => handleViewDetails(ret)} data-testid={`button-view-${ret.id}`}>
                         <Eye className="h-4 w-4" />
                       </Button>
-                      <Button variant="outline" size="sm" onClick={() => handleEditReturn(ret.id, ret)} data-testid={`button-edit-${ret.id}`} title="Edit return (within 12 hours)">
-                        <Edit className="h-4 w-4" />
-                      </Button>
                       <Button variant="outline" size="sm" onClick={() => downloadReturnPDF(ret)} data-testid={`button-download-${ret.id}`}>
                         <Download className="h-4 w-4" />
                       </Button>
@@ -493,167 +430,6 @@ export default function ReturnsHistory() {
           )}
         </DialogContent>
       </Dialog>
-
-      {/* Edit Return Panel */}
-      {editingReturnId && (
-        <Card className="rounded-xl border border-blue-200/50 dark:border-blue-800/50 bg-blue-50/40 dark:bg-blue-900/10 backdrop-blur-sm overflow-hidden shadow-sm mt-4">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <Edit className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                <h3 className="font-semibold text-slate-800 dark:text-slate-200">Edit Return</h3>
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setEditingReturnId(null)
-                  setEditReturnData({})
-                  setEditingError(null)
-                  setCanEditReturn(null)
-                }}
-                className="h-6 w-6 p-0"
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-
-            {!canEditReturn?.canEdit && editingError && (
-              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3 mb-4 flex items-start gap-2">
-                <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
-                <div>
-                  <p className="text-sm text-red-700 dark:text-red-300 font-medium">{editingError}</p>
-                  {canEditReturn?.hoursLeft !== undefined && (
-                    <p className="text-xs text-red-600 dark:text-red-400 mt-1">
-                      This return can only be edited within 12 hours of creation.
-                    </p>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {canEditReturn?.canEdit && (
-              <div className="space-y-4">
-                {canEditReturn.hoursLeft !== undefined && (
-                  <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3 flex items-start gap-2">
-                    <Clock className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
-                    <div>
-                      <p className="text-xs text-amber-700 dark:text-amber-300 font-medium">
-                        Edit window: {canEditReturn.hoursLeft.toFixed(1)} hours remaining
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-xs font-medium text-slate-600 dark:text-slate-400 block mb-1">
-                      Refund Method
-                    </label>
-                    <Select
-                      value={editReturnData.refundMethod || "cash"}
-                      onValueChange={(value) =>
-                        setEditReturnData({ ...editReturnData, refundMethod: value })
-                      }
-                    >
-                      <SelectTrigger className="h-8 text-xs border-slate-200 dark:border-slate-700">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="cash">💵 Cash</SelectItem>
-                        <SelectItem value="credit">💳 Credit</SelectItem>
-                        <SelectItem value="bank_transfer">🏦 Bank Transfer</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div>
-                    <label className="text-xs font-medium text-slate-600 dark:text-slate-400 block mb-1">
-                      Status
-                    </label>
-                    <Select
-                      value={editReturnData.status || "completed"}
-                      onValueChange={(value) =>
-                        setEditReturnData({ ...editReturnData, status: value })
-                      }
-                    >
-                      <SelectTrigger className="h-8 text-xs border-slate-200 dark:border-slate-700">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="completed">Completed</SelectItem>
-                        <SelectItem value="pending">Pending</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="sm:col-span-2">
-                    <label className="text-xs font-medium text-slate-600 dark:text-slate-400 block mb-1">
-                      Refund Amount
-                    </label>
-                    <Input
-                      type="number"
-                      value={editReturnData.totalRefund || ""}
-                      onChange={(e) =>
-                        setEditReturnData({ ...editReturnData, totalRefund: e.target.value })
-                      }
-                      placeholder="0.00"
-                      className="h-8 text-xs border-slate-200 dark:border-slate-700"
-                      step="0.01"
-                    />
-                  </div>
-
-                  <div className="sm:col-span-2">
-                    <label className="text-xs font-medium text-slate-600 dark:text-slate-400 block mb-1">
-                      Reason
-                    </label>
-                    <Input
-                      value={editReturnData.reason || ""}
-                      onChange={(e) =>
-                        setEditReturnData({ ...editReturnData, reason: e.target.value })
-                      }
-                      placeholder="Enter reason for return"
-                      className="h-8 text-xs border-slate-200 dark:border-slate-700"
-                    />
-                  </div>
-                </div>
-
-                {editingError && (
-                  <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3 flex items-start gap-2">
-                    <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
-                    <p className="text-xs text-red-700 dark:text-red-300">{editingError}</p>
-                  </div>
-                )}
-
-                <div className="flex gap-2 justify-end pt-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setEditingReturnId(null)
-                      setEditReturnData({})
-                      setEditingError(null)
-                      setCanEditReturn(null)
-                    }}
-                    className="h-8 text-xs border-slate-200 dark:border-slate-700"
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={() => handleSaveReturn(editingReturnId)}
-                    disabled={isSavingReturn}
-                    className="h-8 text-xs bg-blue-600 hover:bg-blue-700 text-white"
-                  >
-                    <Save className="h-3.5 w-3.5 mr-1" />
-                    {isSavingReturn ? "Saving..." : "Save Changes"}
-                  </Button>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
     </div>
   )
 }
