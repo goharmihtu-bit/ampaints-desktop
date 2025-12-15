@@ -209,7 +209,7 @@ export default function Settings() {
 
   // Load cloud connections on mount
   useEffect(() => {
-    loadCloudConnections()
+    void loadCloudConnections();
   }, []);
 
   const updateUiMutation = useMutation({
