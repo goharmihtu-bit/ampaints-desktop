@@ -69,7 +69,7 @@ const menuItems: MenuItem[] = [
 ];
 
 export function AppSidebar() {
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
   const { triggerRefresh } = useNavigationRefresh();
   const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({});
   const [isAdminUnlocked, setIsAdminUnlocked] = useState<boolean>(() => {
@@ -95,12 +95,12 @@ export function AppSidebar() {
         return
       }
     }
-    if (location === url) {
-      e.preventDefault();
-      startTransition(() => {
-        triggerRefresh();
-      });
-    }
+    // Always trigger a fresh page reload on every sidebar click
+    e.preventDefault();
+    // First trigger refresh to remount the component
+    triggerRefresh();
+    // Then navigate using wouter's setLocation
+    setLocation(url);
   };
 
   const handleMouseEnter = (url: string) => {

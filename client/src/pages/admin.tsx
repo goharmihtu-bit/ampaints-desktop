@@ -163,7 +163,7 @@ export default function Admin() {
       if (res.ok && json.ok) {
         toast({ title: 'Saved', description: 'Connection saved on server' });
         setCloudConn("");
-        loadCloudConnections();
+        void loadCloudConnections();
       } else { 
         throw new Error(json.error || 'Failed') 
       }
@@ -223,7 +223,7 @@ export default function Admin() {
       const json = await res.json();
       if (res.ok && json.ok) {
         toast({ title: 'Job processed', description: json.result?.status || 'Processed' });
-        loadJobs();
+        void loadJobs();
       } else {
         toast({ title: 'Error', description: json.error || 'Failed to process job', variant: 'destructive' });
       }
@@ -232,7 +232,10 @@ export default function Admin() {
     }
   };
 
-  useEffect(() => { loadCloudConnections(); loadJobs() }, []);
+  useEffect(() => { 
+    void loadCloudConnections(); 
+    void loadJobs();
+  }, []);
 
   // ---------- Admin PIN change form
   const [currentPin, setCurrentPin] = useState("");
