@@ -100,7 +100,7 @@ export function initializeDatabase() {
 // NEW FUNCTION: Update schema for new columns
 function updateSchema() {
   try {
-    console.log("[Database] Checking for schema updates...")
+    console.log('[Database] Checking for schema updates...')
 
     // Check if cloud_database_url column exists in settings table
     const checkColumn = sqlite
@@ -201,8 +201,23 @@ function updateSchema() {
       }
     }
 
+    // NEW: Ensure returns.refund_method column exists
+    const checkRefundMethod = sqlite.prepare(`
+      SELECT name FROM pragma_table_info('returns') WHERE name = 'refund_method'
+    `).get();
+
+    if (!checkRefundMethod) {
+      console.log('[Database] Adding refund_method column to returns table...');
+      try {
+        sqlite.exec(`ALTER TABLE returns ADD COLUMN refund_method TEXT DEFAULT 'cash'`);
+        console.log('[Database] ✅ refund_method column added to returns table');
+      } catch (err) {
+        console.error('[Database] Error adding refund_method column (continuing):', err);
+      }
+    }
+    
   } catch (error) {
-    console.error("[Database] ❌ Error updating schema:", error)
+    console.error('[Database] ❌ Error updating schema:', error)
     // Don't throw error - continue with existing schema
   }
 }
@@ -417,7 +432,7 @@ function createTables() {
       console.log("[Database] Settings already exist or error:", settingsError)
     }
 
-    // Create returns table
+    // Create returns table (ensure refund_method included)
     sqlite.exec(`
       CREATE TABLE IF NOT EXISTS returns (
         id TEXT PRIMARY KEY,
@@ -428,8 +443,8 @@ function createTables() {
         total_refund TEXT NOT NULL DEFAULT '0',
         reason TEXT,
         status TEXT NOT NULL DEFAULT 'completed',
+        refund_method TEXT DEFAULT 'cash',
         created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE SET NULL
       );
     `)

@@ -83,6 +83,10 @@ export default function Returns() {
     restoreStock: true,
   })
 
+  // NEW: Refund method state for both dialogs ('cash' | 'credit')
+  const [refundMethod, setRefundMethod] = useState<'cash' | 'credit'>('cash')
+  const [quickRefundMethod, setQuickRefundMethod] = useState<'cash' | 'credit'>('cash')
+
   const {
     data: returns = [],
     isLoading: returnsLoading,
@@ -319,6 +323,7 @@ export default function Returns() {
         totalRefund,
         reason: returnReason || null,
         status: "completed",
+        refundMethod, // NEW: specify refund destination
       },
       items: itemsToReturn,
     })
@@ -343,7 +348,10 @@ export default function Returns() {
       return
     }
 
-    quickReturnMutation.mutate(quickReturnForm)
+    quickReturnMutation.mutate({
+      ...quickReturnForm,
+      refundMethod: quickRefundMethod, // NEW
+    })
   }
 
   const handleColorSelect = (colorId: string) => {
@@ -413,6 +421,7 @@ export default function Returns() {
     pdf.text(`Status: ${returnRecord.status.toUpperCase()}`, margin, yPos)
     yPos += 5
     pdf.text(`Type: ${returnRecord.returnType === "full_bill" ? "FULL BILL RETURN" : "ITEM RETURN"}`, margin, yPos)
+    pdf.text(`Refund Method: ${returnRecord.refundMethod === "credit" ? "Credit to Account" : "Cash"}`, margin, yPos)
     yPos += 10
 
     // Customer Info
@@ -754,6 +763,26 @@ export default function Returns() {
               </div>
 
               <div>
+                <Label className="text-sm font-medium">Refund Method</Label>
+                <div className="flex gap-3 mt-2">
+                  <Button
+                    variant={refundMethod === 'cash' ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setRefundMethod('cash')}
+                  >
+                    Cash
+                  </Button>
+                  <Button
+                    variant={refundMethod === 'credit' ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setRefundMethod('credit')}
+                  >
+                    Credit to Customer Account
+                  </Button>
+                </div>
+              </div>
+
+              <div>
                 <Label htmlFor="reason" className="text-sm font-medium">
                   Return Reason (Optional)
                 </Label>
@@ -908,6 +937,14 @@ export default function Returns() {
               </Label>
             </div>
 
+            <div className="flex items-center gap-2">
+              <Label className="text-sm font-medium">Refund Method</Label>
+              <div className="flex gap-2 ml-auto">
+                <Button variant={quickRefundMethod === 'cash' ? "default" : "outline"} size="sm" onClick={() => setQuickRefundMethod('cash')}>Cash</Button>
+                <Button variant={quickRefundMethod === 'credit' ? "default" : "outline"} size="sm" onClick={() => setQuickRefundMethod('credit')}>Credit to Account</Button>
+              </div>
+            </div>
+
             <div className="p-3 rounded-md bg-muted/50">
               <p className="text-sm text-muted-foreground">Total Refund</p>
               <p className="text-xl font-bold text-destructive">
@@ -992,10 +1029,15 @@ export default function Returns() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Product</TableHead>
-                        <TableHead className="text-center">Qty</TableHead>
-                        <TableHead className="text-right">Rate</TableHead>
-                        <TableHead className="text-right">Subtotal</TableHead>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Return ID</TableHead>
+                        <TableHead>Customer</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Method</TableHead>     {/* NEW */}
+                        <TableHead className="text-right">Refund Amount</TableHead>
+                        <TableHead>Items</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>

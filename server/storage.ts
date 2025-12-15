@@ -256,8 +256,8 @@ export interface IStorage {
   // Returns - UPDATED WITH FIXED METHODS
   getReturns(): Promise<ReturnWithItems[]>
   getReturn(id: string): Promise<ReturnWithItems | undefined>
-  createReturn(returnData: InsertReturn, items: InsertReturnItem[]): Promise<Return>
-  createQuickReturn(data: {
+  createReturn(returnData: InsertReturn & { refundMethod?: 'cash' | 'credit' }, items: InsertReturnItem[]): Promise<Return>
+  createQuickReturn(data: InsertReturn & { refundMethod?: 'cash' | 'credit' } | {
     customerName: string
     customerPhone: string
     colorId: string
@@ -265,6 +265,7 @@ export interface IStorage {
     rate: number
     reason?: string
     restoreStock?: boolean
+    refundMethod?: 'cash' | 'credit'
   }): Promise<Return>
   getReturnsByCustomerPhone(customerPhone: string): Promise<ReturnWithItems[]>
   getReturnItems(): Promise<ReturnItem[]>
@@ -1331,7 +1332,6 @@ export class DatabaseStorage implements IStorage {
             auditPinSalt: data.auditPinSalt || null,
             permStockDelete: data.permStockDelete ?? true,
             permStockEdit: data.permStockEdit ?? true,
-            permStockHistoryDelete: data.permStockHistoryDelete ?? true,
             permSalesDelete: data.permSalesDelete ?? true,
             permSalesEdit: data.permSalesEdit ?? true,
             permPaymentEdit: data.permPaymentEdit ?? true,
@@ -2099,7 +2099,7 @@ export class DatabaseStorage implements IStorage {
 
     // OPTIMIZED: Paginated payment history query for large datasets
     async getAllPaymentHistoryPaginated(params: PaginationParams = {}): Promise<PaginatedResult<PaymentHistoryWithSale>> {
-      const page = Math.max(1, params.page || 1)
+      const page = Math.max(1,
       const limit = Math.min(MAX_LIMIT, Math.max(1, params.limit || DEFAULT_LIMIT))
       const offset = (page - 1) * limit
 
