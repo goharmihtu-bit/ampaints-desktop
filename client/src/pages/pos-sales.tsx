@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useDeferredValue, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useDeferredValue } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -96,9 +96,7 @@ export default function POSSales() {
   const { data: colorsRaw = [], isLoading } =
     useQuery<ColorWithVariantAndProduct[]>({
       queryKey: ["/api/colors"],
-      refetchOnWindowFocus: false,    // avoid refetch when window focus changes
-      refetchInterval: false,         // do not poll automatically
-      staleTime: 5 * 60 * 1000,       // 5 minutes - reduce background refetch frequency
+      refetchOnWindowFocus: true,
     });
 
   const colors = useDeferredValue(colorsRaw);
@@ -237,80 +235,6 @@ export default function POSSales() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [cart, customerName, customerPhone, amountPaid, posInstances]);
-
-  // --- NEW: persist POS UI state to sessionStorage (avoid data loss on background refresh) ---
-  const POS_STATE_KEY = "pos:uiState:v1";
-  const saveDebounceRef = useRef<number | null>(null);
-
-  const restorePosState = useCallback(() => {
-    try {
-      const raw = sessionStorage.getItem(POS_STATE_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      if (parsed.cart) setCart(parsed.cart);
-      if (parsed.customerName) setCustomerName(parsed.customerName);
-      if (parsed.customerPhone) setCustomerPhone(parsed.customerPhone);
-      if (parsed.amountPaid) setAmountPaid(parsed.amountPaid);
-      if (parsed.posInstances) setPosInstances(parsed.posInstances);
-      if (parsed.activeInstance) setActiveInstance(parsed.activeInstance);
-      if (parsed.searchQuery) setSearchQuery(parsed.searchQuery);
-    } catch (e) {
-      // ignore parse errors
-    }
-  }, []);
-
-  const savePosState = useCallback(() => {
-    if (saveDebounceRef.current) {
-      clearTimeout(saveDebounceRef.current);
-    }
-    // debounce writes
-    saveDebounceRef.current = window.setTimeout(() => {
-      try {
-        const state = {
-          cart,
-          customerName,
-          customerPhone,
-          amountPaid,
-          posInstances,
-          activeInstance,
-          searchQuery,
-        };
-        sessionStorage.setItem(POS_STATE_KEY, JSON.stringify(state));
-      } catch (e) {
-        // ignore storage errors
-      }
-    }, 300) as unknown as number;
-  }, [cart, customerName, customerPhone, amountPaid, posInstances, activeInstance, searchQuery]);
-
-  useEffect(() => {
-    // restore on mount
-    restorePosState();
-    return () => {
-      if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
-      savePosState(); // persist once before unmount
-    };
-  }, [restorePosState, savePosState]);
-
-  // save when key pieces change
-  useEffect(() => { savePosState(); }, [cart, customerName, customerPhone, amountPaid, posInstances, activeInstance, searchQuery]);
-
-  // --- NEW: Handle cloud sync marker to avoid disruptive reloads/refreshes ---
-  useEffect(() => {
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === "cloudSyncInProgress") {
-        if (e.newValue === "1") {
-          toast({ title: "Cloud sync started", description: "Background sync in progress. Your POS session will not be interrupted." });
-        } else {
-          toast({ title: "Cloud sync finished", description: "Background sync completed." });
-          // optionally refresh small bits of data non-disruptively
-          queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
-          queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
-        }
-      }
-    };
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, [toast]);
 
   // FIXED: Consistent stock validation - allow adding but show clear warnings
   const addToCart = (
