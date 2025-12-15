@@ -74,6 +74,13 @@ export default function Settings() {
     refetchInterval: 60000, // Refetch every minute
   });
 
+  // Update license active status based on API response
+  useEffect(() => {
+    if (licenseData) {
+      setIsLicenseActive(licenseData.isActive !== false);
+    }
+  }, [licenseData]);
+
   const [uiFormData, setUiFormData] = useState<UpdateSettings>({
     storeName: "PaintPulse",
     cardBorderStyle: "shadow",
@@ -596,7 +603,13 @@ export default function Settings() {
             <Printer className="h-4 w-4 mr-2" />
             Printer
           </TabsTrigger>
-
+          <TabsTrigger value="license" className="glass-tab" data-testid="tab-license-settings">
+            <Key className="h-4 w-4 mr-2" />
+            License
+            {!isLicenseActive && (
+              <AlertCircle className="h-3 w-3 ml-1 text-destructive" />
+            )}
+          </TabsTrigger>
           <TabsTrigger 
             value="database" 
             className="glass-tab"
@@ -1251,6 +1264,218 @@ export default function Settings() {
               </div>
             </div>
           </div>
+        </TabsContent>
+
+        {/* License Settings */}
+        <TabsContent value="license" className="space-y-4">
+          {!isLicenseActive ? (
+            /* Deactivated License - Full Screen UI */
+            <div className="glass-card p-8" data-testid="card-license-deactivated">
+              <div className="py-8">
+                <div className="flex flex-col items-center justify-center space-y-6 text-center">
+                  <div className="p-6 rounded-full bg-destructive/10">
+                    <AlertCircle className="h-12 w-12 text-destructive" />
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-bold text-destructive mb-2">Software Deactivated</h2>
+                    <p className="text-muted-foreground max-w-md">
+                      Your software license has been deactivated. Enter your secret key below to reactivate and restore full functionality.
+                    </p>
+                  </div>
+                  
+                  <div className="w-full max-w-md space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="secretKeyActivation" className="text-left block">Secret Key</Label>
+                      <div className="relative">
+                        <Input
+                          id="secretKeyActivation"
+                          type={secretKeyVisible ? "text" : "password"}
+                          value={secretKeyInput}
+                          onChange={(e) => setSecretKeyInput(e.target.value)}
+                          placeholder="Enter your secret activation key"
+                          className="glass-input pr-10"
+                          data-testid="input-secret-key"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="absolute right-0 top-0 h-full px-3"
+                          onClick={() => setSecretKeyVisible(!secretKeyVisible)}
+                        >
+                          {secretKeyVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground text-left">
+                        Contact your administrator or vendor to get a valid secret key
+                      </p>
+                    </div>
+                    
+                    <Button 
+                      onClick={handleActivateLicense} 
+                      disabled={isSettingLicense || !secretKeyInput.trim()}
+                      className="w-full"
+                      size="lg"
+                    >
+                      <Zap className="h-4 w-4 mr-2" />
+                      {isSettingLicense ? "Activating..." : "Activate License"}
+                    </Button>
+                  </div>
+
+                  <div className="p-4 bg-muted/50 rounded-lg text-left w-full max-w-md">
+                    <h4 className="font-medium text-sm mb-2">Need Help?</h4>
+                    <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside">
+                      <li>Contact your software vendor for a new activation key</li>
+                      <li>Make sure you're entering the key exactly as provided</li>
+                      <li>Check if your subscription or license has been renewed</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* Active License - Settings UI */
+            <div className="glass-card p-5" data-testid="card-license-active">
+              <div className="flex items-center gap-2 mb-1">
+                <Key className="h-5 w-5 text-green-600" />
+                <h3 className="font-semibold">License Status</h3>
+                <Badge variant="default" className="ml-2 bg-green-600">
+                  Active
+                </Badge>
+              </div>
+              <p className="text-sm text-muted-foreground mb-6">
+                Your software license is active and operational
+              </p>
+
+              <div className="space-y-6">
+                {/* Current Status Card */}
+                <div className="border border-border/50 rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <Zap className="h-5 w-5 text-green-600" />
+                      <h4 className="font-semibold">Current Status</h4>
+                    </div>
+                    <Badge variant="secondary">Operational</Badge>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Your software is fully functional. All features are available.
+                  </p>
+                  {licenseData?.expiryDate && (
+                    <p className="text-sm mt-2">
+                      <span className="text-muted-foreground">Expires:</span>{" "}
+                      <span className="font-medium">{licenseData.expiryDate}</span>
+                    </p>
+                  )}
+                </div>
+
+                {/* Secret Key Activation Section */}
+                <div className="border border-border/50 rounded-lg p-4 space-y-4">
+                  <div>
+                    <h4 className="font-semibold mb-2 flex items-center gap-2">
+                      <Key className="h-4 w-4" />
+                      Extend License with Secret Key
+                    </h4>
+                    <p className="text-xs text-muted-foreground mb-3">
+                      Enter a valid secret key to extend your license period
+                    </p>
+                  </div>
+                  
+                  {showSecretKeyInput ? (
+                    <div className="space-y-3">
+                      <div className="relative">
+                        <Input
+                          type={secretKeyVisible ? "text" : "password"}
+                          value={secretKeyInput}
+                          onChange={(e) => setSecretKeyInput(e.target.value)}
+                          placeholder="Enter secret key"
+                          className="glass-input pr-10"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="absolute right-0 top-0 h-full px-3"
+                          onClick={() => setSecretKeyVisible(!secretKeyVisible)}
+                        >
+                          {secretKeyVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </Button>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button 
+                          onClick={handleActivateLicense} 
+                          disabled={isSettingLicense || !secretKeyInput.trim()}
+                        >
+                          {isSettingLicense ? "Activating..." : "Activate"}
+                        </Button>
+                        <Button 
+                          variant="outline" 
+                          onClick={() => {
+                            setShowSecretKeyInput(false);
+                            setSecretKeyInput("");
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <Button variant="outline" onClick={() => setShowSecretKeyInput(true)}>
+                      <Key className="h-4 w-4 mr-2" />
+                      Enter Secret Key
+                    </Button>
+                  )}
+                </div>
+
+                {/* License Expiry Settings */}
+                <div className="border border-border/50 rounded-lg p-4 space-y-4">
+                  <div>
+                    <h4 className="font-semibold mb-2 flex items-center gap-2">
+                      <Calendar className="h-4 w-4" />
+                      Set License Expiration
+                    </h4>
+                    <p className="text-xs text-muted-foreground mb-3">
+                      Set a date after which the software will require reactivation
+                    </p>
+                  </div>
+                  <div className="space-y-3">
+                    <div>
+                      <Label htmlFor="license-date">Expiration Date</Label>
+                      <Input 
+                        id="license-date" 
+                        type="date" 
+                        value={licenseExpiryDate} 
+                        onChange={(e) => setLicenseExpiryDate(e.target.value)} 
+                        className="mt-1 glass-input" 
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button onClick={handleSetLicenseExpiry} disabled={isSettingLicense}>
+                        {isSettingLicense ? 'Saving...' : 'Set Expiry'}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Deactivation Section */}
+                <div className="border border-destructive/30 rounded-lg p-4 bg-destructive/5">
+                  <div className="flex items-center gap-2 mb-2">
+                    <AlertCircle className="h-4 w-4 text-destructive" />
+                    <h4 className="font-semibold text-destructive">Danger Zone</h4>
+                  </div>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Deactivating will disable all software functionality until reactivation with a secret key.
+                  </p>
+                  <Button 
+                    variant="destructive" 
+                    onClick={handleDeactivateLicense}
+                    disabled={isSettingLicense}
+                  >
+                    Deactivate License
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
         </TabsContent>
         
         {/* Database Settings */}

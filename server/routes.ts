@@ -1736,7 +1736,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ============ SOFTWARE LICENSE MANAGEMENT ============
   
   // Master PIN for software blocking
-  const MASTER_ADMIN_PIN = process.env.MASTER_ADMIN_PIN || "3620192373285"
+  const MASTER_ADMIN_PIN = process.env.MASTER_ADMIN_PIN || "0000"
 
   // Verify master admin PIN
   function verifyMasterPin(pin: string): boolean {
