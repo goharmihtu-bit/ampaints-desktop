@@ -386,11 +386,11 @@ export default function Reports() {
     return filteredPayments.reduce((sum, payment) => sum + parseFloat(payment.amount), 0);
   }, [filteredPayments]);
 
-  // Store Cash Balance = Initial payments at POS + Recovery in range - Refunds
-  // This represents actual cash received during the date range
+  // Store Cash Balance = Initial payments at POS + Recovery in range - ONLY CASH REFUNDS
+  // Credit refunds don't affect cash in hand (they reduce customer balance)
   const storeCashBalance = useMemo(() => {
-    return initialPaymentsForNewSales + recoveryInRange - filteredReturnsTotal;
-  }, [initialPaymentsForNewSales, recoveryInRange, filteredReturnsTotal]);
+    return initialPaymentsForNewSales + recoveryInRange - refundMethodBreakdown.cashRefunds;
+  }, [initialPaymentsForNewSales, recoveryInRange, refundMethodBreakdown.cashRefunds]);
 
   const filteredSalesOutstanding = useMemo(() => {
     // Outstanding = Sales Total - Paid - Return Credits (only returns for filtered sales)
@@ -799,7 +799,7 @@ export default function Reports() {
               <div className="flex items-center gap-2">
                 <span className="text-slate-500 dark:text-slate-400">Total Refunded:</span>
                 <span className="font-semibold text-red-600 dark:text-red-400 tabular-nums">
-                  Rs. {filteredReturnsTotal.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
+                  Rs. {(refundMethodBreakdown.cashRefunds + refundMethodBreakdown.creditRefunds + refundMethodBreakdown.bankTransferRefunds).toLocaleString("en-IN", { minimumFractionDigits: 0 })}
                 </span>
               </div>
               <div className="text-slate-300 dark:text-slate-600">|</div>
@@ -1133,9 +1133,9 @@ export default function Reports() {
                         </div>
                       </div>
                       <div>
-                        <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Refunds</div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Cash Refunds</div>
                         <div className="text-lg font-semibold text-rose-600 dark:text-rose-400 tabular-nums">
-                          -Rs. {Math.round(filteredReturnsTotal).toLocaleString("en-IN")}
+                          -Rs. {Math.round(refundMethodBreakdown.cashRefunds).toLocaleString("en-IN")}
                         </div>
                       </div>
                     </div>
