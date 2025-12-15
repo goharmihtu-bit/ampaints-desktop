@@ -396,6 +396,11 @@ export default function Reports() {
     };
   }, [filteredReturns]);
 
+  // Total amount refunded as credit (customer account or bank transfer)
+  const creditedRefundsTotal = useMemo(() => {
+    return refundMethodBreakdown.creditRefunds + refundMethodBreakdown.bankTransferRefunds;
+  }, [refundMethodBreakdown.creditRefunds, refundMethodBreakdown.bankTransferRefunds]);
+
   // Store Cash Balance = Initial payments at POS + Recovery in range - ONLY CASH REFUNDS
   // Credit refunds don't affect cash in hand (they reduce customer balance)
   const storeCashBalance = useMemo(() => {
@@ -1109,7 +1114,7 @@ export default function Reports() {
                   
                   {/* Simple Breakdown */}
                   <div className="mt-4 pt-4 border-t border-emerald-200/50 dark:border-emerald-800/50">
-                    <div className="grid grid-cols-3 gap-4 text-center">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 text-center">
                       <div>
                         <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">New Sales</div>
                         <div className="text-lg font-semibold text-blue-600 dark:text-blue-400 tabular-nums">
@@ -1127,8 +1132,19 @@ export default function Reports() {
                         <div className="text-lg font-semibold text-rose-600 dark:text-rose-400 tabular-nums">
                           -Rs. {Math.round(refundMethodBreakdown.cashRefunds).toLocaleString("en-IN")}
                         </div>
+                        <div className="text-xs text-slate-400 mt-1">{refundMethodBreakdown.cashCount} cash returns</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Credited to Accounts</div>
+                        <div className="text-lg font-semibold text-amber-600 dark:text-amber-400 tabular-nums">
+                          -Rs. {Math.round(creditedRefundsTotal).toLocaleString("en-IN")}
+                        </div>
+                        <div className="text-xs text-slate-400 mt-1">{refundMethodBreakdown.creditCount + refundMethodBreakdown.bankTransferCount} credited</div>
                       </div>
                     </div>
+                  </div>
+                  <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                    Note: "Credited to Accounts" is recorded for customer/account credits and does not reduce cash in hand.
                   </div>
                 </CardContent>
               </Card>

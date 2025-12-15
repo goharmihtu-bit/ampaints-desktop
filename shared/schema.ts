@@ -228,6 +228,9 @@ export const settings = sqliteTable("settings", {
   // Master Admin PIN for Software Blocking (stored as hash for security)
   masterPinHash: text("master_pin_hash"), // SHA-256 hash of master admin PIN
   masterPinSalt: text("master_pin_salt"), // Random salt for hashing
+  // Software License Settings
+  licenseExpiryDate: text("license_expiry_date"), // YYYY-MM-DD format for license expiration
+  licenseStatus: text("license_status").notNull().default("active"), // active, deactivated, expired
   updatedAt: integer("updated_at", { mode: "timestamp" })
     .$defaultFn(() => new Date())
     .notNull(),

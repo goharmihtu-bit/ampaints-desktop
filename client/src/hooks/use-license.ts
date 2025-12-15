@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { apiRequest } from "@/lib/queryClient"
 
 interface LicenseStatus {
@@ -15,11 +15,35 @@ interface UseLicenseReturn {
   isBlocked: boolean
   blockedReason: string | null
   deviceId: string | null
-  checkLicense: () => Promise<void>
+  // returns true on successful check
+  checkLicense: (suppressInitialLoading?: boolean) => Promise<boolean>
   error: string | null
 }
 
-const HEARTBEAT_INTERVAL = 5 * 60 * 1000
+// Default to once-a-day checks (24 hours). Can be overridden by Vite env
+// `VITE_LICENSE_HEARTBEAT_MS` (milliseconds). Set to `0` to disable periodic
+// background checks entirely (useful for kiosks or offline setups).
+const DEFAULT_HEARTBEAT = 24 * 60 * 60 * 1000 // 24 hours
+const HEARTBEAT_INTERVAL = Number(import.meta.env?.VITE_LICENSE_HEARTBEAT_MS) || DEFAULT_HEARTBEAT
+
+const LAST_CHECK_KEY = "paintpulse_license_last_check"
+
+function getLastCheck(): number | null {
+  try {
+    const v = localStorage.getItem(LAST_CHECK_KEY)
+    return v ? Number(v) : null
+  } catch {
+    return null
+  }
+}
+
+function setLastCheck(ts: number): void {
+  try {
+    localStorage.setItem(LAST_CHECK_KEY, String(ts))
+  } catch {
+    // ignore
+  }
+}
 
 function getStoredDeviceId(): string | null {
   try {
@@ -43,15 +67,21 @@ function generateDeviceId(): string {
 }
 
 export function useLicense(): UseLicenseReturn {
-  const [isLoading, setIsLoading] = useState(true)
+  // `isInitialLoading` is used to show the full-screen loader only for the
+  // first (initial) license verification. Subsequent periodic checks should
+  // be non-blocking to avoid disturbing the UI (e.g., POS page).
+  const [isInitialLoading, setIsInitialLoading] = useState(true)
   const [isBlocked, setIsBlocked] = useState(false)
   const [blockedReason, setBlockedReason] = useState<string | null>(null)
   const [deviceId, setDeviceId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const timeoutRef = useRef<number | null>(null)
 
-  const checkLicense = useCallback(async () => {
+  // `suppressInitialLoading` when true prevents toggling the initial loading
+  // state so periodic background checks won't render the blocking loader.
+  const checkLicense = useCallback(async (suppressInitialLoading = false) => {
     try {
-      setIsLoading(true)
+      if (!suppressInitialLoading) setIsInitialLoading(true)
       setError(null)
 
       let currentDeviceId = getStoredDeviceId()
@@ -79,24 +109,77 @@ export function useLicense(): UseLicenseReturn {
       if (data.isBlocked) {
         console.warn("[License] Software is blocked:", data.blockedReason)
       }
+
+      // mark successful check
+      setLastCheck(Date.now())
+      return true
     } catch (err) {
       console.error("[License] Error checking license:", err)
       setError("Failed to verify license - please check your connection")
+      return false
     } finally {
-      setIsLoading(false)
+      if (!suppressInitialLoading) setIsInitialLoading(false)
     }
   }, [])
 
   useEffect(() => {
-    checkLicense()
+    let mounted = true
 
-    const intervalId = setInterval(checkLicense, HEARTBEAT_INTERVAL)
+    const scheduleNext = (delay = HEARTBEAT_INTERVAL) => {
+      if (!mounted) return
+      // clear previous
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current)
+        timeoutRef.current = null
+      }
+      if (!delay || delay <= 0) return
+      timeoutRef.current = window.setTimeout(async () => {
+        const ok = await checkLicense(true)
+        if (ok) scheduleNext(HEARTBEAT_INTERVAL)
+      }, delay)
+    }
 
-    return () => clearInterval(intervalId)
+    // Initial (blocking) license check on mount
+    checkLicense(false).then((ok) => {
+      if (!mounted) return
+      if (ok) {
+        // compute remaining delay based on last check
+        const last = getLastCheck()
+        const elapsed = last ? Date.now() - last : HEARTBEAT_INTERVAL
+        const delay = Math.max(0, HEARTBEAT_INTERVAL - elapsed)
+        scheduleNext(delay)
+      }
+    })
+
+    // On window focus, if last check older than HEARTBEAT_INTERVAL, run a
+    // non-blocking check (this covers the "open next day" behavior when the
+    // app is brought to foreground).
+    const onFocus = () => {
+      const last = getLastCheck()
+      if (!HEARTBEAT_INTERVAL || HEARTBEAT_INTERVAL <= 0) return
+      if (!last || Date.now() - last >= HEARTBEAT_INTERVAL) {
+        checkLicense(true).then((ok) => {
+          if (ok) scheduleNext(HEARTBEAT_INTERVAL)
+        })
+      }
+    }
+
+    window.addEventListener("focus", onFocus)
+
+    return () => {
+      mounted = false
+      window.removeEventListener("focus", onFocus)
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current)
+        timeoutRef.current = null
+      }
+    }
   }, [checkLicense])
 
   return {
-    isLoading,
+    // keep the external API name `isLoading` for compatibility, but expose
+    // the initial-loading-only semantics
+    isLoading: isInitialLoading,
     isBlocked,
     blockedReason,
     deviceId,

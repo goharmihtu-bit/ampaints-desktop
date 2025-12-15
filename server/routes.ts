@@ -1818,6 +1818,142 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
+  // ============ ADMIN LICENSE SETTINGS ============
+  
+  // Crypto helper for hashing secret key
+  const crypto = require('crypto')
+  
+  function hashSecretKey(key: string): string {
+    return crypto.createHash('sha256').update(key).digest('hex')
+  }
+
+  // Get license status for admin panel
+  app.get("/api/license/status", async (req, res) => {
+    try {
+      const settings = await storage.getSettings()
+      res.json({
+        isActive: true,
+        expiryDate: settings?.licenseExpiryDate || null,
+        lastChecked: new Date().toISOString(),
+      })
+    } catch (error) {
+      console.error("Error getting license status:", error)
+      res.status(500).json({ error: "Failed to get license status" })
+    }
+  })
+
+  // Set license expiration date
+  app.post("/api/license/set-expiry", async (req, res) => {
+    try {
+      const { expiryDate } = req.body
+      
+      if (!expiryDate) {
+        res.status(400).json({ error: "Expiration date is required" })
+        return
+      }
+
+      // Validate date format (YYYY-MM-DD)
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(expiryDate)) {
+        res.status(400).json({ error: "Invalid date format. Use YYYY-MM-DD" })
+        return
+      }
+
+      const settings = await storage.getSettings()
+      if (settings) {
+        await storage.updateSettings({
+          licenseExpiryDate: expiryDate,
+        })
+
+        console.log(`License expiry date set to ${expiryDate}`)
+
+        res.json({
+          success: true,
+          message: `License expiration date set to ${expiryDate}`,
+          expiryDate,
+        })
+      } else {
+        res.status(404).json({ error: "Settings not found" })
+      }
+    } catch (error) {
+      console.error("Error setting license expiry:", error)
+      res.status(500).json({ error: "Failed to set license expiry date" })
+    }
+  })
+
+  // Deactivate license
+  app.post("/api/license/deactivate", async (req, res) => {
+    try {
+      const settings = await storage.getSettings()
+      if (settings) {
+        const today = new Date().toISOString().split('T')[0]
+        
+        await storage.updateSettings({
+          licenseExpiryDate: today,
+          licenseStatus: "deactivated",
+        })
+
+        console.log("License deactivated by admin")
+
+        res.json({
+          success: true,
+          message: "License has been deactivated. The software will require reactivation.",
+          expiryDate: today,
+        })
+      } else {
+        res.status(404).json({ error: "Settings not found" })
+      }
+    } catch (error) {
+      console.error("Error deactivating license:", error)
+      res.status(500).json({ error: "Failed to deactivate license" })
+    }
+  })
+
+  // Activate/Reactivate license with secret key
+  app.post("/api/license/activate", async (req, res) => {
+    try {
+      const { secretKey } = req.body
+      
+      if (!secretKey) {
+        res.status(400).json({ error: "Secret key is required" })
+        return
+      }
+
+      const MASTER_SECRET_KEY = process.env.MASTER_SECRET_KEY || "3620192373285"
+      const hashedInput = hashSecretKey(secretKey.toString())
+      const hashedMaster = hashSecretKey(MASTER_SECRET_KEY)
+
+      if (hashedInput !== hashedMaster) {
+        res.status(403).json({ error: "Invalid secret key" })
+        return
+      }
+
+      const futureDate = new Date()
+      futureDate.setFullYear(futureDate.getFullYear() + 10)
+      const expiryDate = futureDate.toISOString().split('T')[0]
+
+      const settings = await storage.getSettings()
+      if (settings) {
+        await storage.updateSettings({
+          licenseExpiryDate: expiryDate,
+          licenseStatus: "active",
+        })
+
+        console.log("License reactivated with valid secret key")
+
+        res.json({
+          success: true,
+          message: "License successfully reactivated!",
+          expiryDate,
+        })
+      } else {
+        res.status(404).json({ error: "Settings not found" })
+      }
+    } catch (error) {
+      console.error("Error activating license:", error)
+      res.status(500).json({ error: "Failed to activate license" })
+    }
+  })
+
   // ============ OFFLINE POS SYNC ROUTES ============
 
   // Store pending offline sales
