@@ -26,6 +26,7 @@ const BillPrint = lazy(() => import("@/pages/bill-print"));
 const Returns = lazy(() => import("@/pages/returns"));
 const ReturnsHistory = lazy(() => import("@/pages/returns-history"));
 const Settings = lazy(() => import("@/pages/settings"));
+const Admin = lazy(() => import("@/pages/admin"));
 
 function Router() {
   return (
