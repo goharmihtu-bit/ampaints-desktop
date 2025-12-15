@@ -1,6 +1,8 @@
 // migrations.ts
 // Database migration utilities for ensuring schema compatibility
 import Database from "better-sqlite3"
+import fs from "fs"
+import path from "path"
 
 /**
  * Migrates an imported database to the latest schema
@@ -144,6 +146,8 @@ export function migrateDatabase(db: Database.Database): void {
         name: "perm_database_access",
         sql: "ALTER TABLE settings ADD COLUMN perm_database_access INTEGER NOT NULL DEFAULT 1",
       },
+      { name: "license_expiry_date", sql: "ALTER TABLE settings ADD COLUMN license_expiry_date TEXT" },
+      { name: "license_status", sql: "ALTER TABLE settings ADD COLUMN license_status TEXT NOT NULL DEFAULT 'active'" },
       { name: "cloud_database_url", sql: "ALTER TABLE settings ADD COLUMN cloud_database_url TEXT" },
       {
         name: "cloud_sync_enabled",
@@ -232,6 +236,8 @@ export function migrateDatabase(db: Database.Database): void {
           perm_payment_edit = COALESCE(perm_payment_edit, 1),
           perm_payment_delete = COALESCE(perm_payment_delete, 1),
           perm_database_access = COALESCE(perm_database_access, 1),
+          license_expiry_date = COALESCE(license_expiry_date, NULL),
+          license_status = COALESCE(license_status, 'active'),
           cloud_database_url = COALESCE(cloud_database_url, NULL),
           cloud_sync_enabled = COALESCE(cloud_sync_enabled, 0),
           last_sync_time = COALESCE(last_sync_time, NULL),
@@ -465,6 +471,55 @@ export function migrateDatabase(db: Database.Database): void {
       } catch (e) {
         console.log("[Migration] Index might already exist:", indexSql)
       }
+    }
+
+    // Apply any SQL migration files in the migrations/ folder that haven't been
+    // applied yet. This ensures ad-hoc migration files (e.g., 0001_add_license_fields.sql)
+    // are executed even if they were added after code-based migrations.
+    try {
+      const candidates = [
+        path.join(process.cwd(), "migrations"),
+        path.join(__dirname, "..", "migrations"),
+        path.join(__dirname, "..", "..", "migrations"),
+      ]
+
+      let migrationsDir: string | null = null
+      for (const c of candidates) {
+        if (fs.existsSync(c)) {
+          migrationsDir = c
+          break
+        }
+      }
+
+      if (migrationsDir) {
+        console.log(`[Migration] Applying SQL files from ${migrationsDir}`)
+
+        // Ensure table to track applied migrations
+        try {
+          db.exec(`CREATE TABLE IF NOT EXISTS applied_migrations (name TEXT PRIMARY KEY, applied_at INTEGER NOT NULL)`)
+        } catch (err) {
+          console.log('[Migration] Could not create applied_migrations table:', err)
+        }
+
+        const files = fs.readdirSync(migrationsDir).filter((f) => f.endsWith('.sql')).sort()
+        for (const file of files) {
+          const name = file
+          const already = db.prepare("SELECT name FROM applied_migrations WHERE name = ?").get(name)
+          if (already) continue
+
+          try {
+            const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8')
+            console.log(`[Migration] Applying ${file}...`)
+            db.exec(sql)
+            db.prepare("INSERT INTO applied_migrations (name, applied_at) VALUES (?, ?)").run(name, Date.now())
+            console.log(`[Migration] Applied ${file}`)
+          } catch (err) {
+            console.error(`[Migration] Error applying ${file}:`, err)
+          }
+        }
+      }
+    } catch (err) {
+      console.log('[Migration] Error while applying SQL files:', err)
     }
 
     // ============ STOCK OUT HISTORY TABLE ============

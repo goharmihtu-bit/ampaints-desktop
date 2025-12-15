@@ -215,6 +215,26 @@ function updateSchema() {
         console.error('[Database] Error adding refund_method column (continuing):', err);
       }
     }
+
+    // Ensure license fields exist on settings table (added in license system)
+    const checkLicenseExpiry = sqlite.prepare(`
+      SELECT name FROM pragma_table_info('settings') WHERE name = 'license_expiry_date'
+    `).get()
+
+    const checkLicenseStatus = sqlite.prepare(`
+      SELECT name FROM pragma_table_info('settings') WHERE name = 'license_status'
+    `).get()
+
+    if (!checkLicenseExpiry || !checkLicenseStatus) {
+      console.log('[Database] Adding license columns to settings table...')
+      try {
+        if (!checkLicenseExpiry) sqlite.exec(`ALTER TABLE settings ADD COLUMN license_expiry_date TEXT`)
+        if (!checkLicenseStatus) sqlite.exec(`ALTER TABLE settings ADD COLUMN license_status TEXT NOT NULL DEFAULT 'active'`)
+        console.log('[Database] ✅ License columns added to settings table')
+      } catch (err) {
+        console.error('[Database] Error adding license columns (continuing):', err)
+      }
+    }
     
   } catch (error) {
     console.error('[Database] ❌ Error updating schema:', error)
