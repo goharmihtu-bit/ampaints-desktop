@@ -80,10 +80,13 @@ export default function Admin() {
 
   const { data: licenseData, isLoading: isLoadingLicense } = useQuery({
     queryKey: ["/api/license/status"],
-    onSuccess: (d: any) => {
-      setIsLicenseActive(d?.active ?? true);
-    }
   });
+
+  useEffect(() => {
+    if (licenseData) {
+      setIsLicenseActive((licenseData as any)?.active ?? true);
+    }
+  }, [licenseData]);
 
   const handleSetLicenseExpiry = async () => {
     if (!licenseExpiryDate) {
