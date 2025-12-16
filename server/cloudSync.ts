@@ -2,17 +2,23 @@ import crypto from "crypto"
 
 const ALGO = "aes-256-gcm"
 
+// Cache for session key to ensure consistency across calls
+let sessionKey: Buffer | null = null
+
 function getKey() {
   const key = process.env.CLOUD_SYNC_ENCRYPTION_KEY
   if (!key) {
     // For desktop/development environments without cloud sync configured
     // Generate a session-specific key to allow the app to run without cloud sync
     // This key is NOT suitable for production cloud sync use cases
-    console.warn("[CloudSync] ⚠️  CLOUD_SYNC_ENCRYPTION_KEY not set!")
-    console.warn("[CloudSync] Using temporary session key. Cloud sync features will work for this session only.")
-    console.warn("[CloudSync] To enable persistent cloud sync, set CLOUD_SYNC_ENCRYPTION_KEY environment variable.")
-    // Generate a proper 32-byte random key
-    return crypto.randomBytes(32)
+    if (!sessionKey) {
+      console.warn("[CloudSync] ⚠️  CLOUD_SYNC_ENCRYPTION_KEY not set!")
+      console.warn("[CloudSync] Generating temporary session key. Cloud sync features will work for this session only.")
+      console.warn("[CloudSync] To enable persistent cloud sync, set CLOUD_SYNC_ENCRYPTION_KEY environment variable.")
+      // Generate a proper 32-byte random key and cache it for the session
+      sessionKey = crypto.randomBytes(32)
+    }
+    return sessionKey
   }
   // Ensure Buffer length 32
   const buf = Buffer.alloc(32)

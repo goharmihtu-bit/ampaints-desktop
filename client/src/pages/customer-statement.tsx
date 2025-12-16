@@ -110,6 +110,11 @@ const roundNumber = (num: number): number => {
   return Math.round(num * 100) / 100
 }
 
+// Helper function to get credited refund amount (0 for cash refunds)
+const getCreditedRefundAmount = (ret: any): number => {
+  return ret.refundMethod === 'credited' ? safeParseFloat(ret.totalRefund) : 0
+}
+
 export default function CustomerStatement() {
   const { formatDateShort } = useDateFormat()
   const { receiptSettings } = useReceiptSettings()
@@ -375,7 +380,7 @@ export default function CustomerStatement() {
   const getSaleReturns = (saleId: string): number => {
     return customerReturns
       .filter(ret => ret.saleId === saleId)
-      .reduce((sum, ret) => ret.refundMethod === 'credited' ? sum + safeParseFloat(ret.totalRefund) : sum, 0)
+      .reduce((sum, ret) => sum + getCreditedRefundAmount(ret), 0)
   }
 
   const paidSales = useMemo(() => {
@@ -405,10 +410,7 @@ export default function CustomerStatement() {
     const totalPaymentsReceived = paymentHistory.reduce((sum, p) => sum + safeParseFloat(p.amount), 0)
     
     // Calculate total return credits (only credited refunds reduce outstanding balance, not cash refunds)
-    const totalReturnCredits = customerReturns.reduce((sum, r) => {
-      // Only count returns where refundMethod is "credited" (not "cash")
-      return r.refundMethod === 'credited' ? sum + safeParseFloat(r.totalRefund) : sum
-    }, 0)
+    const totalReturnCredits = customerReturns.reduce((sum, r) => sum + getCreditedRefundAmount(r), 0)
     
     // Outstanding = Bills - Payments - Returns (can be negative for credit/advance)
     // Negative value means customer has credit/advance balance
@@ -457,7 +459,7 @@ export default function CustomerStatement() {
       // Calculate returns for this specific bill (only credited returns count)
       const billReturns = roundNumber(customerReturns
         .filter(ret => ret.saleId === sale.id)
-        .reduce((sum, ret) => ret.refundMethod === 'credited' ? sum + safeParseFloat(ret.totalRefund) : sum, 0))
+        .reduce((sum, ret) => sum + getCreditedRefundAmount(ret), 0))
       
       // Outstanding = Bill amount - Payments - Returns for this bill
       const outstandingAmt = roundNumber(Math.max(0, totalAmt - paidAmt - billReturns))
@@ -529,7 +531,7 @@ export default function CustomerStatement() {
 
       // If refund method is "cash", credit should be 0 (no credit to account)
       // If refund method is "credited", credit should be the refund amount
-      const creditAmount = ret.refundMethod === 'credited' ? refundAmount : 0
+      const creditAmount = getCreditedRefundAmount(ret)
 
       return {
         id: `return-${ret.id}`,
