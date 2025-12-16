@@ -95,11 +95,13 @@ export function AppSidebar() {
         return
       }
     }
+    // Always trigger refresh for fresh page load on every navigation
+    startTransition(() => {
+      triggerRefresh();
+    });
+    // Prevent default navigation if clicking on the same page
     if (location === url) {
       e.preventDefault();
-      startTransition(() => {
-        triggerRefresh();
-      });
     }
   };
 
