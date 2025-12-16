@@ -1756,6 +1756,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const now = new Date()
       
+      // Check global license expiry from settings (cannot be bypassed via DB)
+      const settings = await storage.getSettings()
+      if (settings && settings.licenseExpiryDate) {
+        const today = new Date().toISOString().split('T')[0]
+        const expiryDate = settings.licenseExpiryDate
+        
+        // If license is expired or deactivated, block the software
+        if (expiryDate <= today || settings.licenseStatus === "deactivated") {
+          res.json({
+            deviceId: deviceId,
+            status: "blocked",
+            isBlocked: true,
+            blockedReason: settings.licenseStatus === "deactivated" 
+              ? "License deactivated by administrator. Contact support to reactivate." 
+              : `License expired on ${expiryDate}. Please contact support to renew.`,
+            blockedAt: now,
+            autoBlockDate: null,
+            message: "License expired or deactivated",
+          })
+          return
+        }
+      }
+      
       // Check and apply any auto-blocks first (for all devices)
       await storage.checkAndApplyAutoBlocks()
       
@@ -2020,9 +2043,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/license/status", async (req, res) => {
     try {
       const settings = await storage.getSettings()
+      const today = new Date().toISOString().split('T')[0]
+      const expiryDate = settings?.licenseExpiryDate || null
+      const isExpired = expiryDate && expiryDate <= today
+      const isDeactivated = settings?.licenseStatus === "deactivated"
+      
       res.json({
-        isActive: true,
-        expiryDate: settings?.licenseExpiryDate || null,
+        active: !isExpired && !isDeactivated && settings?.licenseStatus === "active",
+        expiryDate: expiryDate,
+        status: isDeactivated ? "deactivated" : isExpired ? "expired" : "active",
         lastChecked: new Date().toISOString(),
       })
     } catch (error) {
@@ -2034,10 +2063,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Set license expiration date
   app.post("/api/license/set-expiry", async (req, res) => {
     try {
-      const { expiryDate } = req.body
+      const { expiryDate, secretKey } = req.body
       
+      if (!secretKey) {
+        res.status(400).json({ error: "Secret key is required" })
+        return
+      }
+
       if (!expiryDate) {
         res.status(400).json({ error: "Expiration date is required" })
+        return
+      }
+
+      // Validate secret key
+      const MASTER_SECRET_KEY = process.env.MASTER_SECRET_KEY || "3620192373285"
+      const hashedInput = hashSecretKey(secretKey.toString())
+      const hashedMaster = hashSecretKey(MASTER_SECRET_KEY)
+
+      if (hashedInput !== hashedMaster) {
+        res.status(403).json({ error: "Invalid secret key" })
         return
       }
 
@@ -2051,9 +2095,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (settings) {
         await storage.updateSettings({
           licenseExpiryDate: expiryDate,
+          licenseStatus: "active",
         })
 
-        console.log(`License expiry date set to ${expiryDate}`)
+        console.log(`License expiry date set to ${expiryDate} with valid secret key`)
 
         res.json({
           success: true,
@@ -2069,9 +2114,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // Deactivate license
+  // Deactivate license - requires secret key
   app.post("/api/license/deactivate", async (req, res) => {
     try {
+      const { secretKey } = req.body
+      
+      if (!secretKey) {
+        res.status(400).json({ error: "Secret key is required" })
+        return
+      }
+
+      // Validate secret key
+      const MASTER_SECRET_KEY = process.env.MASTER_SECRET_KEY || "3620192373285"
+      const hashedInput = hashSecretKey(secretKey.toString())
+      const hashedMaster = hashSecretKey(MASTER_SECRET_KEY)
+
+      if (hashedInput !== hashedMaster) {
+        res.status(403).json({ error: "Invalid secret key" })
+        return
+      }
+
       const settings = await storage.getSettings()
       if (settings) {
         const today = new Date().toISOString().split('T')[0]
@@ -2081,7 +2143,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           licenseStatus: "deactivated",
         })
 
-        console.log("License deactivated by admin")
+        console.log("License deactivated by admin with valid secret key")
 
         res.json({
           success: true,

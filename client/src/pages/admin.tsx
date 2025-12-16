@@ -73,58 +73,89 @@ export default function Admin() {
     }
   };
 
-  // ---------- License state & handlers (copied from Settings)
+  // ---------- License state & handlers
   const [licenseExpiryDate, setLicenseExpiryDate] = useState("");
   const [isLicenseActive, setIsLicenseActive] = useState(true);
   const [isSettingLicense, setIsSettingLicense] = useState(false);
+  const [licenseSecretKey, setLicenseSecretKey] = useState("");
+  const [showLicenseSecretKey, setShowLicenseSecretKey] = useState(false);
+  const [licenseCurrentExpiry, setLicenseCurrentExpiry] = useState<string | null>(null);
 
   const { data: licenseData, isLoading: isLoadingLicense } = useQuery({
     queryKey: ["/api/license/status"],
     onSuccess: (d: any) => {
       setIsLicenseActive(d?.active ?? true);
+      setLicenseCurrentExpiry(d?.expiryDate || null);
     }
   });
 
   const handleSetLicenseExpiry = async () => {
+    if (!licenseSecretKey.trim()) {
+      toast({ title: 'Error', description: 'Please enter secret key first', variant: 'destructive' });
+      return;
+    }
     if (!licenseExpiryDate) {
-      toast({ title: 'Error', description: 'Select expiry date', variant: 'destructive' });
+      toast({ title: 'Error', description: 'Please select expiry date', variant: 'destructive' });
       return;
     }
     setIsSettingLicense(true);
     try {
-      const response = await fetch('/api/license/set-expiry', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ expiryDate: licenseExpiryDate }) });
+      const response = await fetch('/api/license/set-expiry', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ expiryDate: licenseExpiryDate, secretKey: licenseSecretKey }) 
+      });
       if (!response.ok) throw await response.json();
       toast({ title: 'License Updated', description: `License expiry date set to ${licenseExpiryDate}` });
       queryClient.invalidateQueries({ queryKey: ['/api/license/status'] });
+      setLicenseSecretKey(""); // Clear secret key after successful operation
     } catch (error: any) {
-      toast({ title: 'Error', description: error.error || 'Failed to set license expiry', variant: 'destructive' });
+      toast({ title: 'Error', description: error.error || 'Invalid secret key or failed to set expiry', variant: 'destructive' });
     } finally { setIsSettingLicense(false) }
   };
 
   const handleDeactivateLicense = async () => {
+    if (!licenseSecretKey.trim()) {
+      toast({ title: 'Error', description: 'Please enter secret key first', variant: 'destructive' });
+      return;
+    }
     if (!confirm('Are you sure you want to deactivate the license? The software will become unusable.')) return;
     setIsSettingLicense(true);
     try {
-      const response = await fetch('/api/license/deactivate', { method: 'POST' });
+      const response = await fetch('/api/license/deactivate', { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ secretKey: licenseSecretKey })
+      });
       if (!response.ok) throw await response.json();
       toast({ title: 'License Deactivated', description: 'The software license has been deactivated.' });
       setIsLicenseActive(false);
       queryClient.invalidateQueries({ queryKey: ['/api/license/status'] });
+      setLicenseSecretKey(""); // Clear secret key after successful operation
     } catch (error: any) {
-      toast({ title: 'Error', description: error.error || 'Failed to deactivate license', variant: 'destructive' });
+      toast({ title: 'Error', description: error.error || 'Invalid secret key or failed to deactivate', variant: 'destructive' });
     } finally { setIsSettingLicense(false) }
   };
 
   const handleActivateLicense = async () => {
+    if (!licenseSecretKey.trim()) {
+      toast({ title: 'Error', description: 'Please enter secret key to activate license', variant: 'destructive' });
+      return;
+    }
     setIsSettingLicense(true);
     try {
-      const response = await fetch('/api/license/activate', { method: 'POST' });
+      const response = await fetch('/api/license/activate', { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ secretKey: licenseSecretKey })
+      });
       if (!response.ok) throw await response.json();
       toast({ title: 'License Activated', description: 'Your license has been successfully reactivated!' });
       setIsLicenseActive(true);
       queryClient.invalidateQueries({ queryKey: ['/api/license/status'] });
+      setLicenseSecretKey(""); // Clear secret key after successful operation
     } catch (error: any) {
-      toast({ title: 'Error', description: error.error || 'Failed to activate license', variant: 'destructive' });
+      toast({ title: 'Error', description: error.error || 'Invalid secret key', variant: 'destructive' });
     } finally { setIsSettingLicense(false) }
   };
 
@@ -351,9 +382,55 @@ export default function Admin() {
                     {isLicenseActive ? 'Operational' : 'Inactive'}
                   </Badge>
                 </div>
-                <p className="text-sm text-muted-foreground">
-                  {isLicenseActive ? 'Your software license is active and operational.' : 'Your software license is currently inactive. Click Reactivate License below to restore functionality.'}
-                </p>
+                <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground">
+                    {isLicenseActive ? 'Your software license is active and operational.' : 'Your software license is currently inactive. Enter secret key and click Reactivate License to restore functionality.'}
+                  </p>
+                  {licenseCurrentExpiry && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <Calendar className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-muted-foreground">Current Expiry:</span>
+                      <span className="font-medium">{licenseCurrentExpiry}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-900/10 rounded-lg p-4 space-y-4">
+                <div className="flex items-start gap-2">
+                  <Lock className="h-5 w-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <h4 className="font-semibold mb-1 text-amber-900 dark:text-amber-100">Secret Key Required</h4>
+                    <p className="text-xs text-amber-700 dark:text-amber-300 mb-3">
+                      All license operations require your secret key for security. The secret key is never stored and must be provided for each operation.
+                    </p>
+                  </div>
+                </div>
+                <div>
+                  <Label htmlFor="license-secret-key" className="text-sm font-medium">Secret Key</Label>
+                  <div className="relative mt-2">
+                    <Input 
+                      id="license-secret-key"
+                      type={showLicenseSecretKey ? "text" : "password"}
+                      value={licenseSecretKey}
+                      onChange={(e) => setLicenseSecretKey(e.target.value)}
+                      placeholder="Enter your secret key"
+                      className="pr-10"
+                      disabled={isSettingLicense}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowLicenseSecretKey(!showLicenseSecretKey)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      disabled={isSettingLicense}
+                    >
+                      {showLicenseSecretKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    This key is required to perform any license management operations
+                  </p>
+                </div>
               </div>
 
               <div className="border border-border/50 rounded-lg p-4 space-y-4">
@@ -363,7 +440,7 @@ export default function Admin() {
                     Set License Expiration Date
                   </h4>
                   <p className="text-xs text-muted-foreground mb-3">
-                    Set a date after which the software will require reactivation
+                    Set a date after which the software will require reactivation. Secret key is required.
                   </p>
                 </div>
                 <div className="space-y-3">
@@ -375,17 +452,34 @@ export default function Admin() {
                       value={licenseExpiryDate} 
                       onChange={(e) => setLicenseExpiryDate(e.target.value)} 
                       className="mt-1" 
+                      disabled={isSettingLicense || !licenseSecretKey.trim()}
                     />
                   </div>
-                  <div className="flex gap-2">
-                    <Button onClick={handleSetLicenseExpiry} disabled={isSettingLicense}>
+                  <div className="flex flex-wrap gap-2">
+                    <Button 
+                      onClick={handleSetLicenseExpiry} 
+                      disabled={isSettingLicense || !licenseSecretKey.trim() || !licenseExpiryDate}
+                      className="bg-blue-600 hover:bg-blue-700"
+                    >
+                      <Calendar className="h-4 w-4 mr-2" />
                       {isSettingLicense ? 'Saving...' : 'Set Expiry'}
                     </Button>
-                    <Button variant="outline" onClick={handleDeactivateLicense}>
-                      Deactivate License
-                    </Button>
-                    <Button variant="ghost" onClick={handleActivateLicense}>
+                    <Button 
+                      variant="outline" 
+                      onClick={handleActivateLicense}
+                      disabled={isSettingLicense || !licenseSecretKey.trim()}
+                      className="border-green-600 text-green-600 hover:bg-green-50"
+                    >
+                      <Zap className="h-4 w-4 mr-2" />
                       Reactivate License
+                    </Button>
+                    <Button 
+                      variant="destructive" 
+                      onClick={handleDeactivateLicense}
+                      disabled={isSettingLicense || !licenseSecretKey.trim()}
+                    >
+                      <Lock className="h-4 w-4 mr-2" />
+                      Deactivate License
                     </Button>
                   </div>
                 </div>
