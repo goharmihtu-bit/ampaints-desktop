@@ -53,6 +53,8 @@ export default function ReturnsHistory() {
     refetch,
   } = useQuery<ReturnWithItems[]>({
     queryKey: ["/api/returns"],
+    refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
   })
 
   const stats: ReturnStats = useMemo(() => {

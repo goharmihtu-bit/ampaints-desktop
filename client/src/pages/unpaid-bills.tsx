@@ -141,10 +141,13 @@ export default function UnpaidBills() {
     queryKey: ["/api/sales"],
     refetchInterval: 30000,
     refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
   })
 
   const { data: allReturns = [] } = useQuery<ReturnRecord[]>({
     queryKey: ["/api/returns"],
+    refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
   })
 
   const allSales = useDeferredValue(allSalesRaw)

@@ -80,12 +80,16 @@ export default function Sales() {
 
   const { data: salesRaw = [], isLoading } = useQuery<Sale[]>({
     queryKey: ["/api/sales"],
+    refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
   });
 
   const sales = useDeferredValue(salesRaw);
 
   const { data: returnsRaw = [] } = useQuery<Return[]>({
     queryKey: ["/api/returns"],
+    refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
   });
 
   const returns = useDeferredValue(returnsRaw);

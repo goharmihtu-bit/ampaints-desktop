@@ -177,7 +177,8 @@ export default function CustomerStatement() {
     },
     enabled: !!customerPhone,
     refetchOnWindowFocus: true,
-    staleTime: 30000, // Cache for 30 seconds
+    refetchOnMount: 'always',
+    staleTime: 0, // Always fetch fresh data on mount
   })
 
   // Extract data from combined response

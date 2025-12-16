@@ -106,6 +106,8 @@ export default function StockHistory() {
 
   const { data: historyRaw = [], isLoading, refetch } = useQuery<StockInHistory[]>({
     queryKey: ["/api/stock-in/history"],
+    refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
   });
 
   const history = useDeferredValue(historyRaw);

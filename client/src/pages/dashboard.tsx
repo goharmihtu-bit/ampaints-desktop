@@ -54,6 +54,7 @@ export default function Dashboard() {
     queryKey: ["/api/dashboard-stats"],
     refetchInterval: 30000,
     refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
   });
 
   if (isLoading) {
