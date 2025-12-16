@@ -680,16 +680,9 @@ export default function Admin() {
                 <ShieldCheck className="h-6 w-6 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
                 <div>
                   <h4 className="font-bold text-red-900 dark:text-red-100 mb-2">🔒 Security Protected</h4>
-                  <p className="text-sm text-red-800 dark:text-red-200 mb-2">
-                    <strong>All license operations require your Master Secret Key.</strong> This is a cryptographic security measure to ensure only authorized administrators can modify license settings.
+                  <p className="text-sm text-red-800 dark:text-red-200">
+                    <strong>All license operations require your Master Secret Key.</strong>
                   </p>
-                  <ul className="text-xs text-red-700 dark:text-red-300 space-y-1 list-disc list-inside">
-                    <li>Secret key is <strong>never stored</strong> in the database or browser</li>
-                    <li>Key is <strong>hashed using SHA-256</strong> before validation</li>
-                    <li>Without the correct secret key, <strong>no one can reset expiry dates</strong></li>
-                    <li>Clients cannot bypass this security - it's server-side validated</li>
-                    <li>Contact administrator if you've lost the secret key</li>
-                  </ul>
                 </div>
               </div>
             </div>
