@@ -8,13 +8,11 @@ function getKey() {
     // For desktop/development environments without cloud sync configured
     // Generate a session-specific key to allow the app to run without cloud sync
     // This key is NOT suitable for production cloud sync use cases
-    const sessionKey = crypto.randomBytes(32).toString('hex').slice(0, 32)
     console.warn("[CloudSync] ⚠️  CLOUD_SYNC_ENCRYPTION_KEY not set!")
     console.warn("[CloudSync] Using temporary session key. Cloud sync features will work for this session only.")
     console.warn("[CloudSync] To enable persistent cloud sync, set CLOUD_SYNC_ENCRYPTION_KEY environment variable.")
-    const buf = Buffer.alloc(32)
-    Buffer.from(sessionKey).copy(buf)
-    return buf
+    // Generate a proper 32-byte random key
+    return crypto.randomBytes(32)
   }
   // Ensure Buffer length 32
   const buf = Buffer.alloc(32)

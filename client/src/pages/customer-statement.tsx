@@ -529,7 +529,7 @@ export default function CustomerStatement() {
 
       // If refund method is "cash", credit should be 0 (no credit to account)
       // If refund method is "credited", credit should be the refund amount
-      const creditAmount = ret.refundMethod === "cash" ? 0 : refundAmount
+      const creditAmount = ret.refundMethod === 'credited' ? refundAmount : 0
 
       return {
         id: `return-${ret.id}`,
