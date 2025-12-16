@@ -214,7 +214,7 @@ export default function UnpaidBills() {
       const phone = ret.customerPhone || "unknown"
       const existing = returnsByPhone.get(phone) || 0
       // Only count credited refunds (not cash refunds) as they reduce account balance
-      if (ret.refundMethod === 'credited') {
+      if (ret.refundMethod === 'credit') {
         returnsByPhone.set(phone, existing + safeParseFloat(ret.totalRefund))
       }
     })

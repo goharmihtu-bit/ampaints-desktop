@@ -112,7 +112,7 @@ const roundNumber = (num: number): number => {
 
 // Helper function to get credited refund amount (0 for cash refunds)
 const getCreditedRefundAmount = (ret: any): number => {
-  return ret.refundMethod === 'credited' ? safeParseFloat(ret.totalRefund) : 0
+  return ret.refundMethod === 'credit' ? safeParseFloat(ret.totalRefund) : 0
 }
 
 export default function CustomerStatement() {
