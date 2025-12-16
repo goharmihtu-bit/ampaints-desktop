@@ -90,14 +90,40 @@ export default function Admin() {
   });
 
   const handleSetLicenseExpiry = async () => {
+    // Validate secret key
     if (!licenseSecretKey.trim()) {
-      toast({ title: 'Error', description: 'Please enter secret key first', variant: 'destructive' });
+      toast({ 
+        title: 'Secret Key Required', 
+        description: 'Please enter the secret key to set license expiry', 
+        variant: 'destructive' 
+      });
       return;
     }
+
+    // Validate expiry date
     if (!licenseExpiryDate) {
-      toast({ title: 'Error', description: 'Please select expiry date', variant: 'destructive' });
+      toast({ 
+        title: 'Date Required', 
+        description: 'Please select an expiry date', 
+        variant: 'destructive' 
+      });
       return;
     }
+
+    // Validate expiry date is in the future
+    const selectedDate = new Date(licenseExpiryDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    if (selectedDate < today) {
+      toast({ 
+        title: 'Invalid Date', 
+        description: 'Expiry date must be in the future', 
+        variant: 'destructive' 
+      });
+      return;
+    }
+
     setIsSettingLicense(true);
     try {
       const response = await fetch('/api/license/set-expiry', { 
@@ -105,21 +131,47 @@ export default function Admin() {
         headers: { 'Content-Type': 'application/json' }, 
         body: JSON.stringify({ expiryDate: licenseExpiryDate, secretKey: licenseSecretKey }) 
       });
-      if (!response.ok) throw await response.json();
-      toast({ title: 'License Updated', description: `License expiry date set to ${licenseExpiryDate}` });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Failed to set license expiry' }));
+        throw new Error(errorData.error || 'Failed to set license expiry');
+      }
+
+      toast({ 
+        title: 'License Updated', 
+        description: `License expiry date set to ${licenseExpiryDate}` 
+      });
       queryClient.invalidateQueries({ queryKey: ['/api/license/status'] });
       setLicenseSecretKey(""); // Clear secret key after successful operation
+      setLicenseExpiryDate(""); // Clear expiry date
     } catch (error: any) {
-      toast({ title: 'Error', description: error.error || 'Invalid secret key or failed to set expiry', variant: 'destructive' });
-    } finally { setIsSettingLicense(false) }
+      console.error('License expiry error:', error);
+      toast({ 
+        title: 'Error', 
+        description: error.message || 'Invalid secret key or failed to set expiry', 
+        variant: 'destructive' 
+      });
+    } finally { 
+      setIsSettingLicense(false);
+    }
   };
 
   const handleDeactivateLicense = async () => {
+    // Validate secret key
     if (!licenseSecretKey.trim()) {
-      toast({ title: 'Error', description: 'Please enter secret key first', variant: 'destructive' });
+      toast({ 
+        title: 'Secret Key Required', 
+        description: 'Please enter the secret key to deactivate license', 
+        variant: 'destructive' 
+      });
       return;
     }
-    if (!confirm('Are you sure you want to deactivate the license? The software will become unusable.')) return;
+
+    // Double confirmation for destructive action
+    if (!confirm('⚠️ WARNING: Are you sure you want to deactivate the license?\n\nThe software will become completely unusable until reactivated.\n\nThis action requires the secret key to undo.')) {
+      return;
+    }
+
     setIsSettingLicense(true);
     try {
       const response = await fetch('/api/license/deactivate', { 
@@ -127,21 +179,43 @@ export default function Admin() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ secretKey: licenseSecretKey })
       });
-      if (!response.ok) throw await response.json();
-      toast({ title: 'License Deactivated', description: 'The software license has been deactivated.' });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Failed to deactivate license' }));
+        throw new Error(errorData.error || 'Failed to deactivate license');
+      }
+
+      toast({ 
+        title: 'License Deactivated', 
+        description: 'The software license has been deactivated successfully.',
+        variant: 'destructive'
+      });
       setIsLicenseActive(false);
       queryClient.invalidateQueries({ queryKey: ['/api/license/status'] });
       setLicenseSecretKey(""); // Clear secret key after successful operation
     } catch (error: any) {
-      toast({ title: 'Error', description: error.error || 'Invalid secret key or failed to deactivate', variant: 'destructive' });
-    } finally { setIsSettingLicense(false) }
+      console.error('License deactivation error:', error);
+      toast({ 
+        title: 'Deactivation Failed', 
+        description: error.message || 'Invalid secret key or failed to deactivate', 
+        variant: 'destructive' 
+      });
+    } finally { 
+      setIsSettingLicense(false);
+    }
   };
 
   const handleActivateLicense = async () => {
+    // Validate secret key
     if (!licenseSecretKey.trim()) {
-      toast({ title: 'Error', description: 'Please enter secret key to activate license', variant: 'destructive' });
+      toast({ 
+        title: 'Secret Key Required', 
+        description: 'Please enter the secret key to activate license', 
+        variant: 'destructive' 
+      });
       return;
     }
+
     setIsSettingLicense(true);
     try {
       const response = await fetch('/api/license/activate', { 
@@ -149,14 +223,29 @@ export default function Admin() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ secretKey: licenseSecretKey })
       });
-      if (!response.ok) throw await response.json();
-      toast({ title: 'License Activated', description: 'Your license has been successfully reactivated!' });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Failed to activate license' }));
+        throw new Error(errorData.error || 'Failed to activate license');
+      }
+
+      toast({ 
+        title: 'License Activated', 
+        description: 'Your license has been successfully reactivated!' 
+      });
       setIsLicenseActive(true);
       queryClient.invalidateQueries({ queryKey: ['/api/license/status'] });
       setLicenseSecretKey(""); // Clear secret key after successful operation
     } catch (error: any) {
-      toast({ title: 'Error', description: error.error || 'Invalid secret key', variant: 'destructive' });
-    } finally { setIsSettingLicense(false) }
+      console.error('License activation error:', error);
+      toast({ 
+        title: 'Activation Failed', 
+        description: error.message || 'Invalid secret key or failed to activate', 
+        variant: 'destructive' 
+      });
+    } finally { 
+      setIsSettingLicense(false);
+    }
   };
 
   // ---------- Cloud Sync state & handlers (copied from Settings)
@@ -170,37 +259,117 @@ export default function Admin() {
   const [jobsLoading, setJobsLoading] = useState(false);
 
   const handleTestCloudConnection = async () => {
+    // Validate connection string
+    if (!cloudConn || !cloudConn.trim()) {
+      toast({ 
+        title: 'Connection String Required', 
+        description: 'Please enter a Postgres connection string', 
+        variant: 'destructive' 
+      });
+      return;
+    }
+
+    // Basic validation for connection string format
+    if (!cloudConn.startsWith('postgres://') && !cloudConn.startsWith('postgresql://')) {
+      toast({ 
+        title: 'Invalid Format', 
+        description: 'Connection string must start with postgres:// or postgresql://', 
+        variant: 'destructive' 
+      });
+      return;
+    }
+
     setIsTesting(true);
+    setTestResult(null);
     try {
-      const res = await apiRequest('POST', '/api/cloud-sync/test-connection', { connectionString: cloudConn });
+      const res = await apiRequest('POST', '/api/cloud-sync/test-connection', { connectionString: cloudConn.trim() });
       const json = await res.json();
       setTestResult(json);
+      
       if (json.ok) {
-        toast({ title: 'Connection Successful', description: 'Remote Postgres connection validated.' });
+        toast({ 
+          title: 'Connection Successful', 
+          description: 'Remote Postgres connection validated successfully.' 
+        });
       } else {
-        toast({ title: 'Connection Failed', description: json.error || 'Unable to connect', variant: 'destructive' });
+        toast({ 
+          title: 'Connection Failed', 
+          description: json.error || 'Unable to connect to database', 
+          variant: 'destructive' 
+        });
       }
     } catch (err: any) {
-      setTestResult({ ok: false, error: err.message || String(err) });
-      toast({ title: 'Connection Error', description: err.message || String(err), variant: 'destructive' });
-    } finally { setIsTesting(false) }
+      console.error('Cloud connection test error:', err);
+      const errorMessage = err.message || String(err);
+      setTestResult({ ok: false, error: errorMessage });
+      toast({ 
+        title: 'Connection Error', 
+        description: errorMessage, 
+        variant: 'destructive' 
+      });
+    } finally { 
+      setIsTesting(false);
+    }
   };
 
   const handleSaveCloudConnection = async () => {
+    // Validate connection string
+    if (!cloudConn || !cloudConn.trim()) {
+      toast({ 
+        title: 'Connection String Required', 
+        description: 'Please enter a Postgres connection string', 
+        variant: 'destructive' 
+      });
+      return;
+    }
+
+    // Basic validation for connection string format
+    if (!cloudConn.startsWith('postgres://') && !cloudConn.startsWith('postgresql://')) {
+      toast({ 
+        title: 'Invalid Format', 
+        description: 'Connection string must start with postgres:// or postgresql://', 
+        variant: 'destructive' 
+      });
+      return;
+    }
+
+    // Recommend testing first
+    if (!testResult || !testResult.ok) {
+      if (!confirm('Connection has not been tested successfully. Do you want to save it anyway?')) {
+        return;
+      }
+    }
+
     setIsSaving(true);
     try {
-      const res = await apiRequest('POST', '/api/cloud-sync/connections', { provider: 'neon', label: 'Neon', connectionString: cloudConn });
+      const res = await apiRequest('POST', '/api/cloud-sync/connections', { 
+        provider: 'neon', 
+        label: 'Neon', 
+        connectionString: cloudConn.trim() 
+      });
       const json = await res.json();
+      
       if (res.ok && json.ok) {
-        toast({ title: 'Saved', description: 'Connection saved on server' });
+        toast({ 
+          title: 'Connection Saved', 
+          description: 'Cloud connection saved successfully on server' 
+        });
         setCloudConn("");
+        setTestResult(null);
         loadCloudConnections();
       } else { 
-        throw new Error(json.error || 'Failed') 
+        throw new Error(json.error || 'Failed to save connection') 
       }
-    } catch (err: any) { 
-      toast({ title: 'Error', description: err.message || String(err), variant: 'destructive' }) 
-    } finally { setIsSaving(false) }
+    } catch (err: any) {
+      console.error('Save cloud connection error:', err);
+      toast({ 
+        title: 'Save Failed', 
+        description: err.message || 'Failed to save connection', 
+        variant: 'destructive' 
+      });
+    } finally { 
+      setIsSaving(false);
+    }
   };
 
   const loadCloudConnections = async () => {
@@ -228,38 +397,92 @@ export default function Admin() {
   const enqueueJob = async (connectionId: string, jobType: 'export' | 'import') => {
     try {
       let details = undefined;
+      
       if (jobType === 'import') {
-        const strategy = prompt('Import strategy (skip, overwrite, merge). Default: merge', 'merge') || 'merge';
-        if (!["skip","overwrite","merge"].includes(strategy)) { 
-          toast({ title: 'Cancelled', description: 'Invalid strategy selected', variant: 'destructive' }); 
+        const strategy = prompt('⚠️ Import Strategy Selection\n\nChoose how to handle data conflicts:\n• skip - Keep existing records\n• overwrite - Replace with remote data\n• merge - Combine both (recommended)\n\nEnter strategy:', 'merge') || 'merge';
+        
+        if (!["skip","overwrite","merge"].includes(strategy.toLowerCase())) { 
+          toast({ 
+            title: 'Invalid Strategy', 
+            description: 'Please select: skip, overwrite, or merge', 
+            variant: 'destructive' 
+          }); 
           return; 
         }
-        details = { strategy };
-      }
-      const res = await apiRequest('POST', '/api/cloud-sync/jobs', { connectionId, jobType, dryRun: true, details });
-      const json = await res.json();
-      if (res.ok && json.ok) {
-        toast({ title: 'Job Enqueued', description: `Job ${json.jobId} created (dry-run)` });
+        details = { strategy: strategy.toLowerCase() };
+        
+        // Warn about import risks
+        if (!confirm(`⚠️ Warning: This will import data from cloud with strategy "${strategy}".\n\nThis is a DRY RUN - no actual changes will be made yet.\n\nProceed?`)) {
+          return;
+        }
       } else {
-        toast({ title: 'Error', description: json.error || 'Failed to enqueue', variant: 'destructive' });
+        // Confirm export operation
+        if (!confirm('This will export your local data to the cloud.\n\nThis is a DRY RUN - no actual changes will be made yet.\n\nProceed?')) {
+          return;
+        }
       }
-    } catch (err: any) { 
-      toast({ title: 'Error', description: err.message || String(err), variant: 'destructive' }) 
+
+      const res = await apiRequest('POST', '/api/cloud-sync/jobs', { 
+        connectionId, 
+        jobType, 
+        dryRun: true, 
+        details 
+      });
+      const json = await res.json();
+      
+      if (res.ok && json.ok) {
+        toast({ 
+          title: 'Job Enqueued', 
+          description: `Job ${json.jobId} created (dry-run mode)` 
+        });
+        loadJobs(); // Refresh job list
+      } else {
+        toast({ 
+          title: 'Job Enqueue Failed', 
+          description: json.error || 'Failed to enqueue job', 
+          variant: 'destructive' 
+        });
+      }
+    } catch (err: any) {
+      console.error('Enqueue job error:', err);
+      toast({ 
+        title: 'Error', 
+        description: err.message || 'Failed to enqueue job', 
+        variant: 'destructive' 
+      });
     }
   };
 
   const processNextJob = async () => {
+    // Confirm before processing
+    if (!confirm('⚠️ Warning: This will process the next pending cloud sync job.\n\nMake sure you understand what the job will do before proceeding.\n\nContinue?')) {
+      return;
+    }
+
     try {
       const res = await apiRequest('POST', '/api/cloud-sync/process-next');
       const json = await res.json();
+      
       if (res.ok && json.ok) {
-        toast({ title: 'Job processed', description: json.result?.status || 'Processed' });
+        toast({ 
+          title: 'Job Processed', 
+          description: json.result?.status || 'Job processed successfully' 
+        });
         loadJobs();
       } else {
-        toast({ title: 'Error', description: json.error || 'Failed to process job', variant: 'destructive' });
+        toast({ 
+          title: 'Processing Failed', 
+          description: json.error || 'Failed to process job', 
+          variant: 'destructive' 
+        });
       }
-    } catch (err: any) { 
-      toast({ title: 'Error', description: err.message || String(err), variant: 'destructive' }) 
+    } catch (err: any) {
+      console.error('Process job error:', err);
+      toast({ 
+        title: 'Error', 
+        description: err.message || 'Failed to process job', 
+        variant: 'destructive' 
+      });
     }
   };
 
@@ -272,25 +495,78 @@ export default function Admin() {
   const [isChangingPin, setIsChangingPin] = useState(false);
 
   const handleChangeMasterPin = async () => {
-    if (!newPin || newPin !== confirmPin) {
-      toast({ title: 'Error', description: 'New PINs do not match', variant: 'destructive' });
+    // Validate new PIN
+    if (!newPin || !newPin.trim()) {
+      toast({ 
+        title: 'Invalid PIN', 
+        description: 'Please enter a new PIN', 
+        variant: 'destructive' 
+      });
       return;
     }
+
+    // Validate PIN format (4 digits)
+    if (!/^\d{4}$/.test(newPin)) {
+      toast({ 
+        title: 'Invalid PIN Format', 
+        description: 'PIN must be exactly 4 digits', 
+        variant: 'destructive' 
+      });
+      return;
+    }
+
+    // Validate PIN confirmation
+    if (newPin !== confirmPin) {
+      toast({ 
+        title: 'PIN Mismatch', 
+        description: 'New PIN and confirmation PIN do not match', 
+        variant: 'destructive' 
+      });
+      return;
+    }
+
+    // Validate PIN is not too simple
+    if (newPin === '0000' || newPin === '1234' || newPin === '1111' || newPin === '9999') {
+      if (!confirm('⚠️ Warning: This PIN is too simple and easy to guess. Are you sure you want to use it?')) {
+        return;
+      }
+    }
+
     setIsChangingPin(true);
     try {
-      const res = await fetch('/api/license/set-master-pin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ currentPin, newPin }) });
+      const res = await fetch('/api/license/set-master-pin', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ currentPin, newPin }) 
+      });
+      
       const json = await res.json();
+      
       if (res.ok && json.ok) {
-        toast({ title: 'PIN Updated', description: 'Master PIN changed successfully' });
+        toast({ 
+          title: 'PIN Updated', 
+          description: 'Master PIN changed successfully. Please remember your new PIN.' 
+        });
         setCurrentPin(''); 
         setNewPin(''); 
         setConfirmPin('');
       } else {
-        toast({ title: 'Error', description: json.error || 'Failed to set PIN', variant: 'destructive' });
+        toast({ 
+          title: 'PIN Change Failed', 
+          description: json.error || 'Failed to set PIN. Check your current PIN.', 
+          variant: 'destructive' 
+        });
       }
-    } catch (err: any) { 
-      toast({ title: 'Error', description: err.message || String(err), variant: 'destructive' }) 
-    } finally { setIsChangingPin(false) }
+    } catch (err: any) {
+      console.error('PIN change error:', err);
+      toast({ 
+        title: 'Error', 
+        description: err.message || 'Failed to change PIN', 
+        variant: 'destructive' 
+      });
+    } finally { 
+      setIsChangingPin(false);
+    }
   };
 
   if (!isAdminUnlocked) {
