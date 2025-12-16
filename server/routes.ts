@@ -137,6 +137,49 @@ const CACHE_TTL = {
   colors: 30000,   // 30 seconds for colors
 }
 
+// Rate limiting for PIN verification (in-memory)
+interface RateLimitEntry {
+  attempts: number
+  resetTime: number
+}
+
+const pinVerificationAttempts = new Map<string, RateLimitEntry>()
+const PIN_RATE_LIMIT = {
+  maxAttempts: 5, // Maximum 5 attempts
+  windowMs: 15 * 60 * 1000, // 15 minutes window
+}
+
+function checkPinRateLimit(identifier: string): { allowed: boolean; remaining?: number; resetTime?: number } {
+  const now = Date.now()
+  const entry = pinVerificationAttempts.get(identifier)
+
+  if (!entry || now > entry.resetTime) {
+    // New window or expired window
+    pinVerificationAttempts.set(identifier, {
+      attempts: 1,
+      resetTime: now + PIN_RATE_LIMIT.windowMs
+    })
+    return { allowed: true, remaining: PIN_RATE_LIMIT.maxAttempts - 1 }
+  }
+
+  if (entry.attempts >= PIN_RATE_LIMIT.maxAttempts) {
+    // Rate limit exceeded
+    return { 
+      allowed: false, 
+      resetTime: entry.resetTime 
+    }
+  }
+
+  // Increment attempts
+  entry.attempts++
+  pinVerificationAttempts.set(identifier, entry)
+  
+  return { 
+    allowed: true, 
+    remaining: PIN_RATE_LIMIT.maxAttempts - entry.attempts 
+  }
+}
+
 function getCached<T>(key: keyof typeof cache): T | null {
   const entry = cache[key] as CacheEntry<T> | null
   if (!entry) return null
@@ -1938,6 +1981,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { masterPin } = req.body
       if (!masterPin) return res.status(400).json({ valid: false, error: "masterPin required" })
+
+      // Rate limiting check (use IP or a fixed identifier for desktop app)
+      const identifier = req.ip || 'desktop-app'
+      const rateCheck = checkPinRateLimit(identifier)
+      
+      if (!rateCheck.allowed) {
+        const minutesRemaining = Math.ceil((rateCheck.resetTime! - Date.now()) / 60000)
+        res.status(429).json({ 
+          valid: false, 
+          error: `Too many attempts. Please try again in ${minutesRemaining} minutes.` 
+        })
+        return
+      }
 
       // Check settings-stored master pin first
       const s = await storage.getSettings()
