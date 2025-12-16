@@ -375,7 +375,7 @@ export default function CustomerStatement() {
   const getSaleReturns = (saleId: string): number => {
     return customerReturns
       .filter(ret => ret.saleId === saleId)
-      .reduce((sum, ret) => sum + safeParseFloat(ret.totalRefund), 0)
+      .reduce((sum, ret) => ret.refundMethod === 'credited' ? sum + safeParseFloat(ret.totalRefund) : sum, 0)
   }
 
   const paidSales = useMemo(() => {
@@ -407,7 +407,7 @@ export default function CustomerStatement() {
     // Calculate total return credits (only credited refunds reduce outstanding balance, not cash refunds)
     const totalReturnCredits = customerReturns.reduce((sum, r) => {
       // Only count returns where refundMethod is "credited" (not "cash")
-      return r.refundMethod === "cash" ? sum : sum + safeParseFloat(r.totalRefund)
+      return r.refundMethod === 'credited' ? sum + safeParseFloat(r.totalRefund) : sum
     }, 0)
     
     // Outstanding = Bills - Payments - Returns (can be negative for credit/advance)
@@ -457,7 +457,7 @@ export default function CustomerStatement() {
       // Calculate returns for this specific bill (only credited returns count)
       const billReturns = roundNumber(customerReturns
         .filter(ret => ret.saleId === sale.id)
-        .reduce((sum, ret) => ret.refundMethod === "cash" ? sum : sum + safeParseFloat(ret.totalRefund), 0))
+        .reduce((sum, ret) => ret.refundMethod === 'credited' ? sum + safeParseFloat(ret.totalRefund) : sum, 0))
       
       // Outstanding = Bill amount - Payments - Returns for this bill
       const outstandingAmt = roundNumber(Math.max(0, totalAmt - paidAmt - billReturns))
