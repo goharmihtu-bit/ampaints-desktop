@@ -73,7 +73,7 @@ export default function Admin() {
     }
   };
 
-  // ---------- License state & handlers (copied from Settings)
+  // ---------- License state & handlers
   const [licenseExpiryDate, setLicenseExpiryDate] = useState("");
   const [isLicenseActive, setIsLicenseActive] = useState(true);
   const [isSettingLicense, setIsSettingLicense] = useState(false);

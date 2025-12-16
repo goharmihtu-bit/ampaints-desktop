@@ -53,8 +53,6 @@ export default function Settings() {
     queryKey: ["/api/settings"],
   });
 
-
-
   const [uiFormData, setUiFormData] = useState<UpdateSettings>({
     storeName: "PaintPulse",
     cardBorderStyle: "shadow",
@@ -104,16 +102,103 @@ export default function Settings() {
       });
     },
   });
+
+  // Receipt settings state
+  const [receiptBusinessName, setReceiptBusinessName] = useState("ALI MUHAMMAD PAINTS");
+  const [receiptAddress, setReceiptAddress] = useState("Basti Malook, Multan. 0300-868-3395");
+  const [receiptDealerText, setReceiptDealerText] = useState("AUTHORIZED DEALER:");
+  const [receiptDealerBrands, setReceiptDealerBrands] = useState("ICI-DULUX • MOBI PAINTS • WESTER 77");
+  const [receiptThankYou, setReceiptThankYou] = useState("THANKS FOR YOUR BUSINESS");
+  const [receiptFontSize, setReceiptFontSize] = useState("11");
+  const [receiptItemFontSize, setReceiptItemFontSize] = useState("12");
+  const [receiptPadding, setReceiptPadding] = useState("12");
+
+  // Printer settings state
+  const [bluetoothEnabled, setBluetoothEnabled] = useState(false);
+  const [connectedDevice, setConnectedDevice] = useState<string | null>(null);
   
+  // Database settings state
   const [databasePath, setDatabasePath] = useState<string>("");
   const [isElectron, setIsElectron] = useState(false);
-
   const [isDatabaseUnlocked, setIsDatabaseUnlocked] = useState(false);
   const [showDatabasePinDialog, setShowDatabasePinDialog] = useState(false);
   const [databasePinInput, setDatabasePinInput] = useState(["", "", "", ""]);
   const [databasePinError, setDatabasePinError] = useState("");
   const [showDatabasePin, setShowDatabasePin] = useState(false);
   const [isVerifyingPin, setIsVerifyingPin] = useState(false);
+
+  // Bill display settings
+  const [showCompanyName, setShowCompanyName] = useState(true);
+  const [showGST, setShowGST] = useState(true);
+  const [autoprint, setAutoprint] = useState(false);
+  const [billFooter, setBillFooter] = useState("Thank you for your business!");
+
+  // Load receipt settings from localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined' && (window as any).electron) {
+      setIsElectron(true);
+      (window as any).electron.getDatabasePath().then((path: string) => {
+        setDatabasePath(path);
+      });
+    }
+    
+    try {
+      const savedReceiptSettings = localStorage.getItem('posReceiptSettings');
+      if (savedReceiptSettings) {
+        const settings = JSON.parse(savedReceiptSettings);
+        setReceiptBusinessName(settings.businessName || "ALI MUHAMMAD PAINTS");
+        setReceiptAddress(settings.address || "Basti Malook, Multan. 0300-868-3395");
+        setReceiptDealerText(settings.dealerText || "AUTHORIZED DEALER:");
+        setReceiptDealerBrands(settings.dealerBrands || "ICI-DULUX • MOBI PAINTS • WESTER 77");
+        setReceiptThankYou(settings.thankYou || "THANKS FOR YOUR BUSINESS");
+        setReceiptFontSize(settings.fontSize || "11");
+        setReceiptItemFontSize(settings.itemFontSize || "12");
+        setReceiptPadding(settings.padding || "12");
+      }
+    } catch (error) {
+      console.error("Error loading receipt settings:", error);
+    }
+  }, []);
+
+  const handleSaveBillSettings = () => {
+    const receiptSettings = {
+      businessName: receiptBusinessName,
+      address: receiptAddress,
+      dealerText: receiptDealerText,
+      dealerBrands: receiptDealerBrands,
+      thankYou: receiptThankYou,
+      fontSize: receiptFontSize,
+      itemFontSize: receiptItemFontSize,
+      padding: receiptPadding,
+    };
+    localStorage.setItem('posReceiptSettings', JSON.stringify(receiptSettings));
+    toast({ title: "Receipt settings saved successfully" });
+  };
+
+  const handleConnectBluetooth = async () => {
+    try {
+      const device = await (navigator as any).bluetooth.requestDevice({
+        acceptAllDevices: true,
+        optionalServices: ['battery_service']
+      });
+      
+      setConnectedDevice(device.name);
+      setBluetoothEnabled(true);
+      toast({ title: `Connected to ${device.name}` });
+    } catch (error) {
+      toast({ 
+        title: "Bluetooth connection failed", 
+        description: "Make sure Bluetooth is enabled and the device is in pairing mode",
+        variant: "destructive" 
+      });
+    }
+  };
+
+  const handleDisconnectBluetooth = () => {
+    setConnectedDevice(null);
+    setBluetoothEnabled(false);
+    toast({ title: "Bluetooth disconnected" });
+  };
 
   const handleDatabaseTabClick = () => {
     if (!uiSettings?.permDatabaseAccess) {
@@ -197,63 +282,6 @@ export default function Settings() {
     }
   }, []);
 
-  const [showCompanyName, setShowCompanyName] = useState(true);
-  const [showGST, setShowGST] = useState(true);
-  const [autoprint, setAutoprint] = useState(false);
-  const [billFooter, setBillFooter] = useState("Thank you for your business!");
-  
-  const [receiptBusinessName, setReceiptBusinessName] = useState("ALI MUHAMMAD PAINTS");
-  const [receiptAddress, setReceiptAddress] = useState("Basti Malook, Multan. 0300-868-3395");
-  const [receiptDealerText, setReceiptDealerText] = useState("AUTHORIZED DEALER:");
-  const [receiptDealerBrands, setReceiptDealerBrands] = useState("ICI-DULUX • MOBI PAINTS • WESTER 77");
-  const [receiptThankYou, setReceiptThankYou] = useState("THANKS FOR YOUR BUSINESS");
-  const [receiptFontSize, setReceiptFontSize] = useState("11");
-  const [receiptItemFontSize, setReceiptItemFontSize] = useState("12");
-  const [receiptPadding, setReceiptPadding] = useState("12");
-
-  const [bluetoothEnabled, setBluetoothEnabled] = useState(false);
-  const [connectedDevice, setConnectedDevice] = useState<string | null>(null);
-
-  const handleSaveBillSettings = () => {
-    const receiptSettings = {
-      businessName: receiptBusinessName,
-      address: receiptAddress,
-      dealerText: receiptDealerText,
-      dealerBrands: receiptDealerBrands,
-      thankYou: receiptThankYou,
-      fontSize: receiptFontSize,
-      itemFontSize: receiptItemFontSize,
-      padding: receiptPadding,
-    };
-    localStorage.setItem('posReceiptSettings', JSON.stringify(receiptSettings));
-    toast({ title: "Receipt settings saved successfully" });
-  };
-
-  const handleConnectBluetooth = async () => {
-    try {
-      const device = await (navigator as any).bluetooth.requestDevice({
-        acceptAllDevices: true,
-        optionalServices: ['battery_service']
-      });
-      
-      setConnectedDevice(device.name);
-      setBluetoothEnabled(true);
-      toast({ title: `Connected to ${device.name}` });
-    } catch (error) {
-      toast({ 
-        title: "Bluetooth connection failed", 
-        description: "Make sure Bluetooth is enabled and the device is in pairing mode",
-        variant: "destructive" 
-      });
-    }
-  };
-
-  const handleDisconnectBluetooth = () => {
-    setConnectedDevice(null);
-    setBluetoothEnabled(false);
-    toast({ title: "Bluetooth disconnected" });
-  };
-  
   const handleChangeDatabaseLocation = async () => {
     if (!(window as any).electron) return;
     
@@ -400,8 +428,6 @@ export default function Settings() {
     }
   };
 
-
-
   return (
     <div className="glass-page p-6 space-y-6 max-w-5xl">
       <div className="glass-surface p-4">
@@ -429,7 +455,6 @@ export default function Settings() {
             <Printer className="h-4 w-4 mr-2" />
             Printer
           </TabsTrigger>
-
           <TabsTrigger 
             value="database" 
             className="glass-tab"
