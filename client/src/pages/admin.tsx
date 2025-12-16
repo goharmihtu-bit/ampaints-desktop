@@ -16,7 +16,9 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
+  DialogFooter,
 } from "@/components/ui/dialog";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Key, Download, ShieldCheck, Lock, Eye, EyeOff, Calendar, Zap } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -274,6 +276,11 @@ export default function Admin() {
   const [connectionsLoading, setConnectionsLoading] = useState(false);
   const [jobs, setJobs] = useState<any[]>([]);
   const [jobsLoading, setJobsLoading] = useState(false);
+  
+  // Strategy selection dialog state
+  const [showStrategyDialog, setShowStrategyDialog] = useState(false);
+  const [selectedStrategy, setSelectedStrategy] = useState<'merge' | 'skip' | 'overwrite'>('merge');
+  const [pendingJobRequest, setPendingJobRequest] = useState<{ connectionId: string, jobType: 'export' | 'import', dryRun: boolean } | null>(null);
 
   const handleTestCloudConnection = async () => {
     // Validate connection string
@@ -412,41 +419,27 @@ export default function Admin() {
   };
 
   const enqueueJob = async (connectionId: string, jobType: 'export' | 'import', dryRun: boolean = false) => {
+    // If import job, show strategy dialog first
+    if (jobType === 'import') {
+      setPendingJobRequest({ connectionId, jobType, dryRun });
+      setShowStrategyDialog(true);
+      return;
+    }
+    
+    // For export jobs, proceed directly with confirmation
+    const confirmMsg = dryRun
+      ? 'This will simulate exporting your local data to the cloud.\n\nThis is a DRY RUN - no actual changes will be made.\n\nProceed?'
+      : '⚠️ WARNING: This will ACTUALLY EXPORT your local data to the cloud.\n\n🔴 THIS IS NOT A DRY RUN - Real changes will be made to the cloud database!\n\nExisting data in the cloud may be overwritten.\n\nProceed?';
+    
+    if (!confirm(confirmMsg)) {
+      return;
+    }
+    
+    await executeJobEnqueue(connectionId, jobType, dryRun, undefined);
+  };
+  
+  const executeJobEnqueue = async (connectionId: string, jobType: 'export' | 'import', dryRun: boolean, details?: any) => {
     try {
-      let details = undefined;
-      
-      if (jobType === 'import') {
-        const strategy = prompt('⚠️ Import Strategy Selection\n\nChoose how to handle data conflicts:\n• skip - Keep existing records\n• overwrite - Replace with remote data\n• merge - Combine both (recommended)\n\nEnter strategy:', 'merge') || 'merge';
-        
-        if (!["skip","overwrite","merge"].includes(strategy.toLowerCase())) { 
-          toast({ 
-            title: 'Invalid Strategy', 
-            description: 'Please select: skip, overwrite, or merge', 
-            variant: 'destructive' 
-          }); 
-          return; 
-        }
-        details = { strategy: strategy.toLowerCase() };
-        
-        // Warn about import risks
-        const confirmMsg = dryRun 
-          ? `⚠️ This will simulate importing data from cloud with strategy "${strategy}".\n\nThis is a DRY RUN - no actual changes will be made.\n\nProceed?`
-          : `⚠️ WARNING: This will ACTUALLY IMPORT data from cloud with strategy "${strategy}".\n\n🔴 THIS IS NOT A DRY RUN - Real changes will be made to your local database!\n\nMake sure you have a backup before proceeding.\n\nProceed?`;
-        
-        if (!confirm(confirmMsg)) {
-          return;
-        }
-      } else {
-        // Confirm export operation
-        const confirmMsg = dryRun
-          ? 'This will simulate exporting your local data to the cloud.\n\nThis is a DRY RUN - no actual changes will be made.\n\nProceed?'
-          : '⚠️ WARNING: This will ACTUALLY EXPORT your local data to the cloud.\n\n🔴 THIS IS NOT A DRY RUN - Real changes will be made to the cloud database!\n\nExisting data in the cloud may be overwritten.\n\nProceed?';
-        
-        if (!confirm(confirmMsg)) {
-          return;
-        }
-      }
-
       const res = await apiRequest('POST', '/api/cloud-sync/jobs', { 
         connectionId, 
         jobType, 
@@ -478,6 +471,35 @@ export default function Admin() {
         variant: 'destructive' 
       });
     }
+  };
+  
+  const handleStrategyConfirm = () => {
+    if (!pendingJobRequest) return;
+    
+    const { connectionId, jobType, dryRun } = pendingJobRequest;
+    const strategy = selectedStrategy;
+    const details = { strategy };
+    
+    // Close dialog first
+    setShowStrategyDialog(false);
+    setPendingJobRequest(null);
+    
+    // Warn about import risks
+    const confirmMsg = dryRun 
+      ? `⚠️ This will simulate importing data from cloud with strategy "${strategy}".\n\nThis is a DRY RUN - no actual changes will be made.\n\nProceed?`
+      : `⚠️ WARNING: This will ACTUALLY IMPORT data from cloud with strategy "${strategy}".\n\n🔴 THIS IS NOT A DRY RUN - Real changes will be made to your local database!\n\nMake sure you have a backup before proceeding.\n\nProceed?`;
+    
+    if (!confirm(confirmMsg)) {
+      return;
+    }
+    
+    executeJobEnqueue(connectionId, jobType, dryRun, details);
+  };
+  
+  const handleStrategyCancel = () => {
+    setShowStrategyDialog(false);
+    setPendingJobRequest(null);
+    setSelectedStrategy('merge'); // Reset to default
   };
 
   const processNextJob = async () => {
@@ -998,6 +1020,57 @@ export default function Admin() {
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* Strategy Selection Dialog */}
+      <Dialog open={showStrategyDialog} onOpenChange={setShowStrategyDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>⚠️ Import Strategy Selection</DialogTitle>
+            <DialogDescription>
+              Choose how to handle data conflicts when importing from cloud
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <RadioGroup value={selectedStrategy} onValueChange={(value) => setSelectedStrategy(value as 'merge' | 'skip' | 'overwrite')}>
+              <div className="flex items-start space-x-3 p-3 rounded-lg border border-border hover:bg-accent/50 transition-colors">
+                <RadioGroupItem value="merge" id="strategy-merge" className="mt-1" />
+                <Label htmlFor="strategy-merge" className="flex-1 cursor-pointer">
+                  <div className="font-semibold">Merge (Recommended)</div>
+                  <div className="text-sm text-muted-foreground">
+                    Combine both local and remote data. Newer records are prioritized.
+                  </div>
+                </Label>
+              </div>
+              <div className="flex items-start space-x-3 p-3 rounded-lg border border-border hover:bg-accent/50 transition-colors">
+                <RadioGroupItem value="skip" id="strategy-skip" className="mt-1" />
+                <Label htmlFor="strategy-skip" className="flex-1 cursor-pointer">
+                  <div className="font-semibold">Skip</div>
+                  <div className="text-sm text-muted-foreground">
+                    Keep existing local records, only add new records from cloud.
+                  </div>
+                </Label>
+              </div>
+              <div className="flex items-start space-x-3 p-3 rounded-lg border border-border hover:bg-accent/50 transition-colors">
+                <RadioGroupItem value="overwrite" id="strategy-overwrite" className="mt-1" />
+                <Label htmlFor="strategy-overwrite" className="flex-1 cursor-pointer">
+                  <div className="font-semibold">Overwrite</div>
+                  <div className="text-sm text-muted-foreground">
+                    Replace local data with remote data where conflicts exist.
+                  </div>
+                </Label>
+              </div>
+            </RadioGroup>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={handleStrategyCancel}>
+              Cancel
+            </Button>
+            <Button onClick={handleStrategyConfirm}>
+              Continue
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
