@@ -39,6 +39,8 @@ export default function StockIn() {
 
   const { data: colors = [], isLoading } = useQuery<ColorWithVariantAndProduct[]>({
     queryKey: ["/api/colors"],
+    refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
   });
 
   const stockInForm = useForm<z.infer<typeof stockInFormSchema>>({

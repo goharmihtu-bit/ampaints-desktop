@@ -250,21 +250,26 @@ export default function StockManagement() {
   const { data: productsRaw = [], isLoading: productsLoading } = useQuery<Product[]>({
     queryKey: ["/api/products"],
     refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
   });
 
   const { data: variantsRaw = [], isLoading: variantsLoading } = useQuery<VariantWithProduct[]>({
     queryKey: ["/api/variants"],
     refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
   });
 
   const { data: colorsRaw = [], isLoading: colorsLoading } = useQuery<ColorWithVariantAndProduct[]>({
     queryKey: ["/api/colors"],
     refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
   });
 
   /* Stock In History Query */
   const { data: stockInHistoryRaw = [], isLoading: historyLoading, refetch: refetchStockHistory } = useQuery<StockInHistory[]>({
     queryKey: ["/api/stock-in/history"],
+    refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
   });
 
   const products = useDeferredValue(productsRaw);

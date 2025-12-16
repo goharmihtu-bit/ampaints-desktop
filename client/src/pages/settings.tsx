@@ -56,22 +56,8 @@ export default function Settings() {
   const [connections, setConnections] = useState<any[]>([])
   const [connectionsLoading, setConnectionsLoading] = useState(false)
   
-  // License settings state
-  const [licenseExpiryDate, setLicenseExpiryDate] = useState<string>("");
-  const [licenseStatus, setLicenseStatus] = useState<"active" | "expired">("active");
-  const [isLicenseActive, setIsLicenseActive] = useState(true);
-  const [showSecretKeyInput, setShowSecretKeyInput] = useState(false);
-  const [secretKeyInput, setSecretKeyInput] = useState("");
-  const [secretKeyVisible, setSecretKeyVisible] = useState(false);
-  const [isSettingLicense, setIsSettingLicense] = useState(false);
-
   const { data: uiSettings, isLoading: isLoadingSettings } = useQuery<UISettings>({
     queryKey: ["/api/settings"],
-  });
-
-  const { data: licenseData, isLoading: isLoadingLicense } = useQuery({
-    queryKey: ["/api/license/status"],
-    refetchInterval: 60000, // Refetch every minute
   });
 
   const [uiFormData, setUiFormData] = useState<UpdateSettings>({
@@ -526,134 +512,6 @@ export default function Settings() {
         }
       };
       input.click();
-    }
-  };
-
-  // License management handlers
-  const handleSetLicenseExpiry = async () => {
-    if (!licenseExpiryDate) {
-      toast({
-        title: "Error",
-        description: "Please select an expiration date",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsSettingLicense(true);
-    try {
-      const response = await fetch("/api/license/set-expiry", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ expiryDate: licenseExpiryDate }),
-      });
-
-      if (response.ok) {
-        toast({
-          title: "Success",
-          description: `License expiry date set to ${licenseExpiryDate}`,
-        });
-        queryClient.invalidateQueries({ queryKey: ["/api/license/status"] });
-      } else {
-        const error = await response.json();
-        toast({
-          title: "Error",
-          description: error.error || "Failed to set license expiry",
-          variant: "destructive",
-        });
-      }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to set license expiry",
-        variant: "destructive",
-      });
-    } finally {
-      setIsSettingLicense(false);
-    }
-  };
-
-  const handleDeactivateLicense = async () => {
-    if (!window.confirm("Are you sure you want to deactivate the license? The software will become unusable.")) {
-      return;
-    }
-
-    setIsSettingLicense(true);
-    try {
-      const response = await fetch("/api/license/deactivate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-
-      if (response.ok) {
-        toast({
-          title: "License Deactivated",
-          description: "The software license has been deactivated.",
-        });
-        setIsLicenseActive(false);
-        queryClient.invalidateQueries({ queryKey: ["/api/license/status"] });
-      } else {
-        const error = await response.json();
-        toast({
-          title: "Error",
-          description: error.error || "Failed to deactivate license",
-          variant: "destructive",
-        });
-      }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to deactivate license",
-        variant: "destructive",
-      });
-    } finally {
-      setIsSettingLicense(false);
-    }
-  };
-
-  const handleActivateLicense = async () => {
-    if (!secretKeyInput.trim()) {
-      toast({
-        title: "Error",
-        description: "Please enter your secret key",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsSettingLicense(true);
-    try {
-      const response = await fetch("/api/license/activate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ secretKey: secretKeyInput }),
-      });
-
-      if (response.ok) {
-        toast({
-          title: "License Activated",
-          description: "Your license has been successfully reactivated!",
-        });
-        setSecretKeyInput("");
-        setShowSecretKeyInput(false);
-        setIsLicenseActive(true);
-        queryClient.invalidateQueries({ queryKey: ["/api/license/status"] });
-      } else {
-        const error = await response.json();
-        toast({
-          title: "Activation Failed",
-          description: error.error || "Invalid secret key",
-          variant: "destructive",
-        });
-      }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to activate license",
-        variant: "destructive",
-      });
-    } finally {
-      setIsSettingLicense(false);
     }
   };
 

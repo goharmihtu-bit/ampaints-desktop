@@ -84,6 +84,7 @@ type ReturnRecord = {
   customerName: string
   customerPhone: string
   totalRefund: string
+  refundMethod: string
   createdAt: string
 }
 
@@ -140,10 +141,13 @@ export default function UnpaidBills() {
     queryKey: ["/api/sales"],
     refetchInterval: 30000,
     refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
   })
 
   const { data: allReturns = [] } = useQuery<ReturnRecord[]>({
     queryKey: ["/api/returns"],
+    refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
   })
 
   const allSales = useDeferredValue(allSalesRaw)
@@ -209,7 +213,10 @@ export default function UnpaidBills() {
     allReturns.forEach((ret) => {
       const phone = ret.customerPhone || "unknown"
       const existing = returnsByPhone.get(phone) || 0
-      returnsByPhone.set(phone, existing + safeParseFloat(ret.totalRefund))
+      // Only count credited refunds (not cash refunds) as they reduce account balance
+      if (ret.refundMethod === 'credited') {
+        returnsByPhone.set(phone, existing + safeParseFloat(ret.totalRefund))
+      }
     })
 
     const customerMap = new Map<string, ConsolidatedCustomer>()

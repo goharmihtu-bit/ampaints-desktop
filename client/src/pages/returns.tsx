@@ -93,14 +93,20 @@ export default function Returns() {
     refetch: refetchReturns,
   } = useQuery<ReturnWithItems[]>({
     queryKey: ["/api/returns"],
+    refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
   })
 
   const { data: sales = [], isLoading: salesLoading } = useQuery<SaleWithItemsAndReturns[]>({
     queryKey: ["/api/sales"],
+    refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
   })
 
   const { data: colors = [], isLoading: colorsLoading } = useQuery<ColorWithVariantAndProduct[]>({
     queryKey: ["/api/colors"],
+    refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
   })
 
   const searchResults = useMemo(() => {
