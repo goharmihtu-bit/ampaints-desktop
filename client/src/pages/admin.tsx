@@ -281,6 +281,10 @@ export default function Admin() {
   const [showStrategyDialog, setShowStrategyDialog] = useState(false);
   const [selectedStrategy, setSelectedStrategy] = useState<'merge' | 'skip' | 'overwrite'>('merge');
   const [pendingJobRequest, setPendingJobRequest] = useState<{ connectionId: string, jobType: 'export' | 'import', dryRun: boolean } | null>(null);
+  
+  // Confirmation dialog state
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [confirmDialogData, setConfirmDialogData] = useState<{ title: string, message: string, onConfirm: () => void } | null>(null);
 
   const handleTestCloudConnection = async () => {
     // Validate connection string
@@ -426,16 +430,13 @@ export default function Admin() {
       return;
     }
     
-    // For export jobs, proceed directly with confirmation
-    const confirmMsg = dryRun
+    // For export jobs, show confirmation dialog
+    const title = dryRun ? 'Confirm Export Preview' : '⚠️ Confirm Export Operation';
+    const message = dryRun
       ? 'This will simulate exporting your local data to the cloud.\n\nThis is a DRY RUN - no actual changes will be made.\n\nProceed?'
       : '⚠️ WARNING: This will ACTUALLY EXPORT your local data to the cloud.\n\n🔴 THIS IS NOT A DRY RUN - Real changes will be made to the cloud database!\n\nExisting data in the cloud may be overwritten.\n\nProceed?';
     
-    if (!confirm(confirmMsg)) {
-      return;
-    }
-    
-    await executeJobEnqueue(connectionId, jobType, dryRun, undefined);
+    showConfirmation(title, message, () => executeJobEnqueue(connectionId, jobType, dryRun, undefined));
   };
   
   const executeJobEnqueue = async (connectionId: string, jobType: 'export' | 'import', dryRun: boolean, details?: any) => {
@@ -480,26 +481,42 @@ export default function Admin() {
     const strategy = selectedStrategy;
     const details = { strategy };
     
-    // Close dialog first
+    // Close strategy dialog first
     setShowStrategyDialog(false);
+    const request = pendingJobRequest;
     setPendingJobRequest(null);
     
-    // Warn about import risks
-    const confirmMsg = dryRun 
-      ? `⚠️ This will simulate importing data from cloud with strategy "${strategy}".\n\nThis is a DRY RUN - no actual changes will be made.\n\nProceed?`
+    // Show confirmation dialog
+    const title = dryRun ? 'Confirm Import Preview' : '⚠️ Confirm Import Operation';
+    const message = dryRun 
+      ? `This will simulate importing data from cloud with strategy "${strategy}".\n\nThis is a DRY RUN - no actual changes will be made.\n\nProceed?`
       : `⚠️ WARNING: This will ACTUALLY IMPORT data from cloud with strategy "${strategy}".\n\n🔴 THIS IS NOT A DRY RUN - Real changes will be made to your local database!\n\nMake sure you have a backup before proceeding.\n\nProceed?`;
     
-    if (!confirm(confirmMsg)) {
-      return;
-    }
-    
-    executeJobEnqueue(connectionId, jobType, dryRun, details);
+    showConfirmation(title, message, () => executeJobEnqueue(request.connectionId, request.jobType, request.dryRun, details));
   };
   
   const handleStrategyCancel = () => {
     setShowStrategyDialog(false);
     setPendingJobRequest(null);
     setSelectedStrategy('merge'); // Reset to default
+  };
+  
+  const showConfirmation = (title: string, message: string, onConfirm: () => void) => {
+    setConfirmDialogData({ title, message, onConfirm });
+    setShowConfirmDialog(true);
+  };
+  
+  const handleConfirmDialogConfirm = () => {
+    setShowConfirmDialog(false);
+    if (confirmDialogData?.onConfirm) {
+      confirmDialogData.onConfirm();
+    }
+    setConfirmDialogData(null);
+  };
+  
+  const handleConfirmDialogCancel = () => {
+    setShowConfirmDialog(false);
+    setConfirmDialogData(null);
   };
 
   const processNextJob = async () => {
@@ -1020,6 +1037,26 @@ export default function Admin() {
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* Confirmation Dialog */}
+      <Dialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{confirmDialogData?.title || 'Confirm Action'}</DialogTitle>
+            <DialogDescription className="whitespace-pre-line">
+              {confirmDialogData?.message || ''}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={handleConfirmDialogCancel}>
+              Cancel
+            </Button>
+            <Button onClick={handleConfirmDialogConfirm}>
+              Continue
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Strategy Selection Dialog */}
       <Dialog open={showStrategyDialog} onOpenChange={setShowStrategyDialog}>
