@@ -371,10 +371,10 @@ export default function CustomerStatement() {
 
   const customerName = allSales[0]?.customerName || "Customer"
 
-  // Calculate returns per sale
+  // Calculate returns per sale (only credit returns affect balance)
   const getSaleReturns = (saleId: string): number => {
     return customerReturns
-      .filter(ret => ret.saleId === saleId)
+      .filter(ret => ret.saleId === saleId && ret.refundMethod === 'credit')
       .reduce((sum, ret) => sum + safeParseFloat(ret.totalRefund), 0)
   }
 
@@ -404,10 +404,19 @@ export default function CustomerStatement() {
     const totalPaid = allSales.reduce((sum, s) => sum + safeParseFloat(s.amountPaid), 0)
     const totalPaymentsReceived = paymentHistory.reduce((sum, p) => sum + safeParseFloat(p.amount), 0)
     
-    // Calculate total return credits (refunds reduce outstanding balance)
-    const totalReturnCredits = customerReturns.reduce((sum, r) => sum + safeParseFloat(r.totalRefund), 0)
+    // Calculate total return credits (ONLY credit refunds reduce outstanding balance, NOT cash refunds)
+    // Cash refunds: customer already got the money, doesn't affect their account balance
+    // Credit refunds: credited to customer account, reduces their outstanding balance
+    const totalReturnCredits = customerReturns
+      .filter(r => r.refundMethod === 'credit')
+      .reduce((sum, r) => sum + safeParseFloat(r.totalRefund), 0)
     
-    // Outstanding = Bills - Payments - Returns (can be negative for credit/advance)
+    // Total cash returns (for display purposes only, doesn't affect balance)
+    const totalCashReturns = customerReturns
+      .filter(r => r.refundMethod === 'cash')
+      .reduce((sum, r) => sum + safeParseFloat(r.totalRefund), 0)
+    
+    // Outstanding = Bills - Payments - Credit Returns (can be negative for credit/advance)
     // Negative value means customer has credit/advance balance
     const totalOutstanding = roundNumber(totalPurchases - totalPaid - totalReturnCredits)
     const hasCredit = totalOutstanding < 0
@@ -425,6 +434,7 @@ export default function CustomerStatement() {
       hasCredit,
       totalPaymentsReceived: roundNumber(totalPaymentsReceived),
       totalReturnCredits: roundNumber(totalReturnCredits),
+      totalCashReturns: roundNumber(totalCashReturns),
       totalReturns: customerReturns.length,
     }
   }, [allSales, paidSales, unpaidSales, paymentHistory, customerReturns])
@@ -508,9 +518,11 @@ export default function CustomerStatement() {
       saleId: payment.saleId,
     }))
 
-    // Collect all returns as transactions (refunds reduce balance)
+    // Collect all returns as transactions
+    // IMPORTANT: Only CREDIT returns reduce balance, CASH returns don't affect balance
     const returnTransactions: Transaction[] = customerReturns.map((ret) => {
       const refundAmount = safeParseFloat(ret.totalRefund)
+      const isCreditReturn = ret.refundMethod === 'credit'
       const returnItems: SaleItemDisplay[] = ret.returnItems?.map((item: any) => ({
         productName: item.color?.variant?.product?.productName || "Product",
         variantName: item.color?.variant?.packingSize || "Variant",
@@ -522,18 +534,20 @@ export default function CustomerStatement() {
       })) || []
 
       const returnMethod = ret.returnType === "bill" ? "Full Bill Return" : "Item Return"
+      const refundMethodText = isCreditReturn ? " (Credit to Account)" : " (Cash Refund)"
       const reasonText = ret.reason ? ` - ${ret.reason}` : ""
 
       return {
         id: `return-${ret.id}`,
         date: safeParseDate(ret.createdAt),
         type: "return" as TransactionType,
-        description: `${returnMethod}${reasonText}`,
+        description: `${returnMethod}${refundMethodText}${reasonText}`,
         reference: `RET-${ret.id.slice(0, 6).toUpperCase()}`,
         debit: 0,
-        credit: refundAmount,
+        // Only credit returns reduce the balance
+        credit: isCreditReturn ? refundAmount : 0,
         balance: 0,
-        paid: refundAmount,
+        paid: refundAmount, // Still show the refund amount for display
         totalAmount: 0,
         outstanding: 0,
         notes: ret.reason || undefined,
@@ -769,9 +783,12 @@ export default function CustomerStatement() {
     const summaryData = [
       ["Total Bills:", stats.totalBills.toString(), "Total Purchases:", `Rs. ${stats.totalPurchases.toLocaleString()}`],
       ["Paid Bills:", stats.paidBills.toString(), "Total Paid:", `Rs. ${stats.totalPaid.toLocaleString()}`],
-      ["Unpaid Bills:", stats.unpaidBills.toString(), "Total Returns:", `Rs. ${stats.totalReturnCredits.toLocaleString()}`],
-      ["Total Returns:", stats.totalReturns.toString(), balanceLabel, balanceValue],
+      ["Unpaid Bills:", stats.unpaidBills.toString(), "Credit Returns:", `Rs. ${stats.totalReturnCredits.toLocaleString()}`],
+      ["Total Returns:", stats.totalReturns.toString(), "Cash Returns:", `Rs. ${stats.totalCashReturns.toLocaleString()}`],
     ]
+    
+    // Add balance row separately for clarity
+    summaryData.push(["", "", balanceLabel, balanceValue])
 
     pdf.setFontSize(9)
     summaryData.forEach((row) => {
@@ -1173,7 +1190,8 @@ ${receiptSettings.businessName}
 Total Bills: ${stats.totalBills}
 Total Purchases: Rs. ${stats.totalPurchases.toLocaleString()}
 Total Paid: Rs. ${stats.totalPaid.toLocaleString()}
-Total Returns: Rs. ${stats.totalReturnCredits.toLocaleString()}
+Credit Returns: Rs. ${stats.totalReturnCredits.toLocaleString()}
+Cash Returns: Rs. ${stats.totalCashReturns.toLocaleString()}
 
 *${balanceLabel}: Rs. ${Math.round(displayBalance).toLocaleString()}*
 
@@ -1400,7 +1418,7 @@ Thank you for your business!`
         </div>
 
         {/* Returns Summary Card */}
-        {stats.totalReturnCredits > 0 && (
+        {stats.totalReturns > 0 && (
           <div className="mb-6">
             <Card className="border-0 shadow-lg bg-orange-50/50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800 rounded-xl">
               <CardContent className="p-4">
@@ -1417,13 +1435,28 @@ Thank you for your business!`
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm font-medium text-orange-600 dark:text-orange-400">Return Credits</p>
-                    <p className="text-2xl font-bold text-orange-700 dark:text-orange-300">
-                      Rs. {Math.round(stats.totalReturnCredits).toLocaleString()}
-                    </p>
-                    <p className="text-xs text-orange-600/70 dark:text-orange-400/70">
-                      Deducted from outstanding balance
-                    </p>
+                    {stats.totalReturnCredits > 0 && (
+                      <div className="mb-2">
+                        <p className="text-xs font-medium text-green-600 dark:text-green-400">Credit Returns</p>
+                        <p className="text-lg font-bold text-green-700 dark:text-green-300">
+                          Rs. {Math.round(stats.totalReturnCredits).toLocaleString()}
+                        </p>
+                        <p className="text-xs text-green-600/70 dark:text-green-400/70">
+                          Deducted from balance
+                        </p>
+                      </div>
+                    )}
+                    {stats.totalCashReturns > 0 && (
+                      <div>
+                        <p className="text-xs font-medium text-orange-600 dark:text-orange-400">Cash Returns</p>
+                        <p className="text-lg font-bold text-orange-700 dark:text-orange-300">
+                          Rs. {Math.round(stats.totalCashReturns).toLocaleString()}
+                        </p>
+                        <p className="text-xs text-orange-600/70 dark:text-orange-400/70">
+                          Cash refunded
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
               </CardContent>
@@ -1804,9 +1837,18 @@ Thank you for your business!`
                   </div>
                   Return History
                   {customerReturns.length > 0 && (
-                    <Badge variant="outline" className="ml-2 border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
-                      Total: Rs. {Math.round(stats.totalReturnCredits).toLocaleString()}
-                    </Badge>
+                    <>
+                      {stats.totalReturnCredits > 0 && (
+                        <Badge variant="outline" className="ml-2 border-green-300 bg-green-50 text-green-700 dark:border-green-700 dark:bg-green-900/30 dark:text-green-400">
+                          Credit: Rs. {Math.round(stats.totalReturnCredits).toLocaleString()}
+                        </Badge>
+                      )}
+                      {stats.totalCashReturns > 0 && (
+                        <Badge variant="outline" className="ml-2 border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
+                          Cash: Rs. {Math.round(stats.totalCashReturns).toLocaleString()}
+                        </Badge>
+                      )}
+                    </>
                   )}
                 </CardTitle>
               </CardHeader>
@@ -1845,9 +1887,17 @@ Thank you for your business!`
                                 <p className="font-semibold text-slate-800 dark:text-white">
                                   {ret.returnType === "bill" ? "Full Bill Return" : "Item Return"}
                                 </p>
-                                <Badge variant="outline" className="border-orange-300 bg-orange-100 text-orange-700 dark:border-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
-                                  REFUND
-                                </Badge>
+                                {(() => {
+                                  const isCreditReturn = ret.refundMethod === 'credit'
+                                  const badgeClassName = isCreditReturn
+                                    ? "border-green-300 bg-green-100 text-green-700 dark:border-green-700 dark:bg-green-900/30 dark:text-green-400"
+                                    : "border-orange-300 bg-orange-100 text-orange-700 dark:border-orange-700 dark:bg-orange-900/30 dark:text-orange-400"
+                                  return (
+                                    <Badge variant="outline" className={badgeClassName}>
+                                      {isCreditReturn ? 'CREDIT' : 'CASH'}
+                                    </Badge>
+                                  )
+                                })()}
                               </div>
                               <p className="text-sm text-slate-500 dark:text-slate-400 font-mono mt-0.5">
                                 {formatDateShort(ret.createdAt)}
@@ -1871,7 +1921,7 @@ Thank you for your business!`
                                 Rs. {Math.round(refundAmount).toLocaleString()}
                               </p>
                               <p className="text-xs text-orange-600/80 dark:text-orange-400/80 mt-0.5">
-                                Deducted from bill balance
+                                {ret.refundMethod === 'credit' ? 'Credited to account' : 'Cash refunded'}
                               </p>
                             </div>
                             {ret.saleId && (

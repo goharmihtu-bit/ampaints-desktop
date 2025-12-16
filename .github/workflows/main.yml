@@ -23,6 +23,18 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Cache electron-builder
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+            ~/AppData/Local/electron/Cache
+            ~/AppData/Local/electron-builder/Cache
+          key: ${{ runner.os }}-electron-builder-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-electron-builder-
+
       - name: Install dependencies
         run: npm install
 
@@ -32,8 +44,13 @@ jobs:
       - name: Build Electron files
         run: node build-electron.js
 
-      - name: Package Windows installer
-        run: npx electron-builder --win --x64
+      - name: Package Windows installer (with retry)
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 30
+          max_attempts: 3
+          retry_wait_seconds: 60
+          command: npx electron-builder --win --x64
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
 
