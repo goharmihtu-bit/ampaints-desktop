@@ -2100,7 +2100,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/license/set-master-pin", requirePerm("payment:edit"), async (req, res) => {
     try {
       const { currentPin, newPin } = req.body
+      const clientIp = req.ip || req.socket.remoteAddress
+      
+      // Security: Reject requests without valid IP
+      if (!clientIp) {
+        console.log("[Admin PIN] Set PIN request rejected - no valid IP address")
+        return res.status(400).json({ ok: false, error: "Unable to verify request origin" })
+      }
+      
       if (!newPin) return res.status(400).json({ ok: false, error: "newPin required" })
+
+      // Apply rate limiting to PIN change operations as well
+      const rateLimit = checkPinRateLimit(clientIp)
+      if (!rateLimit.allowed) {
+        console.log(`[Admin PIN] Set PIN rate limit exceeded for ${clientIp} - locked out for ${rateLimit.lockoutTime} minutes`)
+        return res.status(429).json({ 
+          ok: false, 
+          error: `Too many attempts. Please wait ${rateLimit.lockoutTime} minutes before trying again.`
+        })
+      }
 
       console.log("[Admin PIN] Attempting to change master PIN")
 
@@ -2142,6 +2160,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const derived = crypto.scryptSync(newPin, salt, 64)
       await storage.updateSettings({ masterPinHash: derived.toString('hex'), masterPinSalt: salt.toString('hex') })
       invalidateCache("settings")
+      
+      // Success - reset rate limit for this IP
+      resetPinAttempts(clientIp)
       console.log("[Admin PIN] Master PIN changed successfully")
       res.json({ ok: true })
     } catch (err: any) {
