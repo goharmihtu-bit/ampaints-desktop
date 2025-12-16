@@ -87,13 +87,18 @@ export default function StockHistory() {
   const { formatDateShort } = useDateFormat();
   const { canDeleteStockHistory } = usePermissions();
 
+  const getTodayString = () => {
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  };
+
   const [visibleLimit, setVisibleLimit] = useState(VISIBLE_LIMIT_INITIAL);
   const [companyFilter, setCompanyFilter] = useState("all");
   const [productFilter, setProductFilter] = useState("all");
   const [dateFilter, setDateFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  const [startDate, setStartDate] = useState(getTodayString());
+  const [endDate, setEndDate] = useState(getTodayString());
   const [editingHistory, setEditingHistory] = useState<StockInHistory | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
 
