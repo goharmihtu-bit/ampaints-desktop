@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,7 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Settings2, Receipt, Bluetooth, Printer, Database, Download, Upload, FolderOpen, Palette, CalendarDays, Check, Lock, Eye, EyeOff, ShieldCheck, Key, Calendar, AlertCircle, Zap } from "lucide-react";
+import { Settings2, Receipt, Bluetooth, Printer, Database, Download, Upload, FolderOpen, Palette, CalendarDays, Check, Lock, Eye, EyeOff, ShieldCheck } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -49,29 +48,9 @@ const dateFormats: { value: DateFormatType; label: string; description: string; 
 export default function Settings() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [cloudConn, setCloudConn] = useState("")
-  const [isTesting, setIsTesting] = useState(false)
-  const [testResult, setTestResult] = useState<{ ok: boolean; error?: string } | null>(null)
-  const [isSaving, setIsSaving] = useState(false)
-  const [connections, setConnections] = useState<any[]>([])
-  const [connectionsLoading, setConnectionsLoading] = useState(false)
-  
-  // License settings state
-  const [licenseExpiryDate, setLicenseExpiryDate] = useState<string>("");
-  const [licenseStatus, setLicenseStatus] = useState<"active" | "expired">("active");
-  const [isLicenseActive, setIsLicenseActive] = useState(true);
-  const [showSecretKeyInput, setShowSecretKeyInput] = useState(false);
-  const [secretKeyInput, setSecretKeyInput] = useState("");
-  const [secretKeyVisible, setSecretKeyVisible] = useState(false);
-  const [isSettingLicense, setIsSettingLicense] = useState(false);
 
   const { data: uiSettings, isLoading: isLoadingSettings } = useQuery<UISettings>({
     queryKey: ["/api/settings"],
-  });
-
-  const { data: licenseData, isLoading: isLoadingLicense } = useQuery({
-    queryKey: ["/api/license/status"],
-    refetchInterval: 60000, // Refetch every minute
   });
 
   const [uiFormData, setUiFormData] = useState<UpdateSettings>({
@@ -95,116 +74,6 @@ export default function Settings() {
         showStockBadgeBorder: uiSettings.showStockBadgeBorder,
         dateFormat: uiSettings.dateFormat || "DD-MM-YYYY",
       });
-    }
-
-    const handleSaveCloudConnection = async () => {
-      if (!cloudConn) return
-      setIsSaving(true)
-      try {
-        const res = await apiRequest("POST", "/api/cloud-sync/connections", { provider: "neon", label: "Neon", connectionString: cloudConn })
-        const json = await res.json()
-        if (res.ok && json.ok) {
-          toast({ title: "Saved", description: "Connection saved securely on server." })
-          setCloudConn("")
-          loadCloudConnections()
-        } else {
-          toast({ title: "Save failed", description: json.error || "Unable to save", variant: "destructive" })
-        }
-      } catch (err: any) {
-        toast({ title: "Error", description: err.message || String(err), variant: "destructive" })
-      } finally {
-        setIsSaving(false)
-      }
-    }
-
-    const loadCloudConnections = async () => {
-      setConnectionsLoading(true)
-      try {
-        const res = await apiRequest("GET", "/api/cloud-sync/connections")
-        const json = await res.json()
-        if (res.ok && json.ok) {
-          setConnections(json.connections || [])
-        }
-      } catch (err) {
-        console.error("Error loading connections", err)
-      } finally {
-        setConnectionsLoading(false)
-      }
-    }
-
-    useEffect(() => {
-      loadCloudConnections()
-    }, [])
-
-    const [jobs, setJobs] = useState<any[]>([])
-    const [jobsLoading, setJobsLoading] = useState(false)
-
-    const loadJobs = async () => {
-      setJobsLoading(true)
-      try {
-        const res = await apiRequest("GET", "/api/cloud-sync/jobs")
-        const json = await res.json()
-        if (res.ok && json.ok) setJobs(json.jobs || [])
-      } catch (err) {
-        console.error("Error loading jobs", err)
-      } finally {
-        setJobsLoading(false)
-      }
-    }
-
-    const processNextJob = async () => {
-      try {
-        const res = await apiRequest("POST", "/api/cloud-sync/process-next")
-        const json = await res.json()
-        if (res.ok && json.ok) {
-          toast({ title: "Job processed", description: json.result?.status || "Processed" })
-          loadJobs()
-        } else {
-          toast({ title: "Error", description: json.error || "Failed to process job", variant: "destructive" })
-        }
-      } catch (err: any) {
-        toast({ title: "Error", description: err.message || String(err), variant: "destructive" })
-      }
-    }
-
-    const deleteConnection = async (id: string) => {
-      if (!confirm("Delete this connection?")) return
-      try {
-        const res = await apiRequest("DELETE", `/api/cloud-sync/connections/${id}`)
-        const json = await res.json()
-        if (res.ok && json.ok) {
-          toast({ title: "Deleted", description: "Connection removed" })
-          loadCloudConnections()
-        } else {
-          toast({ title: "Error", description: json.error || "Failed to delete", variant: "destructive" })
-        }
-      } catch (err: any) {
-        toast({ title: "Error", description: err.message || String(err), variant: "destructive" })
-      }
-    }
-
-    const enqueueJob = async (connectionId: string, jobType: "export" | "import") => {
-      try {
-        let details = undefined
-        if (jobType === 'import') {
-          const strategy = prompt("Import strategy (skip, overwrite, merge). Default: merge", "merge") || "merge"
-          if (!["skip","overwrite","merge"].includes(strategy)) {
-            toast({ title: "Cancelled", description: "Invalid strategy selected", variant: "destructive" })
-            return
-          }
-          details = { strategy }
-        }
-
-        const res = await apiRequest("POST", "/api/cloud-sync/jobs", { connectionId, jobType, dryRun: true, details })
-        const json = await res.json()
-        if (res.ok && json.ok) {
-          toast({ title: "Job Enqueued", description: `Job ${json.jobId} created (dry-run)` })
-        } else {
-          toast({ title: "Error", description: json.error || "Failed to enqueue", variant: "destructive" })
-        }
-      } catch (err: any) {
-        toast({ title: "Error", description: err.message || String(err), variant: "destructive" })
-      }
     }
   }, [uiSettings]);
 
@@ -233,16 +102,103 @@ export default function Settings() {
       });
     },
   });
+
+  // Receipt settings state
+  const [receiptBusinessName, setReceiptBusinessName] = useState("ALI MUHAMMAD PAINTS");
+  const [receiptAddress, setReceiptAddress] = useState("Basti Malook, Multan. 0300-868-3395");
+  const [receiptDealerText, setReceiptDealerText] = useState("AUTHORIZED DEALER:");
+  const [receiptDealerBrands, setReceiptDealerBrands] = useState("ICI-DULUX • MOBI PAINTS • WESTER 77");
+  const [receiptThankYou, setReceiptThankYou] = useState("THANKS FOR YOUR BUSINESS");
+  const [receiptFontSize, setReceiptFontSize] = useState("11");
+  const [receiptItemFontSize, setReceiptItemFontSize] = useState("12");
+  const [receiptPadding, setReceiptPadding] = useState("12");
+
+  // Printer settings state
+  const [bluetoothEnabled, setBluetoothEnabled] = useState(false);
+  const [connectedDevice, setConnectedDevice] = useState<string | null>(null);
   
+  // Database settings state
   const [databasePath, setDatabasePath] = useState<string>("");
   const [isElectron, setIsElectron] = useState(false);
-
   const [isDatabaseUnlocked, setIsDatabaseUnlocked] = useState(false);
   const [showDatabasePinDialog, setShowDatabasePinDialog] = useState(false);
   const [databasePinInput, setDatabasePinInput] = useState(["", "", "", ""]);
   const [databasePinError, setDatabasePinError] = useState("");
   const [showDatabasePin, setShowDatabasePin] = useState(false);
   const [isVerifyingPin, setIsVerifyingPin] = useState(false);
+
+  // Bill display settings
+  const [showCompanyName, setShowCompanyName] = useState(true);
+  const [showGST, setShowGST] = useState(true);
+  const [autoprint, setAutoprint] = useState(false);
+  const [billFooter, setBillFooter] = useState("Thank you for your business!");
+
+  // Load receipt settings from localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined' && (window as any).electron) {
+      setIsElectron(true);
+      (window as any).electron.getDatabasePath().then((path: string) => {
+        setDatabasePath(path);
+      });
+    }
+    
+    try {
+      const savedReceiptSettings = localStorage.getItem('posReceiptSettings');
+      if (savedReceiptSettings) {
+        const settings = JSON.parse(savedReceiptSettings);
+        setReceiptBusinessName(settings.businessName || "ALI MUHAMMAD PAINTS");
+        setReceiptAddress(settings.address || "Basti Malook, Multan. 0300-868-3395");
+        setReceiptDealerText(settings.dealerText || "AUTHORIZED DEALER:");
+        setReceiptDealerBrands(settings.dealerBrands || "ICI-DULUX • MOBI PAINTS • WESTER 77");
+        setReceiptThankYou(settings.thankYou || "THANKS FOR YOUR BUSINESS");
+        setReceiptFontSize(settings.fontSize || "11");
+        setReceiptItemFontSize(settings.itemFontSize || "12");
+        setReceiptPadding(settings.padding || "12");
+      }
+    } catch (error) {
+      console.error("Error loading receipt settings:", error);
+    }
+  }, []);
+
+  const handleSaveBillSettings = () => {
+    const receiptSettings = {
+      businessName: receiptBusinessName,
+      address: receiptAddress,
+      dealerText: receiptDealerText,
+      dealerBrands: receiptDealerBrands,
+      thankYou: receiptThankYou,
+      fontSize: receiptFontSize,
+      itemFontSize: receiptItemFontSize,
+      padding: receiptPadding,
+    };
+    localStorage.setItem('posReceiptSettings', JSON.stringify(receiptSettings));
+    toast({ title: "Receipt settings saved successfully" });
+  };
+
+  const handleConnectBluetooth = async () => {
+    try {
+      const device = await (navigator as any).bluetooth.requestDevice({
+        acceptAllDevices: true,
+        optionalServices: ['battery_service']
+      });
+      
+      setConnectedDevice(device.name);
+      setBluetoothEnabled(true);
+      toast({ title: `Connected to ${device.name}` });
+    } catch (error) {
+      toast({ 
+        title: "Bluetooth connection failed", 
+        description: "Make sure Bluetooth is enabled and the device is in pairing mode",
+        variant: "destructive" 
+      });
+    }
+  };
+
+  const handleDisconnectBluetooth = () => {
+    setConnectedDevice(null);
+    setBluetoothEnabled(false);
+    toast({ title: "Bluetooth disconnected" });
+  };
 
   const handleDatabaseTabClick = () => {
     if (!uiSettings?.permDatabaseAccess) {
@@ -326,63 +282,6 @@ export default function Settings() {
     }
   }, []);
 
-  const [showCompanyName, setShowCompanyName] = useState(true);
-  const [showGST, setShowGST] = useState(true);
-  const [autoprint, setAutoprint] = useState(false);
-  const [billFooter, setBillFooter] = useState("Thank you for your business!");
-  
-  const [receiptBusinessName, setReceiptBusinessName] = useState("ALI MUHAMMAD PAINTS");
-  const [receiptAddress, setReceiptAddress] = useState("Basti Malook, Multan. 0300-868-3395");
-  const [receiptDealerText, setReceiptDealerText] = useState("AUTHORIZED DEALER:");
-  const [receiptDealerBrands, setReceiptDealerBrands] = useState("ICI-DULUX • MOBI PAINTS • WESTER 77");
-  const [receiptThankYou, setReceiptThankYou] = useState("THANKS FOR YOUR BUSINESS");
-  const [receiptFontSize, setReceiptFontSize] = useState("11");
-  const [receiptItemFontSize, setReceiptItemFontSize] = useState("12");
-  const [receiptPadding, setReceiptPadding] = useState("12");
-
-  const [bluetoothEnabled, setBluetoothEnabled] = useState(false);
-  const [connectedDevice, setConnectedDevice] = useState<string | null>(null);
-
-  const handleSaveBillSettings = () => {
-    const receiptSettings = {
-      businessName: receiptBusinessName,
-      address: receiptAddress,
-      dealerText: receiptDealerText,
-      dealerBrands: receiptDealerBrands,
-      thankYou: receiptThankYou,
-      fontSize: receiptFontSize,
-      itemFontSize: receiptItemFontSize,
-      padding: receiptPadding,
-    };
-    localStorage.setItem('posReceiptSettings', JSON.stringify(receiptSettings));
-    toast({ title: "Receipt settings saved successfully" });
-  };
-
-  const handleConnectBluetooth = async () => {
-    try {
-      const device = await (navigator as any).bluetooth.requestDevice({
-        acceptAllDevices: true,
-        optionalServices: ['battery_service']
-      });
-      
-      setConnectedDevice(device.name);
-      setBluetoothEnabled(true);
-      toast({ title: `Connected to ${device.name}` });
-    } catch (error) {
-      toast({ 
-        title: "Bluetooth connection failed", 
-        description: "Make sure Bluetooth is enabled and the device is in pairing mode",
-        variant: "destructive" 
-      });
-    }
-  };
-
-  const handleDisconnectBluetooth = () => {
-    setConnectedDevice(null);
-    setBluetoothEnabled(false);
-    toast({ title: "Bluetooth disconnected" });
-  };
-  
   const handleChangeDatabaseLocation = async () => {
     if (!(window as any).electron) return;
     
@@ -529,156 +428,6 @@ export default function Settings() {
     }
   };
 
-  // License management handlers
-  const handleSetLicenseExpiry = async () => {
-    if (!licenseExpiryDate) {
-      toast({
-        title: "Error",
-        description: "Please select an expiration date",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsSettingLicense(true);
-    try {
-      const response = await fetch("/api/license/set-expiry", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ expiryDate: licenseExpiryDate }),
-      });
-
-      if (response.ok) {
-        toast({
-          title: "Success",
-          description: `License expiry date set to ${licenseExpiryDate}`,
-        });
-        queryClient.invalidateQueries({ queryKey: ["/api/license/status"] });
-      } else {
-        const error = await response.json();
-        toast({
-          title: "Error",
-          description: error.error || "Failed to set license expiry",
-          variant: "destructive",
-        });
-      }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to set license expiry",
-        variant: "destructive",
-      });
-    } finally {
-      setIsSettingLicense(false);
-    }
-  };
-
-  const handleDeactivateLicense = async () => {
-    if (!window.confirm("Are you sure you want to deactivate the license? The software will become unusable.")) {
-      return;
-    }
-
-    setIsSettingLicense(true);
-    try {
-      const response = await fetch("/api/license/deactivate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-
-      if (response.ok) {
-        toast({
-          title: "License Deactivated",
-          description: "The software license has been deactivated.",
-        });
-        setIsLicenseActive(false);
-        queryClient.invalidateQueries({ queryKey: ["/api/license/status"] });
-      } else {
-        const error = await response.json();
-        toast({
-          title: "Error",
-          description: error.error || "Failed to deactivate license",
-          variant: "destructive",
-        });
-      }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to deactivate license",
-        variant: "destructive",
-      });
-    } finally {
-      setIsSettingLicense(false);
-    }
-  };
-
-  const handleActivateLicense = async () => {
-    if (!secretKeyInput.trim()) {
-      toast({
-        title: "Error",
-        description: "Please enter your secret key",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsSettingLicense(true);
-    try {
-      const response = await fetch("/api/license/activate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ secretKey: secretKeyInput }),
-      });
-
-      if (response.ok) {
-        toast({
-          title: "License Activated",
-          description: "Your license has been successfully reactivated!",
-        });
-        setSecretKeyInput("");
-        setShowSecretKeyInput(false);
-        setIsLicenseActive(true);
-        queryClient.invalidateQueries({ queryKey: ["/api/license/status"] });
-      } else {
-        const error = await response.json();
-        toast({
-          title: "Activation Failed",
-          description: error.error || "Invalid secret key",
-          variant: "destructive",
-        });
-      }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to activate license",
-        variant: "destructive",
-      });
-    } finally {
-      setIsSettingLicense(false);
-    }
-  };
-
-  const handleTestCloudConnection = async () => {
-    if (!cloudConn) return;
-    setIsTesting(true);
-    setTestResult(null);
-    try {
-      const res = await apiRequest("POST", "/api/cloud-sync/test-connection", { connectionString: cloudConn });
-      const json = await res.json();
-      if (res.ok && json.ok) {
-        setTestResult({ ok: true });
-        toast({ title: "Connection Successful", description: "Remote Postgres connection validated." });
-      } else {
-        setTestResult({ ok: false, error: json.error || "Connection failed" });
-        toast({ title: "Connection Failed", description: json.error || "Unable to connect", variant: "destructive" });
-      }
-    } catch (err: any) {
-      setTestResult({ ok: false, error: err.message || String(err) });
-      toast({ title: "Connection Error", description: err.message || String(err), variant: "destructive" });
-    } finally {
-      setIsTesting(false);
-    }
-  };
-
   return (
     <div className="glass-page p-6 space-y-6 max-w-5xl">
       <div className="glass-surface p-4">
@@ -689,7 +438,7 @@ export default function Settings() {
       </div>
 
       <Tabs defaultValue="general" className="w-full">
-        <TabsList className="glass-tabs-list grid w-full grid-cols-6">
+        <TabsList className="glass-tabs-list grid w-full grid-cols-5">
           <TabsTrigger value="general" className="glass-tab" data-testid="tab-general-settings">
             <Settings2 className="h-4 w-4 mr-2" />
             General
@@ -706,7 +455,6 @@ export default function Settings() {
             <Printer className="h-4 w-4 mr-2" />
             Printer
           </TabsTrigger>
-
           <TabsTrigger 
             value="database" 
             className="glass-tab"

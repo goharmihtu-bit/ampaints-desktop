@@ -73,17 +73,20 @@ export default function Admin() {
     }
   };
 
-  // ---------- License state & handlers (copied from Settings)
+  // ---------- License state & handlers
   const [licenseExpiryDate, setLicenseExpiryDate] = useState("");
   const [isLicenseActive, setIsLicenseActive] = useState(true);
   const [isSettingLicense, setIsSettingLicense] = useState(false);
 
   const { data: licenseData, isLoading: isLoadingLicense } = useQuery({
     queryKey: ["/api/license/status"],
-    onSuccess: (d: any) => {
-      setIsLicenseActive(d?.active ?? true);
-    }
   });
+
+  useEffect(() => {
+    if (licenseData) {
+      setIsLicenseActive((licenseData as any)?.active ?? true);
+    }
+  }, [licenseData]);
 
   const handleSetLicenseExpiry = async () => {
     if (!licenseExpiryDate) {
