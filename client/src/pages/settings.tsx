@@ -49,12 +49,6 @@ const dateFormats: { value: DateFormatType; label: string; description: string; 
 export default function Settings() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [cloudConn, setCloudConn] = useState("")
-  const [isTesting, setIsTesting] = useState(false)
-  const [testResult, setTestResult] = useState<{ ok: boolean; error?: string } | null>(null)
-  const [isSaving, setIsSaving] = useState(false)
-  const [connections, setConnections] = useState<any[]>([])
-  const [connectionsLoading, setConnectionsLoading] = useState(false)
   
   const { data: uiSettings, isLoading: isLoadingSettings } = useQuery<UISettings>({
     queryKey: ["/api/settings"],
@@ -70,6 +64,39 @@ export default function Settings() {
     dateFormat: "DD-MM-YYYY",
   });
 
+  // Receipt settings state
+  const [receiptBusinessName, setReceiptBusinessName] = useState("ALI MUHAMMAD PAINTS");
+  const [receiptAddress, setReceiptAddress] = useState("Basti Malook, Multan. 0300-868-3395");
+  const [receiptDealerText, setReceiptDealerText] = useState("AUTHORIZED DEALER:");
+  const [receiptDealerBrands, setReceiptDealerBrands] = useState("ICI-DULUX • MOBI PAINTS • WESTER 77");
+  const [receiptThankYou, setReceiptThankYou] = useState("THANKS FOR YOUR BUSINESS");
+  const [receiptFontSize, setReceiptFontSize] = useState("11");
+  const [receiptItemFontSize, setReceiptItemFontSize] = useState("12");
+  const [receiptPadding, setReceiptPadding] = useState("12");
+
+  // Bill display settings state
+  const [showCompanyName, setShowCompanyName] = useState(true);
+  const [showGST, setShowGST] = useState(true);
+  const [autoprint, setAutoprint] = useState(false);
+  const [billFooter, setBillFooter] = useState("Thank you for your business!");
+
+  // Bluetooth printer state
+  const [bluetoothEnabled, setBluetoothEnabled] = useState(false);
+  const [connectedDevice, setConnectedDevice] = useState<string | null>(null);
+
+  // Database management state
+  const [databasePath, setDatabasePath] = useState<string>("");
+  const [isElectron, setIsElectron] = useState(false);
+
+  // Database PIN verification state
+  const [isDatabaseUnlocked, setIsDatabaseUnlocked] = useState(false);
+  const [showDatabasePinDialog, setShowDatabasePinDialog] = useState(false);
+  const [databasePinInput, setDatabasePinInput] = useState(["", "", "", ""]);
+  const [databasePinError, setDatabasePinError] = useState("");
+  const [showDatabasePin, setShowDatabasePin] = useState(false);
+  const [isVerifyingPin, setIsVerifyingPin] = useState(false);
+
+  // Sync form data when settings are loaded
   useEffect(() => {
     if (uiSettings) {
       setUiFormData({
@@ -82,126 +109,61 @@ export default function Settings() {
         dateFormat: uiSettings.dateFormat || "DD-MM-YYYY",
       });
     }
-
-    const handleSaveCloudConnection = async () => {
-      if (!cloudConn) return
-      setIsSaving(true)
-      try {
-        const res = await apiRequest("POST", "/api/cloud-sync/connections", { provider: "neon", label: "Neon", connectionString: cloudConn })
-        const json = await res.json()
-        if (res.ok && json.ok) {
-          toast({ title: "Saved", description: "Connection saved securely on server." })
-          setCloudConn("")
-          loadCloudConnections()
-        } else {
-          toast({ title: "Save failed", description: json.error || "Unable to save", variant: "destructive" })
-        }
-      } catch (err: any) {
-        toast({ title: "Error", description: err.message || String(err), variant: "destructive" })
-      } finally {
-        setIsSaving(false)
-      }
-    }
-
-    const loadCloudConnections = async () => {
-      setConnectionsLoading(true)
-      try {
-        const res = await apiRequest("GET", "/api/cloud-sync/connections")
-        const json = await res.json()
-        if (res.ok && json.ok) {
-          setConnections(json.connections || [])
-        }
-      } catch (err) {
-        console.error("Error loading connections", err)
-      } finally {
-        setConnectionsLoading(false)
-      }
-    }
-
-    useEffect(() => {
-      loadCloudConnections()
-    }, [])
-
-    const [jobs, setJobs] = useState<any[]>([])
-    const [jobsLoading, setJobsLoading] = useState(false)
-
-    const loadJobs = async () => {
-      setJobsLoading(true)
-      try {
-        const res = await apiRequest("GET", "/api/cloud-sync/jobs")
-        const json = await res.json()
-        if (res.ok && json.ok) setJobs(json.jobs || [])
-      } catch (err) {
-        console.error("Error loading jobs", err)
-      } finally {
-        setJobsLoading(false)
-      }
-    }
-
-    const processNextJob = async () => {
-      try {
-        const res = await apiRequest("POST", "/api/cloud-sync/process-next")
-        const json = await res.json()
-        if (res.ok && json.ok) {
-          toast({ title: "Job processed", description: json.result?.status || "Processed" })
-          loadJobs()
-        } else {
-          toast({ title: "Error", description: json.error || "Failed to process job", variant: "destructive" })
-        }
-      } catch (err: any) {
-        toast({ title: "Error", description: err.message || String(err), variant: "destructive" })
-      }
-    }
-
-    const deleteConnection = async (id: string) => {
-      if (!confirm("Delete this connection?")) return
-      try {
-        const res = await apiRequest("DELETE", `/api/cloud-sync/connections/${id}`)
-        const json = await res.json()
-        if (res.ok && json.ok) {
-          toast({ title: "Deleted", description: "Connection removed" })
-          loadCloudConnections()
-        } else {
-          toast({ title: "Error", description: json.error || "Failed to delete", variant: "destructive" })
-        }
-      } catch (err: any) {
-        toast({ title: "Error", description: err.message || String(err), variant: "destructive" })
-      }
-    }
-
-    const enqueueJob = async (connectionId: string, jobType: "export" | "import") => {
-      try {
-        let details = undefined
-        if (jobType === 'import') {
-          const strategy = prompt("Import strategy (skip, overwrite, merge). Default: merge", "merge") || "merge"
-          if (!["skip","overwrite","merge"].includes(strategy)) {
-            toast({ title: "Cancelled", description: "Invalid strategy selected", variant: "destructive" })
-            return
-          }
-          details = { strategy }
-        }
-
-        const res = await apiRequest("POST", "/api/cloud-sync/jobs", { connectionId, jobType, dryRun: true, details })
-        const json = await res.json()
-        if (res.ok && json.ok) {
-          toast({ title: "Job Enqueued", description: `Job ${json.jobId} created (dry-run)` })
-        } else {
-          toast({ title: "Error", description: json.error || "Failed to enqueue", variant: "destructive" })
-        }
-      } catch (err: any) {
-        toast({ title: "Error", description: err.message || String(err), variant: "destructive" })
-      }
-    }
   }, [uiSettings]);
 
+  // Load receipt settings and check for electron
+  useEffect(() => {
+    // Check if running in Electron
+    if (typeof window !== 'undefined' && (window as any).electron) {
+      setIsElectron(true);
+      (window as any).electron.getDatabasePath().then((path: string) => {
+        setDatabasePath(path);
+      }).catch((error: any) => {
+        console.error("Failed to get database path:", error);
+      });
+    }
+
+    // Load receipt settings from localStorage
+    try {
+      const savedReceiptSettings = localStorage.getItem('posReceiptSettings');
+      if (savedReceiptSettings) {
+        const settings = JSON.parse(savedReceiptSettings);
+        setReceiptBusinessName(settings.businessName || "ALI MUHAMMAD PAINTS");
+        setReceiptAddress(settings.address || "Basti Malook, Multan. 0300-868-3395");
+        setReceiptDealerText(settings.dealerText || "AUTHORIZED DEALER:");
+        setReceiptDealerBrands(settings.dealerBrands || "ICI-DULUX • MOBI PAINTS • WESTER 77");
+        setReceiptThankYou(settings.thankYou || "THANKS FOR YOUR BUSINESS");
+        setReceiptFontSize(settings.fontSize || "11");
+        setReceiptItemFontSize(settings.itemFontSize || "12");
+        setReceiptPadding(settings.padding || "12");
+      }
+    } catch (error) {
+      console.error("Error loading receipt settings:", error);
+      toast({
+        title: "Warning",
+        description: "Could not load saved receipt settings",
+        variant: "destructive",
+      });
+    }
+  }, [toast]);
+
+  // UI Settings mutation
   const updateUiMutation = useMutation({
     mutationFn: async (data: UpdateSettings) => {
+      // Validate storeName before sending
+      if (!data.storeName || data.storeName.trim().length === 0) {
+        throw new Error("Store name cannot be empty");
+      }
+
       const response = await fetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
-      if (!response.ok) throw new Error("Failed to update settings");
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ error: "Failed to update settings" }));
+        throw new Error(error.error || "Failed to update settings");
+      }
       return response.json();
     },
     onSuccess: () => {
@@ -211,25 +173,16 @@ export default function Settings() {
         description: "Your settings have been updated successfully.",
       });
     },
-    onError: () => {
+    onError: (error: Error) => {
       toast({
         title: "Error",
-        description: "Failed to save settings. Please try again.",
+        description: error.message || "Failed to save settings. Please try again.",
         variant: "destructive",
       });
     },
   });
-  
-  const [databasePath, setDatabasePath] = useState<string>("");
-  const [isElectron, setIsElectron] = useState(false);
 
-  const [isDatabaseUnlocked, setIsDatabaseUnlocked] = useState(false);
-  const [showDatabasePinDialog, setShowDatabasePinDialog] = useState(false);
-  const [databasePinInput, setDatabasePinInput] = useState(["", "", "", ""]);
-  const [databasePinError, setDatabasePinError] = useState("");
-  const [showDatabasePin, setShowDatabasePin] = useState(false);
-  const [isVerifyingPin, setIsVerifyingPin] = useState(false);
-
+  // Database tab click handler
   const handleDatabaseTabClick = () => {
     if (!uiSettings?.permDatabaseAccess) {
       toast({
@@ -264,6 +217,15 @@ export default function Settings() {
   };
 
   const verifyDatabasePin = async (pin: string) => {
+    // Validate PIN format
+    if (!/^\d{4}$/.test(pin)) {
+      setDatabasePinError("PIN must be 4 digits");
+      setDatabasePinInput(["", "", "", ""]);
+      const firstInput = document.querySelector('[data-testid="input-db-pin-0"]') as HTMLInputElement;
+      firstInput?.focus();
+      return;
+    }
+
     setIsVerifyingPin(true);
     try {
       const response = await apiRequest("POST", "/api/audit/verify", { pin });
@@ -271,10 +233,13 @@ export default function Settings() {
         setIsDatabaseUnlocked(true);
         setShowDatabasePinDialog(false);
         setDatabasePinInput(["", "", "", ""]);
+        setDatabasePinError("");
         toast({
           title: "Database Unlocked",
           description: "You can now access database management.",
         });
+      } else {
+        throw new Error("Invalid PIN");
       }
     } catch (error) {
       setDatabasePinError("Invalid PIN. Please try again.");
@@ -285,92 +250,143 @@ export default function Settings() {
       setIsVerifyingPin(false);
     }
   };
-  
-  useEffect(() => {
-    if (typeof window !== 'undefined' && (window as any).electron) {
-      setIsElectron(true);
-      (window as any).electron.getDatabasePath().then((path: string) => {
-        setDatabasePath(path);
+
+  // Handler to save receipt settings with validation
+  const handleSaveBillSettings = () => {
+    try {
+      // Validate font sizes
+      const fontSize = parseInt(receiptFontSize);
+      const itemFontSize = parseInt(receiptItemFontSize);
+      const padding = parseInt(receiptPadding);
+
+      if (isNaN(fontSize) || fontSize < 8 || fontSize > 16) {
+        toast({ 
+          title: "Invalid Font Size", 
+          description: "General font size must be between 8 and 16 pixels",
+          variant: "destructive" 
+        });
+        return;
+      }
+
+      if (isNaN(itemFontSize) || itemFontSize < 10 || itemFontSize > 18) {
+        toast({ 
+          title: "Invalid Font Size", 
+          description: "Item font size must be between 10 and 18 pixels",
+          variant: "destructive" 
+        });
+        return;
+      }
+
+      if (isNaN(padding) || padding < 0 || padding > 20) {
+        toast({ 
+          title: "Invalid Padding", 
+          description: "Padding must be between 0 and 20 pixels",
+          variant: "destructive" 
+        });
+        return;
+      }
+
+      // Validate required fields
+      if (!receiptBusinessName.trim()) {
+        toast({ 
+          title: "Invalid Input", 
+          description: "Business name cannot be empty",
+          variant: "destructive" 
+        });
+        return;
+      }
+    
+      const receiptSettings = {
+        businessName: receiptBusinessName.trim(),
+        address: receiptAddress.trim(),
+        dealerText: receiptDealerText.trim(),
+        dealerBrands: receiptDealerBrands.trim(),
+        thankYou: receiptThankYou.trim(),
+        fontSize: receiptFontSize,
+        itemFontSize: receiptItemFontSize,
+        padding: receiptPadding,
+      };
+      
+      localStorage.setItem('posReceiptSettings', JSON.stringify(receiptSettings));
+      toast({ 
+        title: "Success",
+        description: "Receipt settings saved successfully" 
+      });
+    } catch (error) {
+      console.error("Error saving receipt settings:", error);
+      toast({ 
+        title: "Error", 
+        description: "Failed to save receipt settings",
+        variant: "destructive" 
       });
     }
-    
-    try {
-      const savedReceiptSettings = localStorage.getItem('posReceiptSettings');
-      if (savedReceiptSettings) {
-        const settings = JSON.parse(savedReceiptSettings);
-        setReceiptBusinessName(settings.businessName || "ALI MUHAMMAD PAINTS");
-        setReceiptAddress(settings.address || "Basti Malook, Multan. 0300-868-3395");
-        setReceiptDealerText(settings.dealerText || "AUTHORIZED DEALER:");
-        setReceiptDealerBrands(settings.dealerBrands || "ICI-DULUX • MOBI PAINTS • WESTER 77");
-        setReceiptThankYou(settings.thankYou || "THANKS FOR YOUR BUSINESS");
-        setReceiptFontSize(settings.fontSize || "11");
-        setReceiptItemFontSize(settings.itemFontSize || "12");
-        setReceiptPadding(settings.padding || "12");
-      }
-    } catch (error) {
-      console.error("Error loading receipt settings:", error);
-    }
-  }, []);
-
-  const [showCompanyName, setShowCompanyName] = useState(true);
-  const [showGST, setShowGST] = useState(true);
-  const [autoprint, setAutoprint] = useState(false);
-  const [billFooter, setBillFooter] = useState("Thank you for your business!");
-  
-  const [receiptBusinessName, setReceiptBusinessName] = useState("ALI MUHAMMAD PAINTS");
-  const [receiptAddress, setReceiptAddress] = useState("Basti Malook, Multan. 0300-868-3395");
-  const [receiptDealerText, setReceiptDealerText] = useState("AUTHORIZED DEALER:");
-  const [receiptDealerBrands, setReceiptDealerBrands] = useState("ICI-DULUX • MOBI PAINTS • WESTER 77");
-  const [receiptThankYou, setReceiptThankYou] = useState("THANKS FOR YOUR BUSINESS");
-  const [receiptFontSize, setReceiptFontSize] = useState("11");
-  const [receiptItemFontSize, setReceiptItemFontSize] = useState("12");
-  const [receiptPadding, setReceiptPadding] = useState("12");
-
-  const [bluetoothEnabled, setBluetoothEnabled] = useState(false);
-  const [connectedDevice, setConnectedDevice] = useState<string | null>(null);
-
-  const handleSaveBillSettings = () => {
-    const receiptSettings = {
-      businessName: receiptBusinessName,
-      address: receiptAddress,
-      dealerText: receiptDealerText,
-      dealerBrands: receiptDealerBrands,
-      thankYou: receiptThankYou,
-      fontSize: receiptFontSize,
-      itemFontSize: receiptItemFontSize,
-      padding: receiptPadding,
-    };
-    localStorage.setItem('posReceiptSettings', JSON.stringify(receiptSettings));
-    toast({ title: "Receipt settings saved successfully" });
   };
 
+  // Bluetooth handlers
   const handleConnectBluetooth = async () => {
     try {
+      // Check if Bluetooth API is available
+      if (!navigator.bluetooth) {
+        toast({ 
+          title: "Bluetooth Not Available", 
+          description: "Your browser doesn't support Bluetooth. Use Chrome or Edge.",
+          variant: "destructive" 
+        });
+        return;
+      }
+
       const device = await (navigator as any).bluetooth.requestDevice({
         acceptAllDevices: true,
         optionalServices: ['battery_service']
       });
       
-      setConnectedDevice(device.name);
-      setBluetoothEnabled(true);
-      toast({ title: `Connected to ${device.name}` });
-    } catch (error) {
-      toast({ 
-        title: "Bluetooth connection failed", 
-        description: "Make sure Bluetooth is enabled and the device is in pairing mode",
-        variant: "destructive" 
-      });
+      if (device && device.name) {
+        setConnectedDevice(device.name);
+        setBluetoothEnabled(true);
+        toast({ 
+          title: "Connected Successfully",
+          description: `Connected to ${device.name}` 
+        });
+      }
+    } catch (error: any) {
+      console.error("Bluetooth connection error:", error);
+      
+      // Handle user cancellation gracefully
+      if (error.name === 'NotFoundError') {
+        toast({ 
+          title: "No Device Selected", 
+          description: "Please select a device from the list",
+          variant: "destructive" 
+        });
+      } else {
+        toast({ 
+          title: "Bluetooth Connection Failed", 
+          description: "Make sure Bluetooth is enabled and the device is in pairing mode",
+          variant: "destructive" 
+        });
+      }
     }
   };
 
   const handleDisconnectBluetooth = () => {
     setConnectedDevice(null);
     setBluetoothEnabled(false);
-    toast({ title: "Bluetooth disconnected" });
+    toast({ 
+      title: "Disconnected",
+      description: "Bluetooth printer disconnected" 
+    });
   };
   
+  // Database management handlers
   const handleChangeDatabaseLocation = async () => {
-    if (!(window as any).electron) return;
+    if (!(window as any).electron) {
+      toast({
+        title: "Not Available",
+        description: "This feature is only available in the desktop application.",
+        variant: "destructive",
+      });
+      return;
+    }
     
     try {
       const newPath = await (window as any).electron.selectDatabaseLocation();
@@ -380,10 +396,11 @@ export default function Settings() {
           description: "Application will restart to apply changes.",
         });
       }
-    } catch (error) {
+    } catch (error: any) {
+      console.error("Database location change error:", error);
       toast({
         title: "Error",
-        description: "Failed to change database location.",
+        description: error.message || "Failed to change database location.",
         variant: "destructive",
       });
     }
@@ -393,29 +410,33 @@ export default function Settings() {
     if ((window as any).electron) {
       try {
         const result = await (window as any).electron.exportDatabase();
-        if (result.success) {
+        if (result && result.success) {
           toast({
             title: "Export Successful",
-            description: `Database exported successfully!`,
+            description: "Database exported successfully!",
           });
         } else {
           toast({
             title: "Export Failed",
-            description: result.error || "Unknown error occurred",
+            description: result?.error || "Unknown error occurred",
             variant: "destructive",
           });
         }
-      } catch (error) {
+      } catch (error: any) {
+        console.error("Database export error:", error);
         toast({
           title: "Error",
-          description: "Failed to export database.",
+          description: error.message || "Failed to export database.",
           variant: "destructive",
         });
       }
     } else {
       try {
         const response = await fetch("/api/database/export");
-        if (!response.ok) throw new Error("Export failed");
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: "Export failed" }));
+          throw new Error(errorData.error || "Export failed");
+        }
         
         const blob = await response.blob();
         const url = window.URL.createObjectURL(blob);
@@ -431,10 +452,11 @@ export default function Settings() {
           title: "Export Successful",
           description: "Database backup downloaded successfully!",
         });
-      } catch (error) {
+      } catch (error: any) {
+        console.error("Database export error:", error);
         toast({
           title: "Error",
-          description: "Failed to export database.",
+          description: error.message || "Failed to export database.",
           variant: "destructive",
         });
       }
@@ -442,10 +464,15 @@ export default function Settings() {
   };
 
   const handleImportDatabase = async () => {
+    // Confirm before importing as it will replace all data
+    if (!confirm("⚠️ Warning: Importing a database will replace ALL your current data. This action cannot be undone. Do you want to continue?")) {
+      return;
+    }
+
     if ((window as any).electron) {
       try {
         const result = await (window as any).electron.importDatabase();
-        if (result.success) {
+        if (result && result.success) {
           toast({
             title: "Import Successful",
             description: "Application will restart to apply changes.",
@@ -453,14 +480,15 @@ export default function Settings() {
         } else {
           toast({
             title: "Import Failed",
-            description: result.error || "Unknown error occurred",
+            description: result?.error || "Unknown error occurred",
             variant: "destructive",
           });
         }
-      } catch (error) {
+      } catch (error: any) {
+        console.error("Database import error:", error);
         toast({
           title: "Error",
-          description: "Failed to import database.",
+          description: error.message || "Failed to import database.",
           variant: "destructive",
         });
       }
@@ -471,69 +499,86 @@ export default function Settings() {
       input.onchange = async (e) => {
         const file = (e.target as HTMLInputElement).files?.[0];
         if (!file) return;
+
+        // Validate file extension
+        if (!file.name.endsWith('.db')) {
+          toast({
+            title: "Invalid File",
+            description: "Please select a valid database file (.db)",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        // Validate file size (max 100MB)
+        if (file.size > 100 * 1024 * 1024) {
+          toast({
+            title: "File Too Large",
+            description: "Database file must be less than 100MB",
+            variant: "destructive",
+          });
+          return;
+        }
         
         try {
           const reader = new FileReader();
           reader.onload = async (e) => {
-            const arrayBuffer = e.target?.result as ArrayBuffer;
-            const base64 = btoa(
-              new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
-            );
-            
-            const response = await fetch("/api/database/import", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ fileData: base64 }),
-            });
-            
-            const result = await response.json();
-            
-            if (response.ok && result.success) {
-              toast({
-                title: "Import Successful",
-                description: "Database imported. Refreshing page...",
+            try {
+              const arrayBuffer = e.target?.result as ArrayBuffer;
+              const base64 = btoa(
+                new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+              );
+              
+              const response = await fetch("/api/database/import", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ fileData: base64 }),
               });
-              setTimeout(() => window.location.reload(), 1500);
-            } else {
+              
+              const result = await response.json();
+              
+              if (response.ok && result.success) {
+                toast({
+                  title: "Import Successful",
+                  description: "Database imported. Refreshing page...",
+                });
+                setTimeout(() => window.location.reload(), 1500);
+              } else {
+                toast({
+                  title: "Import Failed",
+                  description: result.error || "Unknown error occurred",
+                  variant: "destructive",
+                });
+              }
+            } catch (error: any) {
+              console.error("File processing error:", error);
               toast({
-                title: "Import Failed",
-                description: result.error || "Unknown error occurred",
+                title: "Error",
+                description: error.message || "Failed to process database file.",
                 variant: "destructive",
               });
             }
           };
+          
+          reader.onerror = () => {
+            toast({
+              title: "Error",
+              description: "Failed to read database file.",
+              variant: "destructive",
+            });
+          };
+          
           reader.readAsArrayBuffer(file);
-        } catch (error) {
+        } catch (error: any) {
+          console.error("Database import error:", error);
           toast({
             title: "Error",
-            description: "Failed to import database.",
+            description: error.message || "Failed to import database.",
             variant: "destructive",
           });
         }
       };
       input.click();
-    }
-  };
-
-  const handleTestCloudConnection = async () => {
-    if (!cloudConn) return;
-    setIsTesting(true);
-    setTestResult(null);
-    try {
-      const res = await apiRequest("POST", "/api/cloud-sync/test-connection", { connectionString: cloudConn });
-      const json = await res.json();
-      if (res.ok && json.ok) {
-        setTestResult({ ok: true });
-        toast({ title: "Connection Successful", description: "Remote Postgres connection validated." });
-      } else {
-        setTestResult({ ok: false, error: json.error || "Connection failed" });
-        toast({ title: "Connection Failed", description: json.error || "Unable to connect", variant: "destructive" });
-      }
-    } catch (err: any) {
-      setTestResult({ ok: false, error: err.message || String(err) });
-      toast({ title: "Connection Error", description: err.message || String(err), variant: "destructive" });
-    } finally {
-      setIsTesting(false);
     }
   };
 
@@ -547,7 +592,7 @@ export default function Settings() {
       </div>
 
       <Tabs defaultValue="general" className="w-full">
-        <TabsList className="glass-tabs-list grid w-full grid-cols-6">
+        <TabsList className="glass-tabs-list grid w-full grid-cols-5">
           <TabsTrigger value="general" className="glass-tab" data-testid="tab-general-settings">
             <Settings2 className="h-4 w-4 mr-2" />
             General
@@ -564,7 +609,6 @@ export default function Settings() {
             <Printer className="h-4 w-4 mr-2" />
             Printer
           </TabsTrigger>
-
           <TabsTrigger 
             value="database" 
             className="glass-tab"
