@@ -1275,6 +1275,8 @@ export class DatabaseStorage implements IStorage {
           lastSyncTime: null,
           masterPinHash: null,
           masterPinSalt: null,
+          licenseExpiryDate: null,
+          licenseStatus: "active",
           updatedAt: new Date(),
         }
         try {
@@ -1315,6 +1317,8 @@ export class DatabaseStorage implements IStorage {
           lastSyncTime: null,
           masterPinHash: null,
           masterPinSalt: null,
+          licenseExpiryDate: null,
+          licenseStatus: "active",
           updatedAt: new Date(),
         }
         return defaultSettings
@@ -1352,6 +1356,8 @@ export class DatabaseStorage implements IStorage {
             lastSyncTime: data.lastSyncTime ?? null,
             masterPinHash: data.masterPinHash || null,
             masterPinSalt: data.masterPinSalt || null,
+            licenseExpiryDate: data.licenseExpiryDate || null,
+            licenseStatus: data.licenseStatus || "active",
             updatedAt: new Date(),
           }
           await db.insert(settings).values(defaultSettings)
@@ -1387,6 +1393,8 @@ export class DatabaseStorage implements IStorage {
         if (data.lastSyncTime !== undefined) updateData.lastSyncTime = data.lastSyncTime
         if (data.masterPinHash !== undefined) updateData.masterPinHash = data.masterPinHash
         if (data.masterPinSalt !== undefined) updateData.masterPinSalt = data.masterPinSalt
+        if (data.licenseExpiryDate !== undefined) updateData.licenseExpiryDate = data.licenseExpiryDate
+        if (data.licenseStatus !== undefined) updateData.licenseStatus = data.licenseStatus
 
         await db.update(settings).set(updateData).where(eq(settings.id, "default"))
 
