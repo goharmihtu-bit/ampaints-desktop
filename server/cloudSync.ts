@@ -4,7 +4,15 @@ const ALGO = "aes-256-gcm"
 
 function getKey() {
   const key = process.env.CLOUD_SYNC_ENCRYPTION_KEY
-  if (!key) throw new Error("CLOUD_SYNC_ENCRYPTION_KEY is not set")
+  if (!key) {
+    // Generate a default key if not set (for development/desktop use)
+    // In production, this should be set via environment variable
+    const defaultKey = "default-encryption-key-change-me-in-production"
+    console.warn("[CloudSync] CLOUD_SYNC_ENCRYPTION_KEY not set, using default key. Set this environment variable in production!")
+    const buf = Buffer.alloc(32)
+    Buffer.from(defaultKey).copy(buf)
+    return buf
+  }
   // Ensure Buffer length 32
   const buf = Buffer.alloc(32)
   Buffer.from(key).copy(buf)

@@ -84,6 +84,7 @@ type ReturnRecord = {
   customerName: string
   customerPhone: string
   totalRefund: string
+  refundMethod: string
   createdAt: string
 }
 
@@ -209,7 +210,10 @@ export default function UnpaidBills() {
     allReturns.forEach((ret) => {
       const phone = ret.customerPhone || "unknown"
       const existing = returnsByPhone.get(phone) || 0
-      returnsByPhone.set(phone, existing + safeParseFloat(ret.totalRefund))
+      // Only count credited refunds, not cash refunds
+      if (ret.refundMethod !== "cash") {
+        returnsByPhone.set(phone, existing + safeParseFloat(ret.totalRefund))
+      }
     })
 
     const customerMap = new Map<string, ConsolidatedCustomer>()
