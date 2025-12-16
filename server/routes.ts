@@ -15,6 +15,8 @@ import { z } from "zod"
 import crypto from "crypto"
 
 // Rate limiting for admin PIN verification (prevent brute force)
+// NOTE: This is an in-memory implementation suitable for single-instance deployments.
+// For production multi-instance deployments, consider using Redis or a shared cache.
 const pinAttempts = new Map<string, { count: number; lastAttempt: number }>()
 const MAX_PIN_ATTEMPTS = 5
 const LOCKOUT_DURATION = 15 * 60 * 1000 // 15 minutes
@@ -51,14 +53,32 @@ function resetPinAttempts(ip: string): void {
 }
 
 // Cleanup old entries periodically (every hour)
-setInterval(() => {
-  const now = Date.now()
-  for (const [ip, attempt] of pinAttempts.entries()) {
-    if (now - attempt.lastAttempt > LOCKOUT_DURATION) {
-      pinAttempts.delete(ip)
+let cleanupInterval: NodeJS.Timeout | null = null
+
+function startPinCleanup() {
+  if (cleanupInterval) return // Already started
+  cleanupInterval = setInterval(() => {
+    const now = Date.now()
+    for (const [ip, attempt] of pinAttempts.entries()) {
+      if (now - attempt.lastAttempt > LOCKOUT_DURATION) {
+        pinAttempts.delete(ip)
+      }
     }
+  }, 60 * 60 * 1000)
+}
+
+function stopPinCleanup() {
+  if (cleanupInterval) {
+    clearInterval(cleanupInterval)
+    cleanupInterval = null
   }
-}, 60 * 60 * 1000)
+}
+
+// Export cleanup function for graceful shutdown
+export function cleanupRateLimiting() {
+  stopPinCleanup()
+  pinAttempts.clear()
+}
 
 // Import necessary types for clarity if not already present from @shared/schema or storage
 // Assuming these types are defined and exported by your storage module or shared types
@@ -215,6 +235,8 @@ function invalidateInventoryCache(): void {
   cache.colors = null
 }
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Start rate limiting cleanup
+  startPinCleanup()
 
   // Products - with caching
   app.get("/api/products", async (_req, res) => {
@@ -2006,7 +2028,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/license/verify-pin", async (req, res) => {
     try {
       const { masterPin } = req.body
-      const clientIp = req.ip || req.socket.remoteAddress || 'unknown'
+      const clientIp = req.ip || req.socket.remoteAddress
+      
+      // Security: Reject requests without valid IP
+      if (!clientIp) {
+        console.log("[Admin PIN] Request rejected - no valid IP address")
+        return res.status(400).json({ valid: false, error: "Unable to verify request origin" })
+      }
       
       if (!masterPin) {
         console.log("[Admin PIN] Missing PIN in request")
