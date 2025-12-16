@@ -73,17 +73,21 @@ export default function Admin() {
     }
   };
 
-  // ---------- License state & handlers (copied from Settings)
+  // ---------- License state & handlers
   const [licenseExpiryDate, setLicenseExpiryDate] = useState("");
   const [isLicenseActive, setIsLicenseActive] = useState(true);
   const [isSettingLicense, setIsSettingLicense] = useState(false);
+  const [secretKeyInput, setSecretKeyInput] = useState("");
 
   const { data: licenseData, isLoading: isLoadingLicense } = useQuery({
     queryKey: ["/api/license/status"],
-    onSuccess: (d: any) => {
-      setIsLicenseActive(d?.active ?? true);
-    }
   });
+
+  useEffect(() => {
+    if (licenseData) {
+      setIsLicenseActive(licenseData?.active ?? true);
+    }
+  }, [licenseData]);
 
   const handleSetLicenseExpiry = async () => {
     if (!licenseExpiryDate) {
@@ -118,10 +122,20 @@ export default function Admin() {
   const handleActivateLicense = async () => {
     setIsSettingLicense(true);
     try {
-      const response = await fetch('/api/license/activate', { method: 'POST' });
-      if (!response.ok) throw await response.json();
-      toast({ title: 'License Activated', description: 'Your license has been successfully reactivated!' });
+      const body = secretKeyInput ? JSON.stringify({ secretKey: secretKeyInput }) : JSON.stringify({});
+      const response = await fetch('/api/license/activate', { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body 
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw error;
+      }
+      const result = await response.json();
+      toast({ title: 'License Activated', description: result.message || 'Your license has been successfully reactivated!' });
       setIsLicenseActive(true);
+      setSecretKeyInput("");
       queryClient.invalidateQueries({ queryKey: ['/api/license/status'] });
     } catch (error: any) {
       toast({ title: 'Error', description: error.error || 'Failed to activate license', variant: 'destructive' });
@@ -334,62 +348,104 @@ export default function Admin() {
               <Key className="h-5 w-5" />
               <h3 className="font-semibold">Software License Management</h3>
               <Badge variant={isLicenseActive ? 'default' : 'destructive'} className="ml-2">
-                {isLicenseActive ? 'Active' : 'Inactive'}
+                {isLicenseActive ? 'Active' : 'Deactivated'}
               </Badge>
             </div>
             <p className="text-sm text-muted-foreground mb-6">
               Manage your software license expiration date and activation status
             </p>
             <div className="space-y-6">
-              <div className="border border-border/50 rounded-lg p-4">
+              {/* Current Status */}
+              <div className={`border ${isLicenseActive ? 'border-green-500/50 bg-green-50/50 dark:bg-green-950/30' : 'border-red-500/50 bg-red-50/50 dark:bg-red-950/30'} rounded-lg p-4`}>
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
-                    <Zap className="h-5 w-5 text-blue-600" />
+                    <Zap className={`h-5 w-5 ${isLicenseActive ? 'text-green-600' : 'text-red-600'}`} />
                     <h4 className="font-semibold">Current License Status</h4>
                   </div>
-                  <Badge variant={isLicenseActive ? 'default' : 'secondary'}>
-                    {isLicenseActive ? 'Operational' : 'Inactive'}
+                  <Badge variant={isLicenseActive ? 'default' : 'destructive'}>
+                    {isLicenseActive ? 'ACTIVE' : 'DEACTIVATED'}
                   </Badge>
                 </div>
-                <p className="text-sm text-muted-foreground">
-                  {isLicenseActive ? 'Your software license is active and operational.' : 'Your software license is currently inactive. Click Reactivate License below to restore functionality.'}
+                <p className="text-sm text-muted-foreground mb-2">
+                  {isLicenseActive 
+                    ? 'Your software license is active and operational.' 
+                    : '⚠️ Your software license is currently DEACTIVATED. The software is not operational. Enter secret key below to reactivate.'}
                 </p>
+                {licenseData?.expiryDate && (
+                  <p className="text-xs text-muted-foreground">
+                    Expiry Date: {licenseData.expiryDate}
+                  </p>
+                )}
               </div>
 
-              <div className="border border-border/50 rounded-lg p-4 space-y-4">
-                <div>
-                  <h4 className="font-semibold mb-2 flex items-center gap-2">
-                    <Calendar className="h-4 w-4" />
-                    Set License Expiration Date
-                  </h4>
-                  <p className="text-xs text-muted-foreground mb-3">
-                    Set a date after which the software will require reactivation
-                  </p>
-                </div>
-                <div className="space-y-3">
+              {/* License Reactivation */}
+              {!isLicenseActive && (
+                <div className="border border-blue-500/50 rounded-lg p-4 space-y-4 bg-blue-50/50 dark:bg-blue-950/20">
                   <div>
-                    <Label htmlFor="license-date">Expiration Date</Label>
-                    <Input 
-                      id="license-date" 
-                      type="date" 
-                      value={licenseExpiryDate} 
-                      onChange={(e) => setLicenseExpiryDate(e.target.value)} 
-                      className="mt-1" 
-                    />
+                    <h4 className="font-semibold mb-2 flex items-center gap-2">
+                      <Key className="h-4 w-4 text-blue-600" />
+                      Reactivate License with Secret Key
+                    </h4>
+                    <p className="text-xs text-muted-foreground mb-3">
+                      Enter your secret key to reactivate the software and set a new 10-year expiry date. Secret key is required for reactivation.
+                    </p>
                   </div>
-                  <div className="flex gap-2">
-                    <Button onClick={handleSetLicenseExpiry} disabled={isSettingLicense}>
-                      {isSettingLicense ? 'Saving...' : 'Set Expiry'}
-                    </Button>
-                    <Button variant="outline" onClick={handleDeactivateLicense}>
-                      Deactivate License
-                    </Button>
-                    <Button variant="ghost" onClick={handleActivateLicense}>
-                      Reactivate License
+                  <div className="space-y-3">
+                    <div>
+                      <Label htmlFor="secret-key">Secret Key</Label>
+                      <Input 
+                        id="secret-key" 
+                        type="password" 
+                        value={secretKeyInput} 
+                        onChange={(e) => setSecretKeyInput(e.target.value)} 
+                        placeholder="Enter secret key"
+                        className="mt-1" 
+                      />
+                    </div>
+                    <Button onClick={handleActivateLicense} disabled={isSettingLicense || !secretKeyInput}>
+                      {isSettingLicense ? 'Activating...' : 'Activate License'}
                     </Button>
                   </div>
                 </div>
-              </div>
+              )}
+
+              {/* License Management (only show when active) */}
+              {isLicenseActive && (
+                <div className="border border-border/50 rounded-lg p-4 space-y-4">
+                  <div>
+                    <h4 className="font-semibold mb-2 flex items-center gap-2">
+                      <Calendar className="h-4 w-4" />
+                      License Management
+                    </h4>
+                    <p className="text-xs text-muted-foreground mb-3">
+                      Set expiry date or deactivate license
+                    </p>
+                  </div>
+                  <div className="space-y-3">
+                    <div>
+                      <Label htmlFor="license-date">Expiration Date</Label>
+                      <Input 
+                        id="license-date" 
+                        type="date" 
+                        value={licenseExpiryDate} 
+                        onChange={(e) => setLicenseExpiryDate(e.target.value)} 
+                        className="mt-1" 
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button onClick={handleSetLicenseExpiry} disabled={isSettingLicense}>
+                        {isSettingLicense ? 'Saving...' : 'Set Expiry'}
+                      </Button>
+                      <Button variant="destructive" onClick={handleDeactivateLicense} disabled={isSettingLicense}>
+                        Deactivate License
+                      </Button>
+                      <Button variant="outline" onClick={handleActivateLicense} disabled={isSettingLicense}>
+                        Reactivate (10 Years)
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </TabsContent>
