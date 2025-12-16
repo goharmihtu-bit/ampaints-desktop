@@ -593,13 +593,12 @@ function createTables() {
     `)
 
     // Create cloud sync tables
-    console.log("[Database] Creating cloud sync tables...")
     sqlite.exec(`
       CREATE TABLE IF NOT EXISTS cloud_sync_jobs (
         id TEXT PRIMARY KEY,
         job_type TEXT NOT NULL,
         provider TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'pending',
+        status TEXT NOT NULL DEFAULT 'pending', -- pending, running, success, failed
         dry_run INTEGER DEFAULT 1,
         initiated_by TEXT,
         details TEXT,
@@ -610,6 +609,7 @@ function createTables() {
       );
     `)
 
+    // Store connection metadata; connection_string_encrypted is nullable until we implement secure encryption
     sqlite.exec(`
       CREATE TABLE IF NOT EXISTS cloud_sync_connections (
         id TEXT PRIMARY KEY,
