@@ -69,7 +69,7 @@ export async function exportToPostgres(connectionString: string, dryRun = true) 
   try {
     await client.query("BEGIN")
 
-    const summary: Record<string, { rows: number; inserted?: number; updated?: number }> = {}
+    const summary: Record<string, { rows: number; inserted?: number; updated?: number; errors?: number }> = {}
 
     for (const table of EXPORT_TABLES) {
       // Check table exists in sqlite
@@ -89,6 +89,8 @@ export async function exportToPostgres(connectionString: string, dryRun = true) 
 
       let inserted = 0
       let updated = 0
+      let errors = 0
+      let rowIndex = 0
 
       for (const row of rows) {
         const cols = Object.keys(row)
@@ -96,11 +98,26 @@ export async function exportToPostgres(connectionString: string, dryRun = true) 
         const placeholders = cols.map((_, i) => `$${i + 1}`).join(",")
         const setClause = cols.filter((c) => c !== "id").map((c) => `"${c}" = EXCLUDED."${c}"`).join(",")
         const sql = `INSERT INTO "${table}" (${cols.map((c) => `"${c}"`).join(",")}) VALUES (${placeholders}) ON CONFLICT (id) DO UPDATE SET ${setClause}`
+        
+        // Use SAVEPOINT to handle individual row errors without aborting the entire transaction
+        // Use rowIndex for unique savepoint name to avoid conflicts when row.id is null/undefined
+        const savepointName = `sp_${table}_${rowIndex}`.replace(/[^a-zA-Z0-9_]/g, '_')
+        rowIndex++
         try {
+          await client.query(`SAVEPOINT ${savepointName}`)
           await client.query(sql, vals)
+          await client.query(`RELEASE SAVEPOINT ${savepointName}`)
           // optimistic counting: treat as inserted/updated both
           inserted++
         } catch (err) {
+          // Rollback to savepoint to recover the transaction from aborted state
+          try {
+            await client.query(`ROLLBACK TO SAVEPOINT ${savepointName}`)
+          } catch (rollbackErr) {
+            // If rollback fails, log but continue
+            console.error(`[CloudSyncExport] Error rolling back savepoint for ${table}:`, rollbackErr)
+          }
+          errors++
           // log and continue
           console.error(`[CloudSyncExport] Error upserting into ${table}:`, err)
         }
@@ -108,6 +125,9 @@ export async function exportToPostgres(connectionString: string, dryRun = true) 
 
       summary[table].inserted = inserted
       summary[table].updated = updated
+      if (errors > 0) {
+        summary[table].errors = errors
+      }
     }
 
     await client.query("COMMIT")
