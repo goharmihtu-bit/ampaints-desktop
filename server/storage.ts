@@ -1387,6 +1387,8 @@ export class DatabaseStorage implements IStorage {
         if (data.lastSyncTime !== undefined) updateData.lastSyncTime = data.lastSyncTime
         if (data.masterPinHash !== undefined) updateData.masterPinHash = data.masterPinHash
         if (data.masterPinSalt !== undefined) updateData.masterPinSalt = data.masterPinSalt
+        if (data.licenseExpiryDate !== undefined) updateData.licenseExpiryDate = data.licenseExpiryDate
+        if (data.licenseStatus !== undefined) updateData.licenseStatus = data.licenseStatus
 
         await db.update(settings).set(updateData).where(eq(settings.id, "default"))
 

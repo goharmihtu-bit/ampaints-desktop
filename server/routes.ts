@@ -2237,6 +2237,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           licenseExpiryDate: expiryDate,
           licenseStatus: "active",
         })
+        invalidateCache("settings") // Invalidate cache after license update
 
         console.log(`License expiry date set to ${expiryDate} with valid secret key`)
 
@@ -2282,6 +2283,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           licenseExpiryDate: today,
           licenseStatus: "deactivated",
         })
+        invalidateCache("settings") // Invalidate cache after license deactivation
 
         console.log("License deactivated by admin with valid secret key")
 
@@ -2328,6 +2330,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           licenseExpiryDate: expiryDate,
           licenseStatus: "active",
         })
+        invalidateCache("settings") // Invalidate cache after license activation
 
         console.log("License reactivated with valid secret key")
 
