@@ -617,7 +617,7 @@ export default function Admin() {
     }, 3000); // Refresh every 3 seconds if there are active jobs
     
     return () => clearInterval(intervalId);
-  }, [jobs]);
+  }, [jobs.map((j: any) => j.status).join(',')]);
 
   // ---------- Admin PIN change form
   const [currentPin, setCurrentPin] = useState("");
