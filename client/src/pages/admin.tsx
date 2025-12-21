@@ -19,7 +19,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Key, Download, ShieldCheck, Lock, Eye, EyeOff, Calendar, Zap } from "lucide-react";
+import { Key, Download, ShieldCheck, Lock, Eye, EyeOff, Calendar, Zap, Trash2 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
@@ -407,9 +407,49 @@ export default function Admin() {
       const res = await apiRequest('GET', '/api/cloud-sync/connections');
       const json = await res.json();
       if (res.ok && json.ok) setConnections(json.connections || [])
-    } catch (err) {
+      else {
+        toast({
+          title: 'Failed to Load Connections',
+          description: json.error || 'Could not load cloud connections',
+          variant: 'destructive'
+        });
+      }
+    } catch (err: any) {
       console.error("Error loading connections", err);
+      toast({
+        title: 'Error',
+        description: err.message || 'Failed to load connections',
+        variant: 'destructive'
+      });
     } finally { setConnectionsLoading(false) }
+  };
+
+  const handleDeleteConnection = async (connectionId: string, label: string) => {
+    if (!confirm(`Are you sure you want to delete the connection "${label}"?\n\nThis action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      const res = await apiRequest('DELETE', `/api/cloud-sync/connections/${connectionId}`);
+      const json = await res.json();
+      
+      if (res.ok && json.ok) {
+        toast({
+          title: 'Connection Deleted',
+          description: 'Cloud connection removed successfully'
+        });
+        loadCloudConnections();
+      } else {
+        throw new Error(json.error || 'Failed to delete connection');
+      }
+    } catch (err: any) {
+      console.error('Delete connection error:', err);
+      toast({
+        title: 'Delete Failed',
+        description: err.message || 'Failed to delete connection',
+        variant: 'destructive'
+      });
+    }
   };
 
   const loadJobs = async () => {
@@ -418,8 +458,20 @@ export default function Admin() {
       const res = await apiRequest('GET', '/api/cloud-sync/jobs');
       const json = await res.json();
       if (res.ok && json.ok) setJobs(json.jobs || [])
-    } catch (err) {
+      else {
+        toast({
+          title: 'Failed to Load Jobs',
+          description: json.error || 'Could not load job history',
+          variant: 'destructive'
+        });
+      }
+    } catch (err: any) {
       console.error("Error loading jobs", err);
+      toast({
+        title: 'Error',
+        description: err.message || 'Failed to load jobs',
+        variant: 'destructive'
+      });
     } finally { setJobsLoading(false) }
   };
 
@@ -553,6 +605,19 @@ export default function Admin() {
   };
 
   useEffect(() => { loadCloudConnections(); loadJobs() }, []);
+
+  // Auto-refresh jobs if there are pending or running jobs
+  useEffect(() => {
+    const hasPendingOrRunning = jobs.some((j: any) => j.status === 'pending' || j.status === 'running');
+    
+    if (!hasPendingOrRunning) return;
+    
+    const intervalId = setInterval(() => {
+      loadJobs();
+    }, 3000); // Refresh every 3 seconds if there are active jobs
+    
+    return () => clearInterval(intervalId);
+  }, [jobs]);
 
   // ---------- Admin PIN change form
   const [currentPin, setCurrentPin] = useState("");
@@ -870,6 +935,22 @@ export default function Admin() {
               This is an admin-only, explicit operation. Credentials are stored on the server only.
             </p>
 
+            {/* Info Banner */}
+            <div className="mb-4 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+              <div className="flex items-start gap-2">
+                <ShieldCheck className="h-5 w-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+                <div className="text-sm">
+                  <p className="font-medium text-blue-900 dark:text-blue-100 mb-1">🔒 Secure Cloud Sync</p>
+                  <ul className="text-blue-800 dark:text-blue-200 space-y-1 list-disc list-inside">
+                    <li>Connection strings are encrypted using AES-256-GCM</li>
+                    <li>Preview mode (dry-run) available before actual sync</li>
+                    <li>All operations are logged in Job History</li>
+                    <li>Requires admin PIN to access this panel</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
               <div className="sm:col-span-2">
                 <Label htmlFor="cloudConnection">Postgres Connection String</Label>
@@ -892,9 +973,9 @@ export default function Admin() {
             </div>
 
             {testResult && (
-              <div className={`mt-4 p-3 rounded ${testResult.ok ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
-                <p className="text-sm">
-                  {testResult.ok ? 'Connection successful' : `Connection failed: ${testResult.error}`}
+              <div className={`mt-4 p-4 rounded-lg border ${testResult.ok ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'}`}>
+                <p className={`text-sm font-medium ${testResult.ok ? 'text-green-800 dark:text-green-200' : 'text-red-800 dark:text-red-200'}`}>
+                  {testResult.ok ? '✓ Connection successful! Ready to save.' : `✗ Connection failed: ${testResult.error}`}
                 </p>
               </div>
             )}
@@ -917,27 +998,37 @@ export default function Admin() {
                   <div className="space-y-2 mt-2">
                     {connections.length === 0 && <p className="text-sm text-muted-foreground">No connections saved</p>}
                     {connections.map((c: any) => (
-                      <div key={c.id} className="p-3 border rounded flex items-center justify-between">
-                        <div>
-                          <div className="font-medium">{c.label || c.provider}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {c.provider} • Created: {new Date(c.created_at).toLocaleString()}
+                      <div key={c.id} className="p-4 border rounded-lg">
+                        <div className="flex items-start justify-between mb-3">
+                          <div>
+                            <div className="font-medium text-base">{c.label || c.provider}</div>
+                            <div className="text-xs text-muted-foreground mt-1">
+                              {c.provider} • Created: {new Date(c.created_at).toLocaleString()}
+                            </div>
                           </div>
+                          <Button 
+                            size="sm" 
+                            variant="ghost" 
+                            onClick={() => handleDeleteConnection(c.id, c.label || c.provider)}
+                            className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
                         </div>
                         <div className="flex flex-col gap-2">
                           <div className="flex gap-2">
-                            <Button size="sm" variant="outline" onClick={() => enqueueJob(c.id, 'export', true)} className="text-xs">
+                            <Button size="sm" variant="outline" onClick={() => enqueueJob(c.id, 'export', true)} className="text-xs flex-1">
                               Preview Export
                             </Button>
-                            <Button size="sm" variant="default" onClick={() => enqueueJob(c.id, 'export', false)} className="bg-blue-600 hover:bg-blue-700 text-xs">
+                            <Button size="sm" variant="default" onClick={() => enqueueJob(c.id, 'export', false)} className="bg-blue-600 hover:bg-blue-700 text-xs flex-1">
                               ⬆️ Export to Cloud
                             </Button>
                           </div>
                           <div className="flex gap-2">
-                            <Button size="sm" variant="outline" onClick={() => enqueueJob(c.id, 'import', true)} className="text-xs">
+                            <Button size="sm" variant="outline" onClick={() => enqueueJob(c.id, 'import', true)} className="text-xs flex-1">
                               Preview Import
                             </Button>
-                            <Button size="sm" variant="default" onClick={() => enqueueJob(c.id, 'import', false)} className="bg-green-600 hover:bg-green-700 text-xs">
+                            <Button size="sm" variant="default" onClick={() => enqueueJob(c.id, 'import', false)} className="bg-green-600 hover:bg-green-700 text-xs flex-1">
                               ⬇️ Import from Cloud
                             </Button>
                           </div>
@@ -967,10 +1058,12 @@ export default function Admin() {
                     <div className="space-y-2">
                       {jobs.length === 0 && <p className="text-sm text-muted-foreground">No jobs</p>}
                       {jobs.map((j: any) => (
-                        <div key={j.id} className="p-3 border rounded">
+                        <div key={j.id} className="p-4 border rounded-lg">
                           <div className="flex items-center justify-between mb-2">
                             <div className="flex items-center gap-2">
-                              <div className="font-medium capitalize">{j.job_type}</div>
+                              <div className="font-medium capitalize">
+                                {j.job_type === 'export' ? '⬆️' : '⬇️'} {j.job_type}
+                              </div>
                               <Badge variant="outline" className="text-xs">{j.provider}</Badge>
                               {j.dry_run ? (
                                 <Badge variant="secondary" className="text-xs">Preview Mode</Badge>
@@ -987,16 +1080,27 @@ export default function Admin() {
                               }
                               className="text-xs"
                             >
-                              {j.status}
+                              {j.status === 'success' && '✓ '}
+                              {j.status === 'failed' && '✗ '}
+                              {j.status === 'running' && '⏳ '}
+                              {j.status === 'pending' && '⏸️ '}
+                              {j.status.toUpperCase()}
                             </Badge>
                           </div>
                           <div className="text-xs text-muted-foreground space-y-1">
                             <div>Attempts: {j.attempts} • {new Date(j.created_at).toLocaleString()}</div>
                             {j.last_error && (
-                              <div className="text-destructive font-medium">Error: {j.last_error}</div>
+                              <div className="p-2 mt-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded text-destructive font-medium">
+                                Error: {j.last_error}
+                              </div>
                             )}
                             {j.details && (
-                              <div className="text-slate-600 dark:text-slate-400">Details: {j.details}</div>
+                              <div className="p-2 mt-2 bg-slate-50 dark:bg-slate-900/20 border border-slate-200 dark:border-slate-800 rounded text-slate-700 dark:text-slate-300">
+                                <details>
+                                  <summary className="cursor-pointer font-medium">View Details</summary>
+                                  <pre className="mt-2 text-xs overflow-auto">{j.details}</pre>
+                                </details>
+                              </div>
                             )}
                           </div>
                         </div>
