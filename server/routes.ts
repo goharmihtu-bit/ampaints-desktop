@@ -1597,6 +1597,233 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
+  // Process all pending jobs
+  app.post("/api/cloud-sync/process-all", requirePerm("payment:edit"), async (_req, res) => {
+    try {
+      const { processAllPendingJobs } = await import("./cloudSyncWorker")
+      const result = await processAllPendingJobs()
+      res.json({ ok: true, ...result })
+    } catch (err) {
+      console.error("[API] Error processing all jobs:", err)
+      res.status(500).json({ ok: false, error: "Internal error" })
+    }
+  })
+
+  // Get detailed job status
+  app.get("/api/cloud-sync/jobs/:id/status", requirePerm("payment:edit"), async (req, res) => {
+    try {
+      const { getJobStatus } = await import("./cloudSyncWorker")
+      const status = await getJobStatus(req.params.id)
+      if (!status) {
+        return res.status(404).json({ ok: false, error: "Job not found" })
+      }
+      res.json({ ok: true, job: status })
+    } catch (err) {
+      console.error("[API] Error getting job status:", err)
+      res.status(500).json({ ok: false, error: "Internal error" })
+    }
+  })
+
+  // Cancel a pending job
+  app.post("/api/cloud-sync/jobs/:id/cancel", requirePerm("payment:edit"), async (req, res) => {
+    try {
+      const { cancelJob } = await import("./cloudSyncWorker")
+      await cancelJob(req.params.id)
+      res.json({ ok: true, message: "Job cancelled" })
+    } catch (err: any) {
+      console.error("[API] Error cancelling job:", err)
+      res.status(400).json({ ok: false, error: err.message || "Cannot cancel job" })
+    }
+  })
+
+  // Retry a failed job
+  app.post("/api/cloud-sync/jobs/:id/retry", requirePerm("payment:edit"), async (req, res) => {
+    try {
+      const { retryJob } = await import("./cloudSyncWorker")
+      await retryJob(req.params.id)
+      res.json({ ok: true, message: "Job queued for retry" })
+    } catch (err: any) {
+      console.error("[API] Error retrying job:", err)
+      res.status(400).json({ ok: false, error: err.message || "Cannot retry job" })
+    }
+  })
+
+  // Cleanup old jobs
+  app.post("/api/cloud-sync/cleanup", requirePerm("payment:edit"), async (req, res) => {
+    try {
+      const { daysOld = 30 } = req.body
+      const { cleanupOldJobs } = await import("./cloudSyncWorker")
+      const deleted = await cleanupOldJobs(daysOld)
+      res.json({ ok: true, deleted, message: `Deleted ${deleted} old jobs` })
+    } catch (err) {
+      console.error("[API] Error cleaning up jobs:", err)
+      res.status(500).json({ ok: false, error: "Internal error" })
+    }
+  })
+
+  // Verify export (compare local and remote checksums)
+  app.post("/api/cloud-sync/verify-export", requirePerm("payment:edit"), async (req, res) => {
+    try {
+      const { connectionId } = req.body
+      if (!connectionId) return res.status(400).json({ ok: false, error: "connectionId required" })
+      
+      const { getConnection } = await import("./cloudSync")
+      const conn = await getConnection(connectionId)
+      if (!conn) return res.status(404).json({ ok: false, error: "connection not found" })
+      
+      const { verifyExport } = await import("./cloudSyncExport")
+      const result = await verifyExport(conn.connectionString)
+      res.json({ ok: true, ...result })
+    } catch (err: any) {
+      console.error("[API] Error verifying export:", err)
+      res.status(500).json({ ok: false, error: err.message || "Verification failed" })
+    }
+  })
+
+  // Verify import (compare row counts)
+  app.post("/api/cloud-sync/verify-import", requirePerm("payment:edit"), async (req, res) => {
+    try {
+      const { connectionId } = req.body
+      if (!connectionId) return res.status(400).json({ ok: false, error: "connectionId required" })
+      
+      const { getConnection } = await import("./cloudSync")
+      const conn = await getConnection(connectionId)
+      if (!conn) return res.status(404).json({ ok: false, error: "connection not found" })
+      
+      const { verifyImport } = await import("./cloudSyncImport")
+      const result = await verifyImport(conn.connectionString)
+      res.json({ ok: true, ...result })
+    } catch (err: any) {
+      console.error("[API] Error verifying import:", err)
+      res.status(500).json({ ok: false, error: err.message || "Verification failed" })
+    }
+  })
+
+  // Restore from backup
+  app.post("/api/cloud-sync/restore-backup", requirePerm("payment:edit"), async (req, res) => {
+    try {
+      const { backupPath } = req.body
+      if (!backupPath) return res.status(400).json({ ok: false, error: "backupPath required" })
+      
+      const { restoreFromBackup } = await import("./cloudSyncImport")
+      const result = await restoreFromBackup(backupPath)
+      res.json({ ok: true, ...result })
+    } catch (err: any) {
+      console.error("[API] Error restoring backup:", err)
+      res.status(500).json({ ok: false, error: err.message || "Restore failed" })
+    }
+  })
+
+  // List available backups
+  app.get("/api/cloud-sync/backups", requirePerm("payment:edit"), async (_req, res) => {
+    try {
+      const fs = await import("fs")
+      const path = await import("path")
+      const { getDatabasePath } = await import("./db")
+      
+      const dbPath = getDatabasePath()
+      const dbDir = path.dirname(dbPath)
+      
+      const files = fs.readdirSync(dbDir)
+      const backups = files
+        .filter(f => f.startsWith("backup-") && f.endsWith(".db"))
+        .map(f => {
+          const fullPath = path.join(dbDir, f)
+          const stats = fs.statSync(fullPath)
+          return {
+            name: f,
+            path: fullPath,
+            size: stats.size,
+            created: stats.birthtime,
+            modified: stats.mtime
+          }
+        })
+        .sort((a, b) => b.modified.getTime() - a.modified.getTime())
+      
+      res.json({ ok: true, backups })
+    } catch (err: any) {
+      console.error("[API] Error listing backups:", err)
+      res.status(500).json({ ok: false, error: err.message || "Failed to list backups" })
+    }
+  })
+
+  // Delete a backup file
+  app.delete("/api/cloud-sync/backups/:filename", requirePerm("payment:edit"), async (req, res) => {
+    try {
+      const fs = await import("fs")
+      const path = await import("path")
+      const { getDatabasePath } = await import("./db")
+      
+      const dbPath = getDatabasePath()
+      const dbDir = path.dirname(dbPath)
+      const backupPath = path.join(dbDir, req.params.filename)
+      
+      // Security: ensure the file is in the correct directory and is a backup
+      if (!backupPath.startsWith(dbDir) || !req.params.filename.startsWith("backup-")) {
+        return res.status(400).json({ ok: false, error: "Invalid backup file" })
+      }
+      
+      if (!fs.existsSync(backupPath)) {
+        return res.status(404).json({ ok: false, error: "Backup not found" })
+      }
+      
+      fs.unlinkSync(backupPath)
+      res.json({ ok: true, message: "Backup deleted" })
+    } catch (err: any) {
+      console.error("[API] Error deleting backup:", err)
+      res.status(500).json({ ok: false, error: err.message || "Failed to delete backup" })
+    }
+  })
+
+  // Get cloud sync statistics
+  app.get("/api/cloud-sync/stats", requirePerm("payment:edit"), async (_req, res) => {
+    try {
+      const { sqliteDb } = await import("./db")
+      if (!sqliteDb) return res.json({ ok: true, stats: null })
+      
+      // Get job statistics
+      const totalJobs = sqliteDb.prepare("SELECT COUNT(*) as count FROM cloud_sync_jobs").get() as any
+      const pendingJobs = sqliteDb.prepare("SELECT COUNT(*) as count FROM cloud_sync_jobs WHERE status = 'pending'").get() as any
+      const runningJobs = sqliteDb.prepare("SELECT COUNT(*) as count FROM cloud_sync_jobs WHERE status = 'running'").get() as any
+      const successJobs = sqliteDb.prepare("SELECT COUNT(*) as count FROM cloud_sync_jobs WHERE status = 'success'").get() as any
+      const failedJobs = sqliteDb.prepare("SELECT COUNT(*) as count FROM cloud_sync_jobs WHERE status = 'failed'").get() as any
+      
+      // Get last successful sync
+      const lastExport = sqliteDb.prepare("SELECT * FROM cloud_sync_jobs WHERE job_type = 'export' AND status = 'success' ORDER BY updated_at DESC LIMIT 1").get() as any
+      const lastImport = sqliteDb.prepare("SELECT * FROM cloud_sync_jobs WHERE job_type = 'import' AND status = 'success' ORDER BY updated_at DESC LIMIT 1").get() as any
+      
+      // Get connection count
+      const connections = sqliteDb.prepare("SELECT COUNT(*) as count FROM cloud_sync_connections").get() as any
+      
+      res.json({
+        ok: true,
+        stats: {
+          jobs: {
+            total: totalJobs?.count || 0,
+            pending: pendingJobs?.count || 0,
+            running: runningJobs?.count || 0,
+            success: successJobs?.count || 0,
+            failed: failedJobs?.count || 0
+          },
+          connections: connections?.count || 0,
+          lastExport: lastExport ? {
+            id: lastExport.id,
+            timestamp: lastExport.updated_at,
+            details: lastExport.details ? JSON.parse(lastExport.details) : null
+          } : null,
+          lastImport: lastImport ? {
+            id: lastImport.id,
+            timestamp: lastImport.updated_at,
+            details: lastImport.details ? JSON.parse(lastImport.details) : null
+          } : null
+        }
+      })
+    } catch (err) {
+      console.error("[API] Error getting cloud sync stats:", err)
+      res.status(500).json({ ok: false, error: "Internal error" })
+    }
+  })
+
   // Get return by ID
   app.get("/api/returns/:id", async (req, res) => {
     try {
