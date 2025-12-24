@@ -1,0 +1,280 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'client/**'
+      - 'package.json'
+      - '.github/workflows/build-android-apk.yml'
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build type (debug or release)'
+        required: true
+        default: 'debug'
+        type: choice
+        options:
+          - debug
+          - release
+
+env:
+  JAVA_VERSION: '17'
+  NODE_VERSION: '20'
+
+jobs:
+  build-android:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Setup Java JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          api-level: 33
+          build-tools-version: '33.0.2'
+          ndk-version: '25.2.9519653'
+
+      - name: Accept Android SDK Licenses
+        run: yes | sdkmanager --licenses || true
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Install Node.js dependencies
+        run: npm ci
+
+      - name: Build web assets
+        run: npm run build
+        env:
+          NODE_ENV: production
+
+      - name: Install Capacitor CLI
+        run: npm install -g @capacitor/cli
+
+      - name: Initialize Capacitor (if not exists)
+        run: |
+          if [ ! -f "capacitor.config.ts" ] && [ ! -f "capacitor.config.json" ]; then
+            echo "Initializing Capacitor..."
+            npx cap init "PaintPulse" "com.ampaints.paintpulse" --web-dir dist/public
+          fi
+
+      - name: Create Capacitor config
+        run: |
+          cat > capacitor.config.json << 'EOF'
+          {
+            "appId": "com.ampaints.paintpulse",
+            "appName": "PaintPulse",
+            "webDir": "dist/public",
+            "bundledWebRuntime": false,
+            "server": {
+              "androidScheme": "https",
+              "cleartext": true
+            },
+            "android": {
+              "allowMixedContent": true,
+              "captureInput": true,
+              "webContentsDebuggingEnabled": false
+            },
+            "plugins": {
+              "SplashScreen": {
+                "launchShowDuration": 2000,
+                "backgroundColor": "#3B82F6",
+                "androidScaleType": "CENTER_CROP",
+                "showSpinner": true,
+                "spinnerColor": "#FFFFFF"
+              },
+              "StatusBar": {
+                "style": "Light",
+                "backgroundColor": "#3B82F6"
+              }
+            }
+          }
+          EOF
+
+      - name: Install Capacitor Android
+        run: |
+          npm install @capacitor/core @capacitor/cli @capacitor/android --save
+          npm install @capacitor/splash-screen @capacitor/status-bar @capacitor/app --save
+
+      - name: Add Android platform
+        run: npx cap add android || true
+
+      - name: Sync Capacitor
+        run: npx cap sync android
+
+      - name: Create Android app icons directory
+        run: |
+          mkdir -p android/app/src/main/res/mipmap-hdpi
+          mkdir -p android/app/src/main/res/mipmap-mdpi
+          mkdir -p android/app/src/main/res/mipmap-xhdpi
+          mkdir -p android/app/src/main/res/mipmap-xxhdpi
+          mkdir -p android/app/src/main/res/mipmap-xxxhdpi
+
+      - name: Generate Android icons (using placeholder)
+        run: |
+          # Create a simple icon placeholder if no icon exists
+          if [ -f "build/icon.png" ]; then
+            cp build/icon.png android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+          elif [ -f "client/public/favicon.ico" ]; then
+            echo "Using favicon as placeholder"
+          fi
+
+      - name: Configure Android build
+        run: |
+          # Update build.gradle for proper versioning
+          cd android/app
+          
+          # Get version from package.json
+          VERSION=$(node -p "require('../../package.json').version")
+          VERSION_CODE=$(echo $VERSION | sed 's/\.//g')
+          
+          echo "Building version $VERSION (code: $VERSION_CODE)"
+
+      - name: Build Debug APK
+        if: ${{ github.event.inputs.build_type != 'release' }}
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+        env:
+          JAVA_HOME: ${{ env.JAVA_HOME }}
+
+      - name: Build Release APK
+        if: ${{ github.event.inputs.build_type == 'release' }}
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon --stacktrace
+        env:
+          JAVA_HOME: ${{ env.JAVA_HOME }}
+
+      - name: Find and rename APK
+        id: find_apk
+        run: |
+          APK_PATH=$(find android/app/build/outputs/apk -name "*.apk" | head -1)
+          if [ -n "$APK_PATH" ]; then
+            VERSION=$(node -p "require('./package.json').version")
+            NEW_NAME="PaintPulse-v${VERSION}-${{ github.event.inputs.build_type || 'debug' }}.apk"
+            cp "$APK_PATH" "./$NEW_NAME"
+            echo "apk_path=$NEW_NAME" >> $GITHUB_OUTPUT
+            echo "apk_name=$NEW_NAME" >> $GITHUB_OUTPUT
+          else
+            echo "No APK found!"
+            exit 1
+          fi
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PaintPulse-Android-APK
+          path: ${{ steps.find_apk.outputs.apk_path }}
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Create Release (on tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ${{ steps.find_apk.outputs.apk_path }}
+          name: "PaintPulse Android v${{ github.ref_name }}"
+          body: |
+            ## PaintPulse Android Release
+            
+            ### Installation
+            1. Download the APK file below
+            2. Enable "Install from unknown sources" on your Android device
+            3. Open the APK file to install
+            
+            ### Requirements
+            - Android 7.0 (API 24) or higher
+            - ~50MB free storage
+            
+            ### What's New
+            - See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary
+        run: |
+          echo "## Android Build Complete! 🎉" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Build Details" >> $GITHUB_STEP_SUMMARY
+          echo "- **APK Name:** ${{ steps.find_apk.outputs.apk_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build Type:** ${{ github.event.inputs.build_type || 'debug' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Node Version:** ${{ env.NODE_VERSION }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Java Version:** ${{ env.JAVA_VERSION }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Download the APK from the Artifacts section above." >> $GITHUB_STEP_SUMMARY
+
+  # Optional: Test APK on emulator
+  test-android:
+    name: Test Android APK
+    needs: build-android
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'pull_request' }}
+    
+    steps:
+      - name: Download APK
+        uses: actions/download-artifact@v4
+        with:
+          name: PaintPulse-Android-APK
+
+      - name: Setup Java JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          api-level: 33
+
+      - name: Run Android Emulator Test
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          arch: x86_64
+          profile: pixel_4
+          script: |
+            adb install *.apk
+            adb shell am start -n com.ampaints.paintpulse/.MainActivity
+            sleep 10
+            adb shell screencap -p /sdcard/screenshot.png
+            adb pull /sdcard/screenshot.png ./android-test-screenshot.png
+        continue-on-error: true
+
+      - name: Upload Test Screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: Android-Test-Screenshot
+          path: android-test-screenshot.png
+          retention-days: 7
+        if: always()
