@@ -2,13 +2,13 @@ name: Build iOS IPA
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [main, master]
     paths:
       - 'client/**'
       - 'package.json'
       - '.github/workflows/build-ios-ipa.yml'
   pull_request:
-    branches: [ main, master ]
+    branches: [main, master]
   workflow_dispatch:
     inputs:
       build_type:
@@ -20,6 +20,9 @@ on:
           - development
           - distribution
 
+permissions:
+  contents: write
+
 env:
   NODE_VERSION: '20'
   XCODE_VERSION: '15.2'
@@ -28,7 +31,7 @@ jobs:
   build-ios:
     name: Build iOS IPA
     runs-on: macos-14
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -145,11 +148,11 @@ jobs:
           cd ios/App
           VERSION=$(node -p "require('../../package.json').version")
           BUILD_NUMBER=$(date +%Y%m%d%H%M)
-          
+
           # Update Info.plist
           /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" App/Info.plist
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" App/Info.plist
-          
+
           echo "Set version to $VERSION ($BUILD_NUMBER)"
 
       - name: Build iOS App (Development)
@@ -181,18 +184,18 @@ jobs:
           security default-keychain -s build.keychain
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
           security set-keychain-settings -t 3600 -u build.keychain
-          
+
           # Import certificate
           echo "$IOS_CERTIFICATE_BASE64" | base64 --decode > certificate.p12
           security import certificate.p12 -k build.keychain -P "$IOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
-          
+
           # Import provisioning profile
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
           echo "$IOS_PROVISION_PROFILE_BASE64" | base64 --decode > profile.mobileprovision
           PROFILE_UUID=$(security cms -D -i profile.mobileprovision | grep -A1 UUID | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/')
           cp profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/$PROFILE_UUID.mobileprovision
-          
+
           # Build archive
           cd ios/App
           xcodebuild -workspace App.xcworkspace \
@@ -200,7 +203,7 @@ jobs:
             -configuration Release \
             -archivePath build/App.xcarchive \
             archive
-          
+
           # Export IPA
           xcodebuild -exportArchive \
             -archivePath build/App.xcarchive \
@@ -212,10 +215,10 @@ jobs:
         run: |
           VERSION=$(node -p "require('./package.json').version")
           cd ios/App/build/Build/Products/Debug-iphonesimulator
-          
+
           # Create .app directory name
           APP_NAME="App.app"
-          
+
           if [ -d "$APP_NAME" ]; then
             zip -r "../../../../PaintPulse-v${VERSION}-simulator.zip" "$APP_NAME"
             echo "Packaged simulator build"
@@ -230,7 +233,7 @@ jobs:
         run: |
           VERSION=$(node -p "require('./package.json').version")
           BUILD_TYPE="${{ github.event.inputs.build_type || 'development' }}"
-          
+
           if [ "$BUILD_TYPE" == "distribution" ] && [ -f "ios/App/build/ipa/App.ipa" ]; then
             NEW_NAME="PaintPulse-v${VERSION}-ios.ipa"
             cp "ios/App/build/ipa/App.ipa" "./$NEW_NAME"
@@ -265,15 +268,15 @@ jobs:
           name: "PaintPulse iOS v${{ github.ref_name }}"
           body: |
             ## PaintPulse iOS Release
-            
+
             ### Installation
             - For TestFlight: Upload to App Store Connect
             - For Enterprise: Install via MDM or direct link
-            
+
             ### Requirements
             - iOS 14.0 or higher
             - iPhone or iPad
-            
+
             ### What's New
             - See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md)
         env:
@@ -307,7 +310,7 @@ jobs:
     needs: build-ios
     runs-on: macos-14
     if: ${{ github.event_name == 'pull_request' }}
-    
+
     steps:
       - name: Download iOS Build
         uses: actions/download-artifact@v4
