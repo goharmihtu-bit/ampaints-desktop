@@ -20,6 +20,9 @@ on:
           - development
           - distribution
 
+permissions:
+  contents: write
+
 env:
   NODE_VERSION: '20'
   XCODE_VERSION: '15.2'
