@@ -18,6 +18,13 @@ const EXPORT_TABLES = [
   "settings",      // No dependencies
 ]
 
+// Additional tables to export for complete data backup (including pending/offline data)
+const ADDITIONAL_EXPORT_TABLES = [
+  "pending_sales",     // Offline sales waiting to be synced
+  "stock_out_history", // Stock out history  
+  "stock_movement_summary", // Stock movement summaries
+]
+
 // Configuration constants
 const BATCH_SIZE = 100  // Configurable: process this many records per batch
 const MAX_ERROR_DETAILS = 10  // Maximum error details to include in results
@@ -354,6 +361,72 @@ export async function exportToPostgres(connectionString: string, dryRun = true):
       
       const tableDuration = Date.now() - tableStartTime
       console.log(`[CloudSyncExport] Table ${table}: ${tableInserted} exported, ${tableErrors} errors, took ${tableDuration}ms`)
+    }
+
+    // Export additional tables (pending sales, stock history, etc.)
+    // These are exported to ensure ALL data including offline/pending data is backed up
+    console.log("[CloudSyncExport] Processing additional tables (including pending/offline data)...")
+    
+    for (const table of ADDITIONAL_EXPORT_TABLES) {
+      const tableStartTime = Date.now()
+      console.log(`[CloudSyncExport] Processing additional table: ${table}`)
+      
+      // Check table exists in SQLite
+      try {
+        const info = sqliteDb.prepare(`PRAGMA table_info(${table})`).all() as { name: string; type: string }[]
+        if (!info || info.length === 0) {
+          console.log(`[CloudSyncExport] Additional table ${table} not found in SQLite, skipping`)
+          summary[table] = { rows: 0 }
+          continue
+        }
+
+        // Get all rows from SQLite
+        const rows: any[] = sqliteDb.prepare(`SELECT * FROM ${table}`).all()
+        const checksum = generateChecksum(rows)
+        
+        totalRows += rows.length
+        summary[table] = { rows: rows.length, checksum }
+        allChecksums.push(`${table}:${checksum}`)
+        
+        console.log(`[CloudSyncExport] Additional table ${table}: ${rows.length} rows, checksum: ${checksum}`)
+
+        if (dryRun || rows.length === 0) {
+          continue
+        }
+
+        // Ensure table exists in PostgreSQL with correct schema
+        await ensurePgTable(client, table, info.map(c => ({ name: c.name, type: c.type })))
+
+        // Process rows in batches
+        const cols = Object.keys(rows[0] || {})
+        let tableInserted = 0
+        let tableErrors = 0
+        const allErrorDetails: string[] = []
+
+        for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+          const batch = rows.slice(i, Math.min(i + BATCH_SIZE, rows.length))
+          const batchResult = await processBatch(client, table, batch, cols, i)
+          
+          tableInserted += batchResult.inserted
+          tableErrors += batchResult.errors
+          allErrorDetails.push(...batchResult.errorDetails)
+        }
+
+        summary[table].inserted = tableInserted
+        summary[table].errors = tableErrors
+        if (allErrorDetails.length > 0) {
+          summary[table].errorDetails = allErrorDetails.slice(0, MAX_ERROR_DETAILS)
+        }
+        
+        totalExported += tableInserted
+        totalErrors += tableErrors
+        
+        const tableDuration = Date.now() - tableStartTime
+        console.log(`[CloudSyncExport] Additional table ${table}: ${tableInserted} exported, ${tableErrors} errors, took ${tableDuration}ms`)
+      } catch (tableErr: any) {
+        console.warn(`[CloudSyncExport] Error processing additional table ${table}:`, tableErr.message)
+        summary[table] = { rows: 0, errors: 1 }
+      }
     }
 
     // Commit transaction

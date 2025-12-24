@@ -19,7 +19,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Key, Download, ShieldCheck, Lock, Eye, EyeOff, Calendar, Zap, Trash2 } from "lucide-react";
+import { Key, Download, ShieldCheck, Lock, Eye, EyeOff, Calendar, Zap, Trash2, Cloud, RefreshCw, Upload, Database, Activity, Clock, CheckCircle2, XCircle, AlertCircle, Loader2, Server, Globe, Link2 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
@@ -925,189 +925,407 @@ export default function Admin() {
         </TabsContent>
 
         <TabsContent value="cloud" className="space-y-4">
-          <div className="glass-card p-5">
-            <div className="flex items-center gap-2 mb-1">
-              <Download className="h-5 w-5 text-green-600" />
-              <h3 className="font-semibold">Cloud Sync (Neon / Supabase)</h3>
-            </div>
-            <p className="text-sm text-muted-foreground mb-4">
-              Connect your remote Postgres (Neon or Supabase) to perform opt-in exports and imports. 
-              This is an admin-only, explicit operation. Credentials are stored on the server only.
-            </p>
-
-            {/* Info Banner */}
-            <div className="mb-4 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-              <div className="flex items-start gap-2">
-                <ShieldCheck className="h-5 w-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
-                <div className="text-sm">
-                  <p className="font-medium text-blue-900 dark:text-blue-100 mb-1">🔒 Secure Cloud Sync</p>
-                  <ul className="text-blue-800 dark:text-blue-200 space-y-1 list-disc list-inside">
-                    <li>Connection strings are encrypted using AES-256-GCM</li>
-                    <li>Preview mode (dry-run) available before actual sync</li>
-                    <li>All operations are logged in Job History</li>
-                    <li>Requires admin PIN to access this panel</li>
-                  </ul>
+          {/* Header Card with Overview */}
+          <div className="glass-card p-6">
+            <div className="flex items-start justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <div className="p-3 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-500 text-white shadow-lg">
+                  <Cloud className="h-6 w-6" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold">Cloud Sync Center</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Securely sync your data with remote PostgreSQL databases
+                  </p>
                 </div>
               </div>
+              <Badge variant="outline" className="px-3 py-1.5 text-xs font-medium border-blue-300 text-blue-700 dark:border-blue-700 dark:text-blue-300">
+                <ShieldCheck className="h-3.5 w-3.5 mr-1.5" />
+                AES-256 Encrypted
+              </Badge>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
-              <div className="sm:col-span-2">
-                <Label htmlFor="cloudConnection">Postgres Connection String</Label>
-                <Input 
-                  id="cloudConnection" 
-                  placeholder="postgresql://user:pass@host:5432/dbname?sslmode=require" 
-                  value={cloudConn} 
-                  onChange={(e) => setCloudConn(e.target.value)} 
-                  className="mt-1" 
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  Tip: Use SSL mode=require for Neon/Supabase. Do NOT paste secrets in public chat. Rotate exposed keys immediately.
+            {/* Quick Stats */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div className="p-4 rounded-xl bg-gradient-to-br from-blue-50 to-blue-100/50 dark:from-blue-950/50 dark:to-blue-900/30 border border-blue-200/50 dark:border-blue-800/50">
+                <div className="flex items-center gap-2 mb-2">
+                  <Server className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                  <span className="text-xs font-medium text-blue-700 dark:text-blue-300">Connections</span>
+                </div>
+                <div className="text-2xl font-bold text-blue-900 dark:text-blue-100">{connections.length}</div>
+              </div>
+              <div className="p-4 rounded-xl bg-gradient-to-br from-green-50 to-green-100/50 dark:from-green-950/50 dark:to-green-900/30 border border-green-200/50 dark:border-green-800/50">
+                <div className="flex items-center gap-2 mb-2">
+                  <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+                  <span className="text-xs font-medium text-green-700 dark:text-green-300">Completed</span>
+                </div>
+                <div className="text-2xl font-bold text-green-900 dark:text-green-100">{jobs.filter((j: any) => j.status === 'success').length}</div>
+              </div>
+              <div className="p-4 rounded-xl bg-gradient-to-br from-amber-50 to-amber-100/50 dark:from-amber-950/50 dark:to-amber-900/30 border border-amber-200/50 dark:border-amber-800/50">
+                <div className="flex items-center gap-2 mb-2">
+                  <Clock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                  <span className="text-xs font-medium text-amber-700 dark:text-amber-300">Pending</span>
+                </div>
+                <div className="text-2xl font-bold text-amber-900 dark:text-amber-100">{jobs.filter((j: any) => j.status === 'pending').length}</div>
+              </div>
+              <div className="p-4 rounded-xl bg-gradient-to-br from-red-50 to-red-100/50 dark:from-red-950/50 dark:to-red-900/30 border border-red-200/50 dark:border-red-800/50">
+                <div className="flex items-center gap-2 mb-2">
+                  <XCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
+                  <span className="text-xs font-medium text-red-700 dark:text-red-300">Failed</span>
+                </div>
+                <div className="text-2xl font-bold text-red-900 dark:text-red-100">{jobs.filter((j: any) => j.status === 'failed').length}</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Add New Connection Card */}
+          <div className="glass-card p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="p-2 rounded-lg bg-purple-100 dark:bg-purple-900/30">
+                <Link2 className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+              </div>
+              <div>
+                <h4 className="font-semibold">Add New Connection</h4>
+                <p className="text-xs text-muted-foreground">Connect to Neon, Supabase, or any PostgreSQL database</p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="cloudConnection" className="text-sm font-medium">PostgreSQL Connection String</Label>
+                <div className="relative mt-2">
+                  <Globe className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input 
+                    id="cloudConnection" 
+                    placeholder="postgresql://user:password@host:5432/database?sslmode=require" 
+                    value={cloudConn} 
+                    onChange={(e) => setCloudConn(e.target.value)} 
+                    className="pl-10 font-mono text-sm"
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1.5">
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                  Connection strings are encrypted and stored securely on the server
                 </p>
               </div>
-              <div className="flex gap-2">
-                <Button onClick={handleTestCloudConnection} disabled={!cloudConn || isTesting} variant="outline">
+
+              {testResult && (
+                <div className={`p-4 rounded-xl border-2 ${testResult.ok 
+                  ? 'bg-green-50 dark:bg-green-950/30 border-green-300 dark:border-green-800' 
+                  : 'bg-red-50 dark:bg-red-950/30 border-red-300 dark:border-red-800'}`}>
+                  <div className="flex items-center gap-3">
+                    {testResult.ok ? (
+                      <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400 flex-shrink-0" />
+                    ) : (
+                      <XCircle className="h-5 w-5 text-red-600 dark:text-red-400 flex-shrink-0" />
+                    )}
+                    <div>
+                      <p className={`font-medium ${testResult.ok ? 'text-green-800 dark:text-green-200' : 'text-red-800 dark:text-red-200'}`}>
+                        {testResult.ok ? 'Connection Successful!' : 'Connection Failed'}
+                      </p>
+                      <p className={`text-sm ${testResult.ok ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300'}`}>
+                        {testResult.ok ? 'Database is ready for sync operations' : testResult.error}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex flex-wrap gap-3">
+                <Button 
+                  onClick={handleTestCloudConnection} 
+                  disabled={!cloudConn || isTesting} 
+                  variant="outline"
+                  className="gap-2"
+                >
+                  {isTesting ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Activity className="h-4 w-4" />
+                  )}
                   {isTesting ? 'Testing...' : 'Test Connection'}
                 </Button>
-              </div>
-            </div>
-
-            {testResult && (
-              <div className={`mt-4 p-4 rounded-lg border ${testResult.ok ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'}`}>
-                <p className={`text-sm font-medium ${testResult.ok ? 'text-green-800 dark:text-green-200' : 'text-red-800 dark:text-red-200'}`}>
-                  {testResult.ok ? '✓ Connection successful! Ready to save.' : `✗ Connection failed: ${testResult.error}`}
-                </p>
-              </div>
-            )}
-
-            <div className="mt-4">
-              <div className="flex gap-2">
-                <Button onClick={handleSaveCloudConnection} disabled={!cloudConn || isSaving}>
+                <Button 
+                  onClick={handleSaveCloudConnection} 
+                  disabled={!cloudConn || isSaving}
+                  className="gap-2 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700"
+                >
+                  {isSaving ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Database className="h-4 w-4" />
+                  )}
                   {isSaving ? 'Saving...' : 'Save Connection'}
                 </Button>
-                <Button variant="outline" onClick={loadCloudConnections}>
-                  Refresh
-                </Button>
               </div>
-              
-              <div className="mt-4">
-                <h4 className="font-semibold">Saved Connections</h4>
-                {connectionsLoading ? (
-                  <p className="text-sm text-muted-foreground">Loading...</p>
-                ) : (
-                  <div className="space-y-2 mt-2">
-                    {connections.length === 0 && <p className="text-sm text-muted-foreground">No connections saved</p>}
-                    {connections.map((c: any) => (
-                      <div key={c.id} className="p-4 border rounded-lg">
-                        <div className="flex items-start justify-between mb-3">
-                          <div>
-                            <div className="font-medium text-base">{c.label || c.provider}</div>
-                            <div className="text-xs text-muted-foreground mt-1">
-                              {c.provider} • Created: {new Date(c.created_at).toLocaleString()}
-                            </div>
-                          </div>
-                          <Button 
-                            size="sm" 
-                            variant="ghost" 
-                            onClick={() => handleDeleteConnection(c.id, c.label || c.provider)}
-                            className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+            </div>
+          </div>
+
+          {/* Saved Connections Card */}
+          <div className="glass-card p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-lg bg-green-100 dark:bg-green-900/30">
+                  <Server className="h-5 w-5 text-green-600 dark:text-green-400" />
+                </div>
+                <div>
+                  <h4 className="font-semibold">Saved Connections</h4>
+                  <p className="text-xs text-muted-foreground">Manage your database connections and sync operations</p>
+                </div>
+              </div>
+              <Button variant="ghost" size="sm" onClick={loadCloudConnections} className="gap-2">
+                <RefreshCw className={`h-4 w-4 ${connectionsLoading ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+            </div>
+
+            {connectionsLoading ? (
+              <div className="flex items-center justify-center py-12 text-muted-foreground">
+                <Loader2 className="h-6 w-6 animate-spin mr-3" />
+                Loading connections...
+              </div>
+            ) : connections.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <div className="p-4 rounded-full bg-slate-100 dark:bg-slate-800 mb-4">
+                  <Database className="h-8 w-8 text-slate-400" />
+                </div>
+                <p className="font-medium text-muted-foreground">No connections saved yet</p>
+                <p className="text-sm text-muted-foreground/70 mt-1">Add a connection above to get started</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {connections.map((c: any) => (
+                  <div key={c.id} className="p-5 rounded-xl border-2 border-border/50 hover:border-blue-300 dark:hover:border-blue-700 transition-all duration-200 bg-gradient-to-br from-slate-50/50 to-white dark:from-slate-900/50 dark:to-slate-800/50">
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex items-center gap-3">
+                        <div className={`p-2.5 rounded-xl ${c.provider === 'neon' 
+                          ? 'bg-gradient-to-br from-green-400 to-cyan-500' 
+                          : 'bg-gradient-to-br from-purple-400 to-pink-500'} text-white shadow-md`}>
+                          <Cloud className="h-5 w-5" />
                         </div>
-                        <div className="flex flex-col gap-2">
-                          <div className="flex gap-2">
-                            <Button size="sm" variant="outline" onClick={() => enqueueJob(c.id, 'export', true)} className="text-xs flex-1">
-                              Preview Export
-                            </Button>
-                            <Button size="sm" variant="default" onClick={() => enqueueJob(c.id, 'export', false)} className="bg-blue-600 hover:bg-blue-700 text-xs flex-1">
-                              ⬆️ Export to Cloud
-                            </Button>
-                          </div>
-                          <div className="flex gap-2">
-                            <Button size="sm" variant="outline" onClick={() => enqueueJob(c.id, 'import', true)} className="text-xs flex-1">
-                              Preview Import
-                            </Button>
-                            <Button size="sm" variant="default" onClick={() => enqueueJob(c.id, 'import', false)} className="bg-green-600 hover:bg-green-700 text-xs flex-1">
-                              ⬇️ Import from Cloud
-                            </Button>
+                        <div>
+                          <div className="font-semibold text-base">{c.label || c.provider}</div>
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
+                            <Badge variant="secondary" className="text-xs capitalize px-2 py-0">{c.provider}</Badge>
+                            <span>•</span>
+                            <Clock className="h-3 w-3" />
+                            {new Date(c.created_at).toLocaleDateString()}
                           </div>
                         </div>
                       </div>
-                    ))}
+                      <Button 
+                        size="icon" 
+                        variant="ghost" 
+                        onClick={() => handleDeleteConnection(c.id, c.label || c.provider)}
+                        className="text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 h-9 w-9"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    
+                    {/* Sync Actions */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-2">
+                        <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                          <Upload className="h-3.5 w-3.5" />
+                          Export (Local → Cloud)
+                        </p>
+                        <div className="flex gap-2">
+                          <Button 
+                            size="sm" 
+                            variant="outline" 
+                            onClick={() => enqueueJob(c.id, 'export', true)} 
+                            className="flex-1 text-xs h-9 gap-1.5"
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                            Preview
+                          </Button>
+                          <Button 
+                            size="sm" 
+                            onClick={() => enqueueJob(c.id, 'export', false)} 
+                            className="flex-1 text-xs h-9 gap-1.5 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800"
+                          >
+                            <Upload className="h-3.5 w-3.5" />
+                            Export
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                          <Download className="h-3.5 w-3.5" />
+                          Import (Cloud → Local)
+                        </p>
+                        <div className="flex gap-2">
+                          <Button 
+                            size="sm" 
+                            variant="outline" 
+                            onClick={() => enqueueJob(c.id, 'import', true)} 
+                            className="flex-1 text-xs h-9 gap-1.5"
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                            Preview
+                          </Button>
+                          <Button 
+                            size="sm" 
+                            onClick={() => enqueueJob(c.id, 'import', false)} 
+                            className="flex-1 text-xs h-9 gap-1.5 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800"
+                          >
+                            <Download className="h-3.5 w-3.5" />
+                            Import
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                )}
+                ))}
               </div>
+            )}
+          </div>
 
-              <div className="mt-6">
-                <div className="flex items-center justify-between">
-                  <h4 className="font-semibold">Job History</h4>
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="outline" onClick={loadJobs}>
-                      Refresh
-                    </Button>
-                    <Button size="sm" onClick={processNextJob}>
-                      Process Next Job
-                    </Button>
-                  </div>
+          {/* Job History Card */}
+          <div className="glass-card p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/30">
+                  <Activity className="h-5 w-5 text-amber-600 dark:text-amber-400" />
                 </div>
-                <div className="mt-3">
-                  {jobsLoading ? (
-                    <p className="text-sm text-muted-foreground">Loading jobs...</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {jobs.length === 0 && <p className="text-sm text-muted-foreground">No jobs</p>}
-                      {jobs.map((j: any) => (
-                        <div key={j.id} className="p-4 border rounded-lg">
-                          <div className="flex items-center justify-between mb-2">
-                            <div className="flex items-center gap-2">
-                              <div className="font-medium capitalize">
-                                {j.job_type === 'export' ? '⬆️' : '⬇️'} {j.job_type}
-                              </div>
-                              <Badge variant="outline" className="text-xs">{j.provider}</Badge>
-                              {j.dry_run ? (
-                                <Badge variant="secondary" className="text-xs">Preview Mode</Badge>
-                              ) : (
-                                <Badge variant="default" className="text-xs bg-orange-600">Live Mode</Badge>
-                              )}
-                            </div>
-                            <Badge 
-                              variant={
-                                j.status === 'success' ? 'default' : 
-                                j.status === 'failed' ? 'destructive' : 
-                                j.status === 'running' ? 'secondary' : 
-                                'outline'
-                              }
-                              className="text-xs"
-                            >
-                              {j.status === 'success' && '✓ '}
-                              {j.status === 'failed' && '✗ '}
-                              {j.status === 'running' && '⏳ '}
-                              {j.status === 'pending' && '⏸️ '}
-                              {j.status.toUpperCase()}
-                            </Badge>
+                <div>
+                  <h4 className="font-semibold">Sync Job History</h4>
+                  <p className="text-xs text-muted-foreground">Track and manage your sync operations</p>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="ghost" size="sm" onClick={loadJobs} className="gap-2">
+                  <RefreshCw className={`h-4 w-4 ${jobsLoading ? 'animate-spin' : ''}`} />
+                  Refresh
+                </Button>
+                <Button 
+                  size="sm" 
+                  onClick={processNextJob}
+                  disabled={jobs.filter((j: any) => j.status === 'pending').length === 0}
+                  className="gap-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600"
+                >
+                  <Zap className="h-4 w-4" />
+                  Process Next
+                </Button>
+              </div>
+            </div>
+
+            {jobsLoading ? (
+              <div className="flex items-center justify-center py-12 text-muted-foreground">
+                <Loader2 className="h-6 w-6 animate-spin mr-3" />
+                Loading jobs...
+              </div>
+            ) : jobs.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <div className="p-4 rounded-full bg-slate-100 dark:bg-slate-800 mb-4">
+                  <Activity className="h-8 w-8 text-slate-400" />
+                </div>
+                <p className="font-medium text-muted-foreground">No sync jobs yet</p>
+                <p className="text-sm text-muted-foreground/70 mt-1">Jobs will appear here when you export or import data</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {jobs.map((j: any) => (
+                  <div key={j.id} className="p-4 rounded-xl border border-border/50 bg-gradient-to-r from-slate-50/80 to-white/80 dark:from-slate-900/80 dark:to-slate-800/80">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-3">
+                        <div className={`p-2 rounded-lg ${
+                          j.job_type === 'export' 
+                            ? 'bg-blue-100 dark:bg-blue-900/30' 
+                            : 'bg-green-100 dark:bg-green-900/30'
+                        }`}>
+                          {j.job_type === 'export' ? (
+                            <Upload className={`h-4 w-4 ${j.job_type === 'export' ? 'text-blue-600 dark:text-blue-400' : 'text-green-600 dark:text-green-400'}`} />
+                          ) : (
+                            <Download className={`h-4 w-4 ${j.job_type === 'export' ? 'text-blue-600 dark:text-blue-400' : 'text-green-600 dark:text-green-400'}`} />
+                          )}
+                        </div>
+                        <div>
+                          <div className="font-medium capitalize flex items-center gap-2">
+                            {j.job_type}
+                            {j.dry_run ? (
+                              <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Preview</Badge>
+                            ) : (
+                              <Badge className="text-[10px] px-1.5 py-0 bg-orange-500">Live</Badge>
+                            )}
                           </div>
-                          <div className="text-xs text-muted-foreground space-y-1">
-                            <div>Attempts: {j.attempts} • {new Date(j.created_at).toLocaleString()}</div>
-                            {j.last_error && (
-                              <div className="p-2 mt-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded text-destructive font-medium">
-                                Error: {j.last_error}
-                              </div>
-                            )}
-                            {j.details && (
-                              <div className="p-2 mt-2 bg-slate-50 dark:bg-slate-900/20 border border-slate-200 dark:border-slate-800 rounded text-slate-700 dark:text-slate-300">
-                                <details>
-                                  <summary className="cursor-pointer font-medium">View Details</summary>
-                                  <pre className="mt-2 text-xs overflow-auto">{j.details}</pre>
-                                </details>
-                              </div>
-                            )}
+                          <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+                            <Clock className="h-3 w-3" />
+                            {new Date(j.created_at).toLocaleString()}
+                            <span>•</span>
+                            Attempts: {j.attempts}
                           </div>
                         </div>
-                      ))}
+                      </div>
+                      <Badge 
+                        variant="outline"
+                        className={`px-3 py-1 text-xs font-medium flex items-center gap-1.5 ${
+                          j.status === 'success' ? 'border-green-300 text-green-700 bg-green-50 dark:border-green-700 dark:text-green-300 dark:bg-green-950/30' : 
+                          j.status === 'failed' ? 'border-red-300 text-red-700 bg-red-50 dark:border-red-700 dark:text-red-300 dark:bg-red-950/30' : 
+                          j.status === 'running' ? 'border-blue-300 text-blue-700 bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:bg-blue-950/30' : 
+                          'border-amber-300 text-amber-700 bg-amber-50 dark:border-amber-700 dark:text-amber-300 dark:bg-amber-950/30'
+                        }`}
+                      >
+                        {j.status === 'success' && <CheckCircle2 className="h-3.5 w-3.5" />}
+                        {j.status === 'failed' && <XCircle className="h-3.5 w-3.5" />}
+                        {j.status === 'running' && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                        {j.status === 'pending' && <Clock className="h-3.5 w-3.5" />}
+                        {j.status.toUpperCase()}
+                      </Badge>
                     </div>
-                  )}
-                </div>
+                    
+                    {j.last_error && (
+                      <div className="mt-3 p-3 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800">
+                        <div className="flex items-start gap-2">
+                          <AlertCircle className="h-4 w-4 text-red-500 flex-shrink-0 mt-0.5" />
+                          <p className="text-sm text-red-700 dark:text-red-300">{j.last_error}</p>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {j.details && (
+                      <details className="mt-3">
+                        <summary className="cursor-pointer text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+                          View Details
+                        </summary>
+                        <div className="mt-2 p-3 rounded-lg bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+                          <pre className="text-xs overflow-auto text-slate-700 dark:text-slate-300">{j.details}</pre>
+                        </div>
+                      </details>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Security Info Card */}
+          <div className="glass-card p-5 bg-gradient-to-r from-slate-50 to-blue-50/50 dark:from-slate-900/50 dark:to-blue-950/30 border-blue-200/50 dark:border-blue-800/50">
+            <div className="flex items-start gap-4">
+              <div className="p-3 rounded-xl bg-blue-100 dark:bg-blue-900/30">
+                <ShieldCheck className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+              </div>
+              <div className="flex-1">
+                <h4 className="font-semibold text-blue-900 dark:text-blue-100 mb-2">Security Information</h4>
+                <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-blue-800 dark:text-blue-200">
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-blue-500 flex-shrink-0" />
+                    Connection strings encrypted with AES-256-GCM
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-blue-500 flex-shrink-0" />
+                    Preview mode available before actual sync
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-blue-500 flex-shrink-0" />
+                    All operations logged in job history
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-blue-500 flex-shrink-0" />
+                    Admin PIN required to access this panel
+                  </li>
+                </ul>
               </div>
             </div>
           </div>

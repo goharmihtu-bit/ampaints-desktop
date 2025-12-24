@@ -2720,6 +2720,377 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
+  // ============ NEON REMOTE LICENSE MANAGEMENT ============
+  // These endpoints use the Neon PostgreSQL database for centralized license management
+  // across multiple desktop installations with PC name tracking and 24-hour reports
+
+  // Check if Neon license service is configured
+  app.get("/api/neon-license/status", async (req, res) => {
+    try {
+      const { isNeonLicenseConfigured, checkNeonLicenseStatus, getPcName, getDeviceId } = await import("./neonLicenseService")
+      
+      if (!isNeonLicenseConfigured()) {
+        return res.json({
+          configured: false,
+          message: "Neon license service not configured. Set NEON_LICENSE_DB_URL environment variable."
+        })
+      }
+
+      const status = await checkNeonLicenseStatus()
+      res.json({
+        configured: true,
+        pcName: getPcName(),
+        deviceId: getDeviceId(),
+        ...status
+      })
+    } catch (error) {
+      // Silent error handling - log to Neon if possible
+      try {
+        const { logErrorToNeon } = await import("./neonLicenseService")
+        await logErrorToNeon('api_status_error', String(error), (error as Error)?.stack)
+      } catch (_) { /* ignore */ }
+      
+      res.json({
+        configured: false,
+        error: "Failed to check license status"
+      })
+    }
+  })
+
+  // Register/update software instance with heartbeat
+  app.post("/api/neon-license/register", async (req, res) => {
+    try {
+      const { storeName, appVersion } = req.body
+      const { registerSoftwareInstance, isNeonLicenseConfigured, logErrorToNeon } = await import("./neonLicenseService")
+      
+      if (!isNeonLicenseConfigured()) {
+        return res.json({ ok: false, error: "Neon license service not configured" })
+      }
+
+      const ipAddress = req.ip || req.socket.remoteAddress || null
+      const userAgent = req.headers["user-agent"] || null
+      
+      const result = await registerSoftwareInstance(storeName, appVersion, ipAddress, userAgent)
+      
+      if (result) {
+        res.json({ ok: true, instance: result })
+      } else {
+        res.json({ ok: false, error: "Failed to register instance" })
+      }
+    } catch (error) {
+      // Silent error handling
+      try {
+        const { logErrorToNeon } = await import("./neonLicenseService")
+        await logErrorToNeon('api_register_error', String(error), (error as Error)?.stack)
+      } catch (_) { /* ignore */ }
+      
+      res.json({ ok: false, error: "Registration failed" })
+    }
+  })
+
+  // Send heartbeat (called periodically by client)
+  app.post("/api/neon-license/heartbeat", async (req, res) => {
+    try {
+      const { sendHeartbeat, isNeonLicenseConfigured } = await import("./neonLicenseService")
+      
+      if (!isNeonLicenseConfigured()) {
+        return res.json({ ok: false, error: "Not configured" })
+      }
+
+      await sendHeartbeat()
+      res.json({ ok: true, timestamp: new Date().toISOString() })
+    } catch (error) {
+      // Silent error - don't disrupt client
+      res.json({ ok: false })
+    }
+  })
+
+  // Start session (called on app startup)
+  app.post("/api/neon-license/session/start", async (req, res) => {
+    try {
+      const { startSession, isNeonLicenseConfigured, getPcName } = await import("./neonLicenseService")
+      
+      if (!isNeonLicenseConfigured()) {
+        return res.json({ ok: false, error: "Not configured" })
+      }
+
+      await startSession()
+      res.json({ ok: true, pcName: getPcName(), timestamp: new Date().toISOString() })
+    } catch (error) {
+      res.json({ ok: false })
+    }
+  })
+
+  // End session (called on app shutdown)
+  app.post("/api/neon-license/session/end", async (req, res) => {
+    try {
+      const { endSession, isNeonLicenseConfigured } = await import("./neonLicenseService")
+      
+      if (!isNeonLicenseConfigured()) {
+        return res.json({ ok: false, error: "Not configured" })
+      }
+
+      await endSession()
+      res.json({ ok: true, timestamp: new Date().toISOString() })
+    } catch (error) {
+      res.json({ ok: false })
+    }
+  })
+
+  // Get 24-hour performance report (admin)
+  app.post("/api/neon-license/performance-report", async (req, res) => {
+    try {
+      const { masterPin, deviceId } = req.body
+      const clientIp = req.ip || req.socket.remoteAddress || 'unknown'
+      
+      // Apply rate limiting for admin operations
+      const rateLimit = checkPinRateLimit(clientIp)
+      if (!rateLimit.allowed) {
+        return res.status(429).json({ 
+          error: `Too many attempts. Please wait ${rateLimit.lockoutTime} minutes.` 
+        })
+      }
+      
+      if (!verifyMasterPin(masterPin)) {
+        return res.status(403).json({ error: "Invalid master PIN" })
+      }
+      
+      // Reset rate limit on successful PIN verification
+      resetPinAttempts(clientIp)
+
+      const { get24HourPerformanceReport, isNeonLicenseConfigured } = await import("./neonLicenseService")
+      
+      if (!isNeonLicenseConfigured()) {
+        return res.json({ ok: false, error: "Neon license service not configured" })
+      }
+
+      const report = await get24HourPerformanceReport(deviceId)
+      res.json({ ok: true, report })
+    } catch (error) {
+      res.status(500).json({ ok: false, error: "Failed to get performance report" })
+    }
+  })
+
+  // Get all registered software instances (admin)
+  app.post("/api/neon-license/instances", async (req, res) => {
+    try {
+      const { masterPin } = req.body
+      const clientIp = req.ip || req.socket.remoteAddress || 'unknown'
+      
+      // Apply rate limiting for admin operations
+      const rateLimit = checkPinRateLimit(clientIp)
+      if (!rateLimit.allowed) {
+        return res.status(429).json({ 
+          error: `Too many attempts. Please wait ${rateLimit.lockoutTime} minutes.` 
+        })
+      }
+      
+      if (!verifyMasterPin(masterPin)) {
+        return res.status(403).json({ error: "Invalid master PIN" })
+      }
+      
+      // Reset rate limit on successful PIN verification
+      resetPinAttempts(clientIp)
+
+      const { getAllSoftwareInstances, isNeonLicenseConfigured } = await import("./neonLicenseService")
+      
+      if (!isNeonLicenseConfigured()) {
+        return res.json({ ok: false, error: "Neon license service not configured", instances: [] })
+      }
+
+      const instances = await getAllSoftwareInstances()
+      res.json({ ok: true, instances })
+    } catch (error) {
+      res.status(500).json({ ok: false, error: "Failed to get instances" })
+    }
+  })
+
+  // Update billing status for a device (admin)
+  app.post("/api/neon-license/update-billing", async (req, res) => {
+    try {
+      const { masterPin, deviceId, billingStatus, expiryDate } = req.body
+      const clientIp = req.ip || req.socket.remoteAddress || 'unknown'
+      
+      // Apply rate limiting for admin operations
+      const rateLimit = checkPinRateLimit(clientIp)
+      if (!rateLimit.allowed) {
+        return res.status(429).json({ 
+          error: `Too many attempts. Please wait ${rateLimit.lockoutTime} minutes.` 
+        })
+      }
+      
+      if (!verifyMasterPin(masterPin)) {
+        return res.status(403).json({ error: "Invalid master PIN" })
+      }
+      
+      // Reset rate limit on successful PIN verification
+      resetPinAttempts(clientIp)
+
+      if (!deviceId || !billingStatus) {
+        return res.status(400).json({ error: "deviceId and billingStatus required" })
+      }
+
+      const { updateBillingStatus, isNeonLicenseConfigured } = await import("./neonLicenseService")
+      
+      if (!isNeonLicenseConfigured()) {
+        return res.json({ ok: false, error: "Neon license service not configured" })
+      }
+
+      const success = await updateBillingStatus(deviceId, billingStatus, expiryDate)
+      res.json({ ok: success, message: success ? "Billing status updated" : "Update failed" })
+    } catch (error) {
+      res.status(500).json({ ok: false, error: "Failed to update billing status" })
+    }
+  })
+
+  // Block a software instance (admin)
+  app.post("/api/neon-license/block", async (req, res) => {
+    try {
+      const { masterPin, deviceId, reason } = req.body
+      const clientIp = req.ip || req.socket.remoteAddress || 'unknown'
+      
+      // Apply rate limiting for admin operations
+      const rateLimit = checkPinRateLimit(clientIp)
+      if (!rateLimit.allowed) {
+        return res.status(429).json({ 
+          error: `Too many attempts. Please wait ${rateLimit.lockoutTime} minutes.` 
+        })
+      }
+      
+      if (!verifyMasterPin(masterPin)) {
+        return res.status(403).json({ error: "Invalid master PIN" })
+      }
+      
+      // Reset rate limit on successful PIN verification
+      resetPinAttempts(clientIp)
+
+      if (!deviceId) {
+        return res.status(400).json({ error: "deviceId required" })
+      }
+
+      const { blockSoftwareInstance, isNeonLicenseConfigured } = await import("./neonLicenseService")
+      
+      if (!isNeonLicenseConfigured()) {
+        return res.json({ ok: false, error: "Neon license service not configured" })
+      }
+
+      const success = await blockSoftwareInstance(deviceId, reason || "Blocked by administrator")
+      res.json({ ok: success, message: success ? "Instance blocked" : "Block failed" })
+    } catch (error) {
+      res.status(500).json({ ok: false, error: "Failed to block instance" })
+    }
+  })
+
+  // Unblock a software instance (admin)
+  app.post("/api/neon-license/unblock", async (req, res) => {
+    try {
+      const { masterPin, deviceId } = req.body
+      const clientIp = req.ip || req.socket.remoteAddress || 'unknown'
+      
+      // Apply rate limiting for admin operations
+      const rateLimit = checkPinRateLimit(clientIp)
+      if (!rateLimit.allowed) {
+        return res.status(429).json({ 
+          error: `Too many attempts. Please wait ${rateLimit.lockoutTime} minutes.` 
+        })
+      }
+      
+      if (!verifyMasterPin(masterPin)) {
+        return res.status(403).json({ error: "Invalid master PIN" })
+      }
+      
+      // Reset rate limit on successful PIN verification
+      resetPinAttempts(clientIp)
+
+      if (!deviceId) {
+        return res.status(400).json({ error: "deviceId required" })
+      }
+
+      const { unblockSoftwareInstance, isNeonLicenseConfigured } = await import("./neonLicenseService")
+      
+      if (!isNeonLicenseConfigured()) {
+        return res.json({ ok: false, error: "Neon license service not configured" })
+      }
+
+      const success = await unblockSoftwareInstance(deviceId)
+      res.json({ ok: success, message: success ? "Instance unblocked" : "Unblock failed" })
+    } catch (error) {
+      res.status(500).json({ ok: false, error: "Failed to unblock instance" })
+    }
+  })
+
+  // Set expiry date for a device (admin)
+  app.post("/api/neon-license/set-expiry", async (req, res) => {
+    try {
+      const { masterPin, deviceId, expiryDate } = req.body
+      const clientIp = req.ip || req.socket.remoteAddress || 'unknown'
+      
+      // Apply rate limiting for admin operations
+      const rateLimit = checkPinRateLimit(clientIp)
+      if (!rateLimit.allowed) {
+        return res.status(429).json({ 
+          error: `Too many attempts. Please wait ${rateLimit.lockoutTime} minutes.` 
+        })
+      }
+      
+      if (!verifyMasterPin(masterPin)) {
+        return res.status(403).json({ error: "Invalid master PIN" })
+      }
+      
+      // Reset rate limit on successful PIN verification
+      resetPinAttempts(clientIp)
+
+      if (!deviceId) {
+        return res.status(400).json({ error: "deviceId required" })
+      }
+
+      const { setExpiryDate, isNeonLicenseConfigured } = await import("./neonLicenseService")
+      
+      if (!isNeonLicenseConfigured()) {
+        return res.json({ ok: false, error: "Neon license service not configured" })
+      }
+
+      const success = await setExpiryDate(deviceId, expiryDate || null)
+      res.json({ ok: success, message: success ? "Expiry date set" : "Update failed" })
+    } catch (error) {
+      res.status(500).json({ ok: false, error: "Failed to set expiry date" })
+    }
+  })
+
+  // Get error logs (admin) - for debugging without showing to users
+  app.post("/api/neon-license/error-logs", async (req, res) => {
+    try {
+      const { masterPin, deviceId, limit } = req.body
+      const clientIp = req.ip || req.socket.remoteAddress || 'unknown'
+      
+      // Apply rate limiting for admin operations
+      const rateLimit = checkPinRateLimit(clientIp)
+      if (!rateLimit.allowed) {
+        return res.status(429).json({ 
+          error: `Too many attempts. Please wait ${rateLimit.lockoutTime} minutes.` 
+        })
+      }
+      
+      if (!verifyMasterPin(masterPin)) {
+        return res.status(403).json({ error: "Invalid master PIN" })
+      }
+      
+      // Reset rate limit on successful PIN verification
+      resetPinAttempts(clientIp)
+
+      const { getErrorLogs, isNeonLicenseConfigured } = await import("./neonLicenseService")
+      
+      if (!isNeonLicenseConfigured()) {
+        return res.json({ ok: false, error: "Neon license service not configured", logs: [] })
+      }
+
+      const logs = await getErrorLogs(deviceId, limit || 100)
+      res.json({ ok: true, logs })
+    } catch (error) {
+      res.status(500).json({ ok: false, error: "Failed to get error logs" })
+    }
+  })
+
   const httpServer = createServer(app)
   return httpServer
 }

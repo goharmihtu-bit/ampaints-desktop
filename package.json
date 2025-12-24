@@ -22,7 +22,19 @@
     "electron:publish:win": "npm run build && electron-builder --win --publish always --config electron-builder.json",
     "electron:publish:mac": "npm run build && electron-builder --mac --publish always --config electron-builder.json",
     "electron:publish:linux": "npm run build && electron-builder --linux --publish always --config electron-builder.json",
-    "electron:publish:all": "npm run build && electron-builder --win --mac --linux --publish always --config electron-builder.json"
+    "electron:publish:all": "npm run build && electron-builder --win --mac --linux --publish always --config electron-builder.json",
+    "android:init": "npx cap add android",
+    "android:sync": "npx cap sync android",
+    "android:open": "npx cap open android",
+    "android:build": "npm run build && npx cap sync android && cd android && ./gradlew assembleDebug",
+    "android:build:release": "npm run build && npx cap sync android && cd android && ./gradlew assembleRelease",
+    "android:run": "npx cap run android",
+    "ios:init": "npx cap add ios",
+    "ios:sync": "npx cap sync ios",
+    "ios:open": "npx cap open ios",
+    "ios:build": "npm run build && npx cap sync ios && cd ios/App && xcodebuild -workspace App.xcworkspace -scheme App -configuration Debug -sdk iphonesimulator",
+    "ios:build:release": "npm run build && npx cap sync ios && cd ios/App && xcodebuild -workspace App.xcworkspace -scheme App -configuration Release archive",
+    "ios:run": "npx cap run ios"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

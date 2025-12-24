@@ -1,0 +1,346 @@
+name: Build iOS IPA
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'client/**'
+      - 'package.json'
+      - '.github/workflows/build-ios-ipa.yml'
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build type (development or distribution)'
+        required: true
+        default: 'development'
+        type: choice
+        options:
+          - development
+          - distribution
+
+env:
+  NODE_VERSION: '20'
+  XCODE_VERSION: '15.2'
+
+jobs:
+  build-ios:
+    name: Build iOS IPA
+    runs-on: macos-14
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Select Xcode version
+        run: sudo xcode-select -s /Applications/Xcode_${{ env.XCODE_VERSION }}.app
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Cache CocoaPods
+        uses: actions/cache@v4
+        with:
+          path: ios/Pods
+          key: ${{ runner.os }}-pods-${{ hashFiles('**/Podfile.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pods-
+
+      - name: Cache npm dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
+
+      - name: Install Node.js dependencies
+        run: npm ci
+
+      - name: Build web assets
+        run: npm run build
+        env:
+          NODE_ENV: production
+
+      - name: Install Capacitor CLI
+        run: npm install -g @capacitor/cli
+
+      - name: Install Capacitor packages
+        run: |
+          npm install @capacitor/core @capacitor/cli @capacitor/ios --save
+          npm install @capacitor/splash-screen @capacitor/status-bar @capacitor/app --save
+
+      - name: Create/Update Capacitor config for iOS
+        run: |
+          cat > capacitor.config.json << 'EOF'
+          {
+            "appId": "com.ampaints.paintpulse",
+            "appName": "PaintPulse",
+            "webDir": "dist/public",
+            "bundledWebRuntime": false,
+            "server": {
+              "iosScheme": "capacitor",
+              "cleartext": false
+            },
+            "ios": {
+              "contentInset": "automatic",
+              "allowsLinkPreview": true,
+              "scrollEnabled": true,
+              "backgroundColor": "#ffffff",
+              "preferredContentMode": "mobile"
+            },
+            "plugins": {
+              "SplashScreen": {
+                "launchShowDuration": 2000,
+                "launchAutoHide": true,
+                "backgroundColor": "#3B82F6",
+                "iosSpinnerStyle": "small",
+                "showSpinner": true,
+                "spinnerColor": "#FFFFFF",
+                "splashFullScreen": true,
+                "splashImmersive": true
+              },
+              "StatusBar": {
+                "style": "Light",
+                "backgroundColor": "#3B82F6"
+              },
+              "Keyboard": {
+                "resize": "body",
+                "style": "dark",
+                "resizeOnFullScreen": true
+              }
+            }
+          }
+          EOF
+
+      - name: Add iOS platform
+        run: npx cap add ios || true
+
+      - name: Sync Capacitor
+        run: npx cap sync ios
+
+      - name: Install CocoaPods dependencies
+        run: |
+          cd ios/App
+          pod install --repo-update
+
+      - name: Setup iOS signing (Development)
+        if: ${{ github.event.inputs.build_type != 'distribution' }}
+        run: |
+          # For development builds, we'll create a self-signed certificate
+          # Note: For App Store distribution, you need proper Apple Developer certificates
+          echo "Building for development/testing (unsigned)"
+
+      - name: Update iOS project version
+        run: |
+          cd ios/App
+          VERSION=$(node -p "require('../../package.json').version")
+          BUILD_NUMBER=$(date +%Y%m%d%H%M)
+          
+          # Update Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" App/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" App/Info.plist
+          
+          echo "Set version to $VERSION ($BUILD_NUMBER)"
+
+      - name: Build iOS App (Development)
+        if: ${{ github.event.inputs.build_type != 'distribution' }}
+        run: |
+          cd ios/App
+          xcodebuild -workspace App.xcworkspace \
+            -scheme App \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'platform=iOS Simulator,name=iPhone 15,OS=17.2' \
+            -derivedDataPath build \
+            clean build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            | xcpretty || true
+
+      - name: Build iOS App (Distribution)
+        if: ${{ github.event.inputs.build_type == 'distribution' && secrets.IOS_CERTIFICATE_BASE64 != '' }}
+        env:
+          IOS_CERTIFICATE_BASE64: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
+          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          IOS_PROVISION_PROFILE_BASE64: ${{ secrets.IOS_PROVISION_PROFILE_BASE64 }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          # Setup keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security set-keychain-settings -t 3600 -u build.keychain
+          
+          # Import certificate
+          echo "$IOS_CERTIFICATE_BASE64" | base64 --decode > certificate.p12
+          security import certificate.p12 -k build.keychain -P "$IOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
+          
+          # Import provisioning profile
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          echo "$IOS_PROVISION_PROFILE_BASE64" | base64 --decode > profile.mobileprovision
+          PROFILE_UUID=$(security cms -D -i profile.mobileprovision | grep -A1 UUID | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/')
+          cp profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/$PROFILE_UUID.mobileprovision
+          
+          # Build archive
+          cd ios/App
+          xcodebuild -workspace App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -archivePath build/App.xcarchive \
+            archive
+          
+          # Export IPA
+          xcodebuild -exportArchive \
+            -archivePath build/App.xcarchive \
+            -exportPath build/ipa \
+            -exportOptionsPlist ../../ios-export-options.plist
+
+      - name: Package Simulator Build
+        if: ${{ github.event.inputs.build_type != 'distribution' }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          cd ios/App/build/Build/Products/Debug-iphonesimulator
+          
+          # Create .app directory name
+          APP_NAME="App.app"
+          
+          if [ -d "$APP_NAME" ]; then
+            zip -r "../../../../PaintPulse-v${VERSION}-simulator.zip" "$APP_NAME"
+            echo "Packaged simulator build"
+          else
+            echo "App bundle not found, listing directory contents:"
+            ls -la
+            find . -name "*.app" -type d
+          fi
+
+      - name: Find and rename artifact
+        id: find_artifact
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          BUILD_TYPE="${{ github.event.inputs.build_type || 'development' }}"
+          
+          if [ "$BUILD_TYPE" == "distribution" ] && [ -f "ios/App/build/ipa/App.ipa" ]; then
+            NEW_NAME="PaintPulse-v${VERSION}-ios.ipa"
+            cp "ios/App/build/ipa/App.ipa" "./$NEW_NAME"
+            echo "artifact_path=$NEW_NAME" >> $GITHUB_OUTPUT
+            echo "artifact_name=$NEW_NAME" >> $GITHUB_OUTPUT
+            echo "artifact_type=ipa" >> $GITHUB_OUTPUT
+          elif [ -f "ios/App/build/PaintPulse-v${VERSION}-simulator.zip" ]; then
+            NEW_NAME="PaintPulse-v${VERSION}-simulator.zip"
+            cp "ios/App/build/PaintPulse-v${VERSION}-simulator.zip" "./$NEW_NAME"
+            echo "artifact_path=$NEW_NAME" >> $GITHUB_OUTPUT
+            echo "artifact_name=$NEW_NAME" >> $GITHUB_OUTPUT
+            echo "artifact_type=simulator" >> $GITHUB_OUTPUT
+          else
+            echo "Build completed but no artifact found"
+            echo "artifact_type=none" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload iOS Artifact
+        uses: actions/upload-artifact@v4
+        if: steps.find_artifact.outputs.artifact_type != 'none'
+        with:
+          name: PaintPulse-iOS-Build
+          path: ${{ steps.find_artifact.outputs.artifact_path }}
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Create Release (on tag)
+        if: startsWith(github.ref, 'refs/tags/') && steps.find_artifact.outputs.artifact_type == 'ipa'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ${{ steps.find_artifact.outputs.artifact_path }}
+          name: "PaintPulse iOS v${{ github.ref_name }}"
+          body: |
+            ## PaintPulse iOS Release
+            
+            ### Installation
+            - For TestFlight: Upload to App Store Connect
+            - For Enterprise: Install via MDM or direct link
+            
+            ### Requirements
+            - iOS 14.0 or higher
+            - iPhone or iPad
+            
+            ### What's New
+            - See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary
+        run: |
+          echo "## iOS Build Complete! 🍎" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Build Details" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build Type:** ${{ github.event.inputs.build_type || 'development' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Artifact:** ${{ steps.find_artifact.outputs.artifact_name || 'N/A' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Node Version:** ${{ env.NODE_VERSION }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Xcode Version:** ${{ env.XCODE_VERSION }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.find_artifact.outputs.artifact_type }}" == "simulator" ]; then
+            echo "⚠️ This is a **simulator build** - for testing in iOS Simulator only." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "For App Store distribution, you need:" >> $GITHUB_STEP_SUMMARY
+            echo "1. Apple Developer account" >> $GITHUB_STEP_SUMMARY
+            echo "2. Distribution certificate" >> $GITHUB_STEP_SUMMARY
+            echo "3. Provisioning profile" >> $GITHUB_STEP_SUMMARY
+            echo "4. Set up secrets: IOS_CERTIFICATE_BASE64, IOS_CERTIFICATE_PASSWORD, IOS_PROVISION_PROFILE_BASE64" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ steps.find_artifact.outputs.artifact_type }}" == "ipa" ]; then
+            echo "✅ Production IPA ready for App Store/TestFlight upload." >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # Test on iOS Simulator
+  test-ios:
+    name: Test iOS Build
+    needs: build-ios
+    runs-on: macos-14
+    if: ${{ github.event_name == 'pull_request' }}
+    
+    steps:
+      - name: Download iOS Build
+        uses: actions/download-artifact@v4
+        with:
+          name: PaintPulse-iOS-Build
+        continue-on-error: true
+
+      - name: Select Xcode version
+        run: sudo xcode-select -s /Applications/Xcode_15.2.app
+
+      - name: Boot iOS Simulator
+        run: |
+          xcrun simctl boot "iPhone 15" || true
+          xcrun simctl list devices
+
+      - name: Install and Test App
+        run: |
+          if [ -f "*.zip" ]; then
+            unzip *.zip
+            xcrun simctl install booted App.app || echo "Install skipped - app bundle not found"
+            xcrun simctl launch booted com.ampaints.paintpulse || echo "Launch skipped"
+            sleep 5
+            xcrun simctl io booted screenshot ios-test-screenshot.png || echo "Screenshot skipped"
+          else
+            echo "No simulator build found to test"
+          fi
+        continue-on-error: true
+
+      - name: Upload Test Screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: iOS-Test-Screenshot
+          path: ios-test-screenshot.png
+          retention-days: 7
+        if: always()
+        continue-on-error: true
